@@ -7,7 +7,7 @@ import {
   Bell,
   ShieldCheck,
   X,
-  Wifi,
+  Shield,
 } from 'lucide-react';
 
 const navItems = [
@@ -27,7 +27,7 @@ export default function Sidebar({ isOpen, onClose }) {
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
           onClick={onClose}
         />
       )}
@@ -41,21 +41,21 @@ export default function Sidebar({ isOpen, onClose }) {
         {/* Logo */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center">
-              <Wifi className="w-6 h-6 text-white" />
+            <div className="w-10 h-10 bg-gradient-to-br from-teal-400 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+              <Shield className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold">NetCard Pro</h1>
-              <p className="text-xs text-gray-400">لوحة التحكم</p>
+              <h1 className="text-lg font-bold tracking-tight">Krotak Pro</h1>
+              <p className="text-xs text-slate-400">لوحة التحكم</p>
             </div>
           </div>
-          <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-white">
+          <button onClick={onClose} className="lg:hidden text-slate-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="mt-6 px-4 space-y-1">
+        <nav className="mt-6 px-3 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -67,8 +67,8 @@ export default function Sidebar({ isOpen, onClose }) {
                 onClick={onClose}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/30'
-                    : 'text-gray-300 hover:bg-sidebar-hover hover:text-white'
+                    ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/25'
+                    : 'text-slate-300 hover:bg-sidebar-hover hover:text-white'
                 }`}
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
@@ -80,8 +80,8 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">
-          <p className="text-xs text-gray-500 text-center">
-            NetCard Pro Admin v1.0
+          <p className="text-xs text-slate-500 text-center">
+            Krotak Pro Admin v1.0
           </p>
         </div>
       </aside>
