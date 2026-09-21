@@ -51,7 +51,7 @@
   }
 
   .input-field {
-    @apply w-full px-4 py-2.5 border border-slate-250 rounded-xl focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 outline-none transition-all duration-200 bg-white text-slate-900 placeholder:text-slate-400;
+    @apply w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 outline-none transition-all duration-200 bg-white text-slate-900 placeholder:text-slate-400;
   }
 
   .label-field {
