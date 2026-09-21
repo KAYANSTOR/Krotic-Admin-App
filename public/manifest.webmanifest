@@ -1,0 +1,27 @@
+{
+  "name": "NetCard Pro - لوحة التحكم",
+  "short_name": "NetCard Pro",
+  "description": "لوحة التحكم الإدارية لشبكات NetCard Pro",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f6f8fb",
+  "theme_color": "#172033",
+  "icons": [
+    {
+      "src": "/icons/netcard-pro-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/netcard-pro-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
