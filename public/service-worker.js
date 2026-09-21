@@ -1,4 +1,4 @@
-const CACHE_NAME = 'netcard-pro-shell-v1';
+const CACHE_NAME = 'krotak-pro-shell-v1';
 const APP_SHELL = ['/'];
 
 self.addEventListener('install', (event) => {
