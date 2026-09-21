@@ -204,7 +204,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
             {/* Monthly Breakdown */}
             <div>
               <h4 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
-                <Credit contCard className="w-5 h-5" /> تفاصيل الأشهر
+                <CreditCard className="w-5 h-5" /> تفاصيل الأشهر
               </h4>
               {sortedMonths.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">لا يوجد حركات مسجلة</p>
