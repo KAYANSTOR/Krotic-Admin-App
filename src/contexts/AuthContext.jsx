@@ -46,10 +46,33 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Bootstrap the first admin for an already-created Firebase Auth account.
+  // This is only allowed while the Admins collection is completely empty.
+  async function bootstrapFirstAdmin(user) {
+    const adminsSnap = await getDocs(collection(db, 'Admins'));
+    if (!adminsSnap.empty) return null;
+
+    const admin = {
+      uid: user.uid,
+      name: user.displayName || user.email?.split('@')[0] || 'المدير الأول',
+      email: user.email || '',
+      phone: user.phoneNumber || '',
+      createdAt: Date.now(),
+    };
+    await setDoc(doc(db, 'Admins', user.uid), admin);
+    return admin;
+  }
+
   // Login
   async function login(email, password) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const admin = await verifyAdmin(userCredential.user.uid);
+    let admin = await verifyAdmin(userCredential.user.uid);
+    // The initial setup previously had no reachable UI. If this is the first
+    // account in the project, register the authenticated account as the first
+    // admin instead of showing the misleading "not an admin" error.
+    if (!admin) {
+      admin = await bootstrapFirstAdmin(userCredential.user);
+    }
     if (!admin) {
       await signOut(auth);
       throw new Error('هذا الحساب ليس مسجلاً كمدير. لا يمكنك الدخول.');
