@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/Admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.uid == request.auth.uid;
+    }
+
+    // Admin identity documents must use the Firebase Auth UID as their document ID.
+    match /Admins/{adminId} {
+      allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && adminId == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin() && adminId != request.auth.uid;
+    }
+
+    // All operational data is available only to authenticated admins.
+    match /app_settings/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read, write: if isAdmin();
+      match /{subcollection}/{documentId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    match /networks/{userId} {
+      allow read, write: if isAdmin();
+      match /{subcollection}/{documentId} {
+        allow read, write: if isAdmin();
+      }
+    }
+  }
+}

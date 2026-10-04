@@ -1,0 +1,11 @@
+{
+  "routes": [
+    { "path": "/login", "title": "تسجيل الدخول" },
+    { "path": "/", "title": "الرئيسية" },
+    { "path": "/settings", "title": "الإعدادات العامة" },
+    { "path": "/users", "title": "إدارة المستخدمين" },
+    { "path": "/sales", "title": "المبيعات والعمولات" },
+    { "path": "/notifications", "title": "الإشعارات" },
+    { "path": "/admins", "title": "إدارة المدراء" }
+  ]
+}
