@@ -12,6 +12,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.uid == request.auth.uid;
     }
 
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
     // Admin identity documents must use the Firebase Auth UID as their document ID.
     match /Admins/{adminId} {
       allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
@@ -22,14 +26,15 @@ service cloud.firestore {
       allow delete: if isAdmin() && adminId != request.auth.uid;
     }
 
-    // All operational data is available only to authenticated admins.
+    // Global settings are readable by any signed-in app account (trial config,
+    // maintenance state, admin notifications). Only admins may write them.
     match /app_settings/{document=**} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || signedIn();
+      allow write: if isAdmin();
     }
 
     match /notification_requests/{requestId} {
-      allow create: if isAdmin();
-      allow read: if isAdmin();
+      allow create, read: if isAdmin();
       allow update: if false;
     }
 
@@ -39,11 +44,39 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || isSelf(userId);
+
+      // Self-registration: the network owner creates only their own document,
+      // and the trial window is bounded by the rules themselves.
+      allow create: if isSelf(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.trial_days is int
+        && request.resource.data.trial_days >= 0
+        && request.resource.data.trial_days <= 30
+        && request.resource.data.subscription_end_date is timestamp
+        && request.resource.data.subscription_end_date <= request.time + duration.value(30, 'd');
+
+      // The owner may refresh only non-privileged profile fields. Activation,
+      // trial state and subscription dates stay admin-only.
+      allow update: if isAdmin() || (isSelf(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['phone', 'network_name', 'platform', 'app_version', 'last_seen_at']));
+
+      allow delete: if isAdmin();
+
+      // Device tokens for remote notifications: the owner manages its own.
       match /devices/{deviceId} {
-        allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
-        allow create, update, delete: if isAdmin() || (signedIn() && request.auth.uid == userId);
+        allow read, create, update, delete: if isAdmin() || isSelf(userId);
       }
+
+      // Admin notifications addressed to this account: read-only for the owner.
+      match /notifications/{notificationId} {
+        allow read: if isAdmin() || isSelf(userId);
+        allow update: if isAdmin() || (isSelf(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']));
+        allow create, delete: if isAdmin();
+      }
+
       match /{subcollection}/{documentId} {
         allow read, write: if isAdmin();
       }
@@ -51,6 +84,12 @@ service cloud.firestore {
 
     match /networks/{userId} {
       allow read, write: if isAdmin();
+
+      // Network display metadata is written by the owning app account.
+      match /_metadata/{documentId} {
+        allow read, write: if isAdmin() || isSelf(userId);
+      }
+
       match /{subcollection}/{documentId} {
         allow read, write: if isAdmin();
       }
