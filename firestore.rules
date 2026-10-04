@@ -27,8 +27,23 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /notification_requests/{requestId} {
+      allow create: if isAdmin();
+      allow read: if isAdmin();
+      allow update: if false;
+    }
+
+    match /notification_deliveries/{deliveryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /users/{userId} {
       allow read, write: if isAdmin();
+      match /devices/{deviceId} {
+        allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+        allow create, update, delete: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      }
       match /{subcollection}/{documentId} {
         allow read, write: if isAdmin();
       }

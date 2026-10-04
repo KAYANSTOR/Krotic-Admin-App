@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, addDoc, doc, getDoc, query, orderBy, limit
+  collection, getDocs, addDoc, doc, getDoc, query, orderBy, limit, serverTimestamp
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import {
   Bell, Send, Users, User, Globe, History, RefreshCw
 } from 'lucide-react';
@@ -76,26 +76,26 @@ export default function NotificationsPage() {
     try {
       const notificationData = {
         title: title.trim(),
+        body: message.trim(),
         message: message.trim(),
-        timestamp: Date.now(),
+        audienceType: type,
+        ...(type === 'user' ? { targetUid: selectedUser } : {}),
+        data: { route: '/account-notifications' },
+        createdBy: auth.currentUser?.uid || null,
+        status: 'queued',
+        createdAt: serverTimestamp(),
       };
 
+      await addDoc(collection(db, 'notification_requests'), notificationData);
       if (type === 'global') {
-        await addDoc(
-          collection(db, 'app_settings', 'global_config', 'notifications'),
-          notificationData
-        );
-        toast.success('تم إرسال الإشعار العام بنجاح');
+        await addDoc(collection(db, 'app_settings', 'global_config', 'notifications'), {
+          ...notificationData,
+          timestamp: Date.now(),
+        });
+        toast.success('تم وضع الإشعار العام في طابور الإرسال');
       } else {
-        await addDoc(
-          collection(db, 'users', selectedUser, 'notifications'),
-          {
-            ...notificationData,
-            is_read: false,
-          }
-        );
         const userName = users.find((u) => u.uid === selectedUser)?.name || selectedUser;
-        toast.success(`تم إرسال الإشعار إلى: ${userName}`);
+        toast.success(`تم وضع إشعار ${userName} في طابور الإرسال`);
       }
 
       // Reset form
