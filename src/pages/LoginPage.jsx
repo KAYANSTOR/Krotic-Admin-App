@@ -23,6 +23,10 @@ export default function LoginPage() {
       console.error(error);
       if (error.message.includes('ليس مسجلاً كمدير')) {
         toast.error(error.message);
+      } else if (error.code === 'permission-denied') {
+        toast.error('قواعد Firestore تمنع قراءة مستند المدير. تأكد من أن Document ID يطابق UID للحساب.');
+      } else if (error.code === 'auth/network-request-failed') {
+        toast.error('تعذر الاتصال بخدمة Firebase. تحقق من الإنترنت ثم حاول مرة أخرى.');
       } else if (
         error.code === 'auth/invalid-credential' ||
         error.code === 'auth/wrong-password' ||
