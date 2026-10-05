@@ -1,5 +1,10 @@
-const CACHE_NAME = 'krotak-pro-shell-v1';
-const APP_SHELL = ['/'];
+const CACHE_NAME = 'krotak-pro-shell-v2';
+const APP_SHELL = [
+  '/',
+  '/manifest.webmanifest',
+  '/icons/krotak-pro-192.png',
+  '/icons/krotak-pro-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
