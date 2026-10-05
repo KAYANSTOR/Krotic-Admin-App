@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, query, orderBy, Timestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, getDocs, addDoc, query, orderBy, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import { X, DollarSign, PlusCircle, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from './LoadingSpinner';
@@ -9,7 +9,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
   const [sales, setSales] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Payment form state
   const [amount, setAmount] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -27,7 +27,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
       // 1. Fetch Sales
       const salesSnap = await getDocs(collection(db, 'networks', user.uid, 'sales'));
       const salesData = [];
-      salesSnap.forEach(doc => salesData.push({ id: doc.id, ...doc.data() }));
+      salesSnap.forEach((doc) => salesData.push({ id: doc.id, ...doc.data() }));
       setSales(salesData);
 
       // 2. Fetch Payments
@@ -35,14 +35,75 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
       const q = query(paymentsRef, orderBy('timestamp', 'desc'));
       const paymentsSnap = await getDocs(q);
       const paymentsData = [];
-      paymentsSnap.forEach(doc => paymentsData.push({ id: doc.id, ...doc.data() }));
+      paymentsSnap.forEach((doc) => paymentsData.push({ id: doc.id, ...doc.data() }));
       setPayments(paymentsData);
-      
     } catch (error) {
       console.error('Error fetching financials:', error);
       toast.error('حدث خطأ أثناء جلب البيانات المالية');
     }
     setLoading(false);
+  };
+
+  /** إرسال إشعار FCM حي إلى تطبيق العميل + تسجيله في صندوق إشعاراته */
+  const notifyClientPayment = async (paidAmount, monthKey) => {
+    const monthLabel = monthKey || 'الشهر الحالي';
+    const formattedAmount = new Intl.NumberFormat('ar-YE').format(Math.round(paidAmount));
+    const title = 'تم سداد عمولة';
+    const body = `تم تسجيل سداد مبلغ ${formattedAmount} ريال يمني لعمولة شهر ${monthLabel}. يتم تحديث المتبقي تلقائياً في حسابك.`;
+
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        console.warn('notifyClientPayment: no admin token');
+        return;
+      }
+
+      // 1) إرسال FCM عبر دالة Vercel
+      const res = await fetch('/api/send-fcm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          title,
+          body,
+          targetUid: user.uid,
+          data: {
+            route: '/commission',
+            type: 'commission_payment',
+            month: monthKey,
+            amount: String(paidAmount),
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        console.warn('notifyClientPayment: FCM failed', data.error || res.status);
+        // لا نوقف العملية — الدفعة مسجّلة بنجاح
+      }
+    } catch (err) {
+      console.warn('notifyClientPayment: network error', err);
+    }
+
+    // 2) تسجيل في صندوق إشعارات المستخدم داخل التطبيق
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'notifications'), {
+        title,
+        message: body,
+        body,
+        is_read: false,
+        type: 'commission_payment',
+        month: monthKey,
+        amount: paidAmount,
+        timestamp: Date.now(),
+        createdAt: serverTimestamp(),
+      });
+    } catch (logErr) {
+      console.warn('notifyClientPayment: inbox write failed', logErr);
+    }
   };
 
   const handleAddPayment = async (e) => {
@@ -57,16 +118,22 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
     }
 
     setIsAddingPayment(true);
+    const paidValue = parseFloat(amount);
+    const monthKey = selectedMonth;
+
     try {
       await addDoc(collection(db, 'networks', user.uid, 'payments'), {
-        amount: parseFloat(amount),
-        month: selectedMonth,
-        timestamp: Timestamp.now()
+        amount: paidValue,
+        month: monthKey,
+        timestamp: Timestamp.now(),
       });
-      
-      toast.success('تمت إضافة الدفعة بنجاح');
+
+      // إشعار حي للعميل + تحديث صندوق الإشعارات
+      await notifyClientPayment(paidValue, monthKey);
+
+      toast.success('تمت إضافة الدفعة وإشعار العميل بنجاح');
       setAmount('');
-      fetchFinancials(); // Refresh data
+      fetchFinancials(); // Refresh data — المتبقي يُحسب من جديد (due - paid)
     } catch (error) {
       console.error('Error adding payment:', error);
       toast.error('حدث خطأ أثناء إضافة الدفعة');
@@ -78,30 +145,31 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
 
   // Process data by month
   const monthsData = {};
-  
+
   // Active commission rate
-  const activeRate = (user.commission_rate != null && user.commission_rate > 0) 
-    ? user.commission_rate 
-    : globalCommission;
+  const activeRate =
+    user.commission_rate != null && user.commission_rate > 0
+      ? user.commission_rate
+      : globalCommission;
 
   // Aggregate Sales
-  sales.forEach(sale => {
+  sales.forEach((sale) => {
     if (sale.status === 'COMPLETED' && sale.createdAt) {
       const date = new Date(sale.createdAt);
       // Format YYYY-MM
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
+
       if (!monthsData[monthKey]) {
         monthsData[monthKey] = { salesTotal: 0, commissionDue: 0, paid: 0 };
       }
-      
-      monthsData[monthKey].salesTotal += (sale.faceValue || 0);
+
+      monthsData[monthKey].salesTotal += sale.faceValue || 0;
       monthsData[monthKey].commissionDue += (sale.faceValue || 0) * (activeRate / 100);
     }
   });
 
   // Aggregate Payments
-  payments.forEach(payment => {
+  payments.forEach((payment) => {
     const monthKey = payment.month; // Expected YYYY-MM
     if (!monthsData[monthKey]) {
       monthsData[monthKey] = { salesTotal: 0, commissionDue: 0, paid: 0 };
@@ -111,11 +179,11 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
 
   // Sort months descending
   const sortedMonths = Object.keys(monthsData).sort().reverse();
-  
+
   // Calculate Totals
   let totalDue = 0;
   let totalPaid = 0;
-  Object.values(monthsData).forEach(m => {
+  Object.values(monthsData).forEach((m) => {
     totalDue += m.commissionDue;
     totalPaid += m.paid;
   });
@@ -125,7 +193,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
 
   // Current month string for default selection
   const currentMonthStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
@@ -150,7 +218,6 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-            
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
@@ -161,9 +228,23 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                 <p className="text-sm text-emerald-600 font-medium">إجمالي المدفوع (ريال يمني)</p>
                 <p className="text-2xl font-bold text-emerald-900 mt-1">{formatNumber(totalPaid)}</p>
               </div>
-              <div className={`p-4 rounded-xl border ${overallBalance > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-200'}`}>
-                <p className={`text-sm font-medium ${overallBalance > 0 ? 'text-red-600' : 'text-gray-600'}`}>الديون المتبقية (ريال يمني)</p>
-                <p className={`text-2xl font-bold mt-1 ${overallBalance > 0 ? 'text-red-900' : 'text-gray-900'}`}>
+              <div
+                className={`p-4 rounded-xl border ${
+                  overallBalance > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-200'
+                }`}
+              >
+                <p
+                  className={`text-sm font-medium ${
+                    overallBalance > 0 ? 'text-red-600' : 'text-gray-600'
+                  }`}
+                >
+                  الديون المتبقية (ريال يمني)
+                </p>
+                <p
+                  className={`text-2xl font-bold mt-1 ${
+                    overallBalance > 0 ? 'text-red-900' : 'text-gray-900'
+                  }`}
+                >
                   {formatNumber(overallBalance)}
                 </p>
               </div>
@@ -174,28 +255,36 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
               <h4 className="font-bold text-gray-900 flex items-center gap-2 mb-4">
                 <PlusCircle className="w-5 h-5" /> إضافة دفعة جديدة
               </h4>
+              <p className="text-xs text-gray-500 mb-3">
+                عند تأكيد الدفعة يُرسل إشعار فوري إلى تطبيق العميل، ويُحدَّث المتبقي تلقائياً (مستحق −
+                مدفوع). إذا سُدّد الشهر بالكامل يظهر صفر ويبدأ الحساب من المبيعات الجديدة.
+              </p>
               <form onSubmit={handleAddPayment} className="flex flex-col sm:flex-row gap-4 items-end">
                 <div className="flex-1 w-full">
                   <label className="label-field">المبلغ المدفوع (ريال يمني)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     min="1"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="input-field bg-white" 
+                    className="input-field bg-white"
                     placeholder="أدخل المبلغ..."
                   />
                 </div>
                 <div className="flex-1 w-full">
                   <label className="label-field">مخصصة لشهر</label>
-                  <input 
-                    type="month" 
+                  <input
+                    type="month"
                     value={selectedMonth || currentMonthStr}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="input-field bg-white" 
+                    className="input-field bg-white"
                   />
                 </div>
-                <button type="submit" disabled={isAddingPayment} className="btn-success whitespace-nowrap h-[46px]">
+                <button
+                  type="submit"
+                  disabled={isAddingPayment}
+                  className="btn-success whitespace-nowrap h-[46px]"
+                >
                   {isAddingPayment ? 'جاري الإضافة...' : 'تأكيد الدفعة'}
                 </button>
               </form>
@@ -221,17 +310,31 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {sortedMonths.map(month => {
+                      {sortedMonths.map((month) => {
                         const m = monthsData[month];
                         const remaining = m.commissionDue - m.paid;
                         return (
                           <tr key={month} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-bold text-gray-900" dir="ltr">{month}</td>
+                            <td className="px-4 py-3 font-bold text-gray-900" dir="ltr">
+                              {month}
+                            </td>
                             <td className="px-4 py-3 text-gray-600">{formatNumber(m.salesTotal)}</td>
-                            <td className="px-4 py-3 text-purple-600 font-medium">{formatNumber(m.commissionDue)}</td>
-                            <td className="px-4 py-3 text-emerald-600 font-medium">{formatNumber(m.paid)}</td>
+                            <td className="px-4 py-3 text-purple-600 font-medium">
+                              {formatNumber(m.commissionDue)}
+                            </td>
+                            <td className="px-4 py-3 text-emerald-600 font-medium">
+                              {formatNumber(m.paid)}
+                            </td>
                             <td className="px-4 py-3">
-                              <span className={`font-bold ${remaining > 0 ? 'text-red-600' : remaining < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                              <span
+                                className={`font-bold ${
+                                  remaining > 0
+                                    ? 'text-red-600'
+                                    : remaining < 0
+                                      ? 'text-emerald-600'
+                                      : 'text-gray-900'
+                                }`}
+                              >
                                 {formatNumber(remaining)}
                               </span>
                             </td>
@@ -243,7 +346,6 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                 </div>
               )}
             </div>
-
           </div>
         )}
       </div>
