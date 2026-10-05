@@ -29,7 +29,6 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch app status and global config
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       let globalCommission = 5;
       if (configDoc.exists()) {
@@ -38,7 +37,6 @@ export default function DashboardPage() {
         globalCommission = configData.default_commission_rate || 5;
       }
 
-      // Fetch users
       const usersSnap = await getDocs(collection(db, 'users'));
       const users = [];
       usersSnap.forEach((d) => users.push({ uid: d.id, ...d.data() }));
@@ -48,7 +46,6 @@ export default function DashboardPage() {
       const activeUsers = users.filter((u) => u.is_active !== false).length;
       const blockedUsers = users.filter((u) => u.is_active === false).length;
 
-      // Fetch sales for all networks
       let totalSales = 0;
       let totalAdminEarnings = 0;
       let totalTransactions = 0;
@@ -119,7 +116,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* App Status Banner */}
       {appStatus && !appStatus.is_app_active && (
         <div className="dashboard-maintenance" role="status">
           <div className="dashboard-maintenance-icon">
@@ -136,7 +132,6 @@ export default function DashboardPage() {
 
       {stats && (
         <>
-          {/* Main overview */}
           <section className="dashboard-overview-grid" aria-label="ملخص الأداء">
             <div className="dashboard-hero-card">
               <div className="dashboard-hero-content">
@@ -176,40 +171,14 @@ export default function DashboardPage() {
             </div>
 
             <div className="dashboard-stat-grid">
-              <StatsCard
-                title="إجمالي المستخدمين"
-                value={formatNumber(stats.totalUsers)}
-                icon={Users}
-                color="blue"
-              />
-              <StatsCard
-                title="المستخدمون النشطون"
-                value={formatNumber(stats.activeUsers)}
-                icon={UserCheck}
-                color="green"
-              />
-              <StatsCard
-                title="مستخدمون تجريبيون"
-                value={formatNumber(stats.trialUsers)}
-                icon={Activity}
-                color="orange"
-              />
-              <StatsCard
-                title="محظورون"
-                value={formatNumber(stats.blockedUsers)}
-                icon={AlertTriangle}
-                color="red"
-              />
-              <StatsCard
-                title="عمليات البيع الناجحة"
-                value={formatNumber(stats.totalTransactions)}
-                icon={Coins}
-                color="purple"
-              />
+              <StatsCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} color="blue" />
+              <StatsCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} color="green" />
+              <StatsCard title="مستخدمون تجريبيون" value={formatNumber(stats.trialUsers)} icon={Activity} color="orange" />
+              <StatsCard title="محظورون" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} color="red" />
+              <StatsCard title="عمليات البيع الناجحة" value={formatNumber(stats.totalTransactions)} icon={Coins} color="purple" />
             </div>
           </section>
 
-          {/* Quick links to existing sections */}
           <section className="dashboard-section">
             <div className="dashboard-section-heading">
               <div>
@@ -220,7 +189,7 @@ export default function DashboardPage() {
             </div>
             <div className="dashboard-actions-grid">
               <Link to="/users" className="dashboard-action-card">
-                <span className="dashboard-action-icon dashboard-action-icon-teal"><UserPlus className="h-6 w-6" /></span>
+                <span className="dashboard-action-icon dashboard-action-icon-brand"><UserPlus className="h-6 w-6" /></span>
                 <span>إدارة المستخدمين</span>
                 <ArrowUpRight className="dashboard-action-arrow" />
               </Link>
@@ -242,7 +211,6 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Supporting summaries */}
           <section className="dashboard-lower-grid">
             <div className="dashboard-summary-card">
               <div className="dashboard-section-heading">
@@ -250,7 +218,7 @@ export default function DashboardPage() {
                   <span className="dashboard-section-eyebrow">نظرة مالية</span>
                   <h2>ملخص الإيرادات</h2>
                 </div>
-                <Coins className="h-5 w-5 text-teal-500" />
+                <Coins className="h-5 w-5 text-primary-500" />
               </div>
               <div className="dashboard-finance-row">
                 <div>
