@@ -299,7 +299,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                 <p className="text-gray-500 text-center py-4">لا يوجد حركات مسجلة</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="responsive-data-table w-full text-sm">
                     <thead>
                       <tr className="table-header">
                         <th className="px-4 py-3 text-right">الشهر</th>
@@ -315,17 +315,17 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                         const remaining = m.commissionDue - m.paid;
                         return (
                           <tr key={month} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-bold text-gray-900" dir="ltr">
+                            <td className="px-4 py-3 font-bold text-gray-900" dir="ltr" data-label="الشهر">
                               {month}
                             </td>
-                            <td className="px-4 py-3 text-gray-600">{formatNumber(m.salesTotal)}</td>
-                            <td className="px-4 py-3 text-purple-600 font-medium">
+                            <td className="px-4 py-3 text-gray-600" data-label="إجمالي المبيعات">{formatNumber(m.salesTotal)}</td>
+                            <td className="px-4 py-3 text-purple-600 font-medium" data-label="العمولة المستحقة">
                               {formatNumber(m.commissionDue)}
                             </td>
-                            <td className="px-4 py-3 text-emerald-600 font-medium">
+                            <td className="px-4 py-3 text-emerald-600 font-medium" data-label="تم سداده">
                               {formatNumber(m.paid)}
                             </td>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3" data-label="المتبقي">
                               <span
                                 className={`font-bold ${
                                   remaining > 0

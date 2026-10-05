@@ -608,3 +608,381 @@
     transition: none;
   }
 }
+
+
+/* Krotak Pro — cohesive, lightweight Arabic admin UI */
+:root {
+  color-scheme: light;
+  --ui-brand: #D97757;
+  --ui-brand-deep: #B85C3E;
+  --ui-brand-soft: #FDF6F3;
+  --ui-ink: #292524;
+  --ui-muted: #78716C;
+  --ui-line: #E7E2DC;
+  --ui-paper: #F7F4EF;
+  --ui-surface: #FFFEFC;
+  --ui-shadow: 0 10px 28px -18px rgba(41, 37, 36, 0.24);
+  --ui-ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+body {
+  color: var(--ui-ink);
+  background-color: var(--ui-paper);
+  font-family: Tajawal, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  color: #fff;
+  background: var(--ui-brand-deep);
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid rgba(217, 119, 87, 0.42);
+  outline-offset: 2px;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-main > div:not(.dashboard-page) {
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+}
+
+.app-header {
+  background: rgba(255, 254, 252, 0.96);
+  border-color: rgba(231, 226, 220, 0.9);
+  box-shadow: 0 5px 22px -20px rgba(41, 37, 36, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.app-shell aside {
+  background: linear-gradient(180deg, #242220 0%, #1F1F1F 100%);
+  box-shadow: -12px 0 32px rgba(31, 31, 31, 0.08);
+}
+
+.app-shell aside nav {
+  padding-inline: 14px;
+}
+
+.app-shell aside nav a {
+  position: relative;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  transition: color 150ms var(--ui-ease), background-color 150ms var(--ui-ease), border-color 150ms var(--ui-ease);
+}
+
+.app-shell aside nav a[aria-current="page"] {
+  color: #fff;
+  border-color: rgba(243, 197, 181, 0.16);
+  background: linear-gradient(100deg, rgba(217, 119, 87, 0.28), rgba(184, 92, 62, 0.16));
+  box-shadow: inset -3px 0 0 var(--ui-brand);
+}
+
+.app-shell aside nav a:not([aria-current="page"]):hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.06);
+  background-color: rgba(255, 255, 255, 0.055);
+}
+
+.app-shell aside > div:first-child {
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.app-header button,
+.bottom-nav-item,
+.app-main button {
+  touch-action: manipulation;
+}
+
+.page-title {
+  color: var(--ui-ink);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+}
+
+.card {
+  border: 1px solid var(--ui-line);
+  border-radius: 22px;
+  background: var(--ui-surface);
+  box-shadow: 0 4px 18px -14px rgba(41, 37, 36, 0.32);
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-success {
+  min-height: 44px;
+  border-radius: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  transition: color 140ms var(--ui-ease), background-color 140ms var(--ui-ease), border-color 140ms var(--ui-ease), box-shadow 140ms var(--ui-ease), transform 140ms var(--ui-ease);
+}
+
+.btn-primary {
+  background-color: var(--ui-brand-deep);
+  box-shadow: 0 5px 14px -9px rgba(184, 92, 62, 0.8);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #9A4A32;
+  box-shadow: 0 8px 18px -10px rgba(184, 92, 62, 0.9);
+}
+
+.btn-secondary {
+  border: 1px solid var(--ui-line);
+  background: #fff;
+  color: #57534E;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #D6C9BF;
+  background: #FBF8F5;
+}
+
+.btn-danger {
+  box-shadow: 0 5px 14px -9px rgba(198, 93, 93, 0.8);
+}
+
+.btn-success {
+  box-shadow: 0 5px 14px -9px rgba(107, 142, 114, 0.8);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.65);
+}
+
+.input-field {
+  min-height: 44px;
+  border: 1px solid #DED8D1;
+  border-radius: 13px;
+  color: var(--ui-ink);
+  background-color: #fff;
+  transition: border-color 140ms var(--ui-ease), box-shadow 140ms var(--ui-ease), background-color 140ms var(--ui-ease);
+}
+
+.input-field::placeholder {
+  color: #A8A29E;
+}
+
+.input-field:focus {
+  border-color: var(--ui-brand);
+  box-shadow: 0 0 0 4px rgba(217, 119, 87, 0.12);
+}
+
+.label-field {
+  color: #57534E;
+  font-weight: 700;
+}
+
+.table-header {
+  background: #F8F5F1;
+  color: #6B625C;
+}
+
+.app-main table {
+  border-spacing: 0;
+}
+
+.app-main thead th {
+  border-bottom: 1px solid var(--ui-line);
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.app-main tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.app-main tbody tr:hover {
+  background-color: #FCF9F6;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-weight: 700;
+}
+
+.dashboard-hero-card {
+  box-shadow: 0 18px 38px -22px rgba(184, 92, 62, 0.68);
+}
+
+.dashboard-action-card,
+.dashboard-page .dashboard-stat-grid .card {
+  will-change: auto;
+}
+
+.login-screen {
+  background:
+    radial-gradient(ellipse at 14% 18%, rgba(217, 119, 87, 0.18), transparent 36%),
+    radial-gradient(ellipse at 88% 84%, rgba(184, 92, 62, 0.16), transparent 34%),
+    linear-gradient(135deg, #1F1F1F 0%, #292421 100%);
+}
+
+.login-brand-mark {
+  border: 4px solid rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 30px rgba(217, 119, 87, 0.22);
+}
+
+.login-panel {
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  background: rgba(255, 254, 252, 0.98);
+  box-shadow: 0 28px 70px -36px rgba(0, 0, 0, 0.58);
+}
+
+.route-loading {
+  display: grid;
+  min-height: min(60vh, 560px);
+  place-items: center;
+}
+
+.bottom-nav {
+  border-color: rgba(217, 119, 87, 0.22);
+  background: rgba(255, 254, 252, 0.97);
+  box-shadow: 0 12px 32px rgba(41, 37, 36, 0.13);
+  backdrop-filter: blur(10px);
+}
+
+.bottom-nav-item {
+  min-height: 56px;
+  border-radius: 13px;
+}
+
+.bottom-nav-item.is-active {
+  color: var(--ui-brand-deep);
+  background: var(--ui-brand-soft);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.1);
+}
+
+@media (max-width: 640px) {
+  .page-title {
+    font-size: 1.35rem;
+  }
+
+  .app-main .card:not(.p-0) {
+    border-radius: 18px;
+  }
+
+  .login-panel {
+    padding: 1.5rem;
+  }
+
+  .app-main table th,
+  .app-main table td {
+    padding-inline: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Narrow-screen data presentation: preserve all columns as labeled rows, never a sideways table. */
+@media (max-width: 1199px) {
+  .app-main .responsive-data-table,
+  .app-main .responsive-data-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .app-main .responsive-data-table thead {
+    display: none;
+  }
+
+  .app-main .responsive-data-table tbody tr {
+    display: block;
+    margin: 0.65rem;
+    padding: 0.3rem 0.85rem;
+    border: 1px solid #ECE6DF;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 4px 14px -12px rgba(41, 37, 36, 0.45);
+  }
+
+  .app-main .responsive-data-table tbody td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.68rem 0.15rem;
+    border-bottom: 1px solid #F1ECE7;
+    color: var(--ui-ink);
+    text-align: right;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .app-main .responsive-data-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 39%;
+    color: var(--ui-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.55;
+    white-space: normal;
+  }
+
+  .app-main .responsive-data-table tbody td > * {
+    min-width: 0;
+    max-width: 61%;
+    overflow-wrap: anywhere;
+  }
+
+  .app-main .responsive-data-table tbody td[dir="ltr"]::before {
+    order: 1;
+    text-align: right;
+  }
+
+  .app-main .responsive-data-table tbody td[dir="ltr"] {
+    text-align: left;
+  }
+
+  .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"] {
+    display: block;
+    border-bottom: 0;
+  }
+
+  .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"]::before {
+    display: block;
+    margin-bottom: 0.55rem;
+  }
+
+  .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"] > div {
+    max-width: 100%;
+    gap: 0.4rem;
+  }
+
+  .app-main .responsive-data-table tbody td[colspan] {
+    display: block;
+    min-height: 72px;
+    padding-block: 1.4rem;
+    border: 0;
+    text-align: center;
+  }
+
+  .app-main .responsive-data-table tbody td[colspan]::before {
+    content: none;
+  }
+}

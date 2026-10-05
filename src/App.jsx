@@ -1,15 +1,18 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import SettingsPage from './pages/SettingsPage';
-import UsersPage from './pages/UsersPage';
-import SalesPage from './pages/SalesPage';
-import NotificationsPage from './pages/NotificationsPage';
-import AdminsPage from './pages/AdminsPage';
+import LoadingSpinner from './components/LoadingSpinner';
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const SalesPage = lazy(() => import('./pages/SalesPage'));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
+const AdminsPage = lazy(() => import('./pages/AdminsPage'));
 
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
@@ -17,7 +20,14 @@ function AppRoutes() {
   if (loading) return null;
 
   return (
-    <Routes>
+    <Suspense
+      fallback={
+        <div className="route-loading">
+          <LoadingSpinner size="lg" text="جارٍ تجهيز الصفحة..." />
+        </div>
+      }
+    >
+      <Routes>
       <Route
         path="/login"
         element={currentUser ? <Navigate to="/" replace /> : <LoginPage />}
@@ -83,7 +93,8 @@ function AppRoutes() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

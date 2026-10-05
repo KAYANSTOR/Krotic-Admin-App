@@ -285,7 +285,7 @@ export default function UsersPage() {
       {/* Users Table */}
       <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="responsive-data-table w-full">
             <thead>
               <tr className="table-header">
                 <th className="text-right px-6 py-4">الشبكة</th>
@@ -306,7 +306,7 @@ export default function UsersPage() {
               ) : (
                 filteredUsers.map((user) => (
                   <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" data-label="الشبكة">
                       <div>
                         <p className="font-semibold text-gray-900">
                           {user.networkName || '—'}
@@ -314,7 +314,7 @@ export default function UsersPage() {
                         <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" data-label="النوع">
                       <div className="flex flex-col gap-1 items-start">
                         {user.is_trial ? (
                           <span className="badge-warning">تجريبي</span>
@@ -326,18 +326,18 @@ export default function UsersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
+                    <td className="px-6 py-4 text-gray-600" data-label="العمولة">
                       {user.commission_rate != null && user.commission_rate > 0 
                         ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
                         : `${globalConfig?.default_commission_rate || 5}% (عامة)`
                       }
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" data-label="الديون">
                       <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>
                         {formatNumber(user.balance)}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" data-label="تاريخ التصفية">
                       <span
                         className={`text-sm ${
                           isExpired(user.subscription_end_date)
@@ -348,7 +348,7 @@ export default function UsersPage() {
                         {formatDate(user.subscription_end_date)}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" data-label="الإجراءات السريعة">
                       <div className="flex items-center gap-1 flex-wrap">
                         {/* Financials / Billing */}
                         <button

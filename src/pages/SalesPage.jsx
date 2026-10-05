@@ -316,7 +316,7 @@ export default function SalesPage() {
                       </div>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full">
+                      <table className="responsive-data-table w-full">
                         <thead>
                           <tr className="table-header">
                             <th className="text-right px-6 py-3">التاريخ</th>
@@ -330,22 +330,22 @@ export default function SalesPage() {
                         <tbody className="divide-y divide-gray-50">
                           {stats.filteredSales.map((sale) => (
                             <tr key={sale.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-3 text-sm text-gray-600">
+                              <td className="px-6 py-3 text-sm text-gray-600" data-label="التاريخ">
                                 {formatDate(sale.createdAt)}
                               </td>
-                              <td className="px-6 py-3 text-sm" dir="ltr">
+                              <td className="px-6 py-3 text-sm" dir="ltr" data-label="الزبون">
                                 {sale.customerId || '—'}
                               </td>
-                              <td className="px-6 py-3 text-sm font-medium">
+                              <td className="px-6 py-3 text-sm font-medium" data-label="القيمة">
                                 {formatNumber(sale.faceValue)}
                               </td>
-                              <td className="px-6 py-3 text-sm text-gray-600">
+                              <td className="px-6 py-3 text-sm text-gray-600" data-label="العمولة (صراف)">
                                 {formatNumber(sale.commission)}
                               </td>
-                              <td className="px-6 py-3 text-sm font-medium">
+                              <td className="px-6 py-3 text-sm font-medium" data-label="الصافي">
                                 {formatNumber(sale.netAmount)}
                               </td>
-                              <td className="px-6 py-3">
+                              <td className="px-6 py-3" data-label="الحالة">
                                 <span
                                   className={
                                     statusLabel[sale.status]?.class || 'badge-info'

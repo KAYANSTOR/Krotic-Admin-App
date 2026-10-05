@@ -43,23 +43,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1F1F1F] flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-primary-500/25 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-primary-300/20 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary-600/10 rounded-full blur-3xl" />
-      </div>
-
+    <div className="login-screen min-h-screen bg-[#1F1F1F] flex items-center justify-center p-4 relative overflow-hidden">
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5 shadow-brand overflow-hidden bg-white">
+          <div className="login-brand-mark inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5 shadow-brand overflow-hidden bg-white">
             <img src="/icons/krotak-pro-192.png" alt="كروتك برو" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">كروتك برو</h1>
           <p className="text-stone-400 mt-2 text-sm">لوحة التحكم الإدارية</p>
         </div>
 
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-elevated p-8 border border-white/20">
+        <div className="login-panel bg-white/95 backdrop-blur-xl rounded-3xl shadow-elevated p-8 border border-white/20">
           <h2 className="text-xl font-bold text-slate-900 mb-6 text-center">
             تسجيل الدخول
           </h2>
