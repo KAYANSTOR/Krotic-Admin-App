@@ -83,11 +83,25 @@ service cloud.firestore {
     }
 
     match /networks/{userId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || isSelf(userId);
+      allow write: if isAdmin();
 
       // Network display metadata is written by the owning app account.
       match /_metadata/{documentId} {
         allow read, write: if isAdmin() || isSelf(userId);
+      }
+
+      // مبيعات التطبيق تُرفع من حساب الشبكة ليظهر في فوترة العمولات.
+      match /sales/{saleId} {
+        allow read: if isAdmin() || isSelf(userId);
+        allow create, update: if isAdmin() || isSelf(userId);
+        allow delete: if isAdmin();
+      }
+
+      // المدفوعات تُسجَّل من لوحة الإدارة فقط؛ الشبكة تقرأها.
+      match /payments/{paymentId} {
+        allow read: if isAdmin() || isSelf(userId);
+        allow write: if isAdmin();
       }
 
       match /{subcollection}/{documentId} {

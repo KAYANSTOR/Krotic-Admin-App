@@ -19,7 +19,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
-const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin';
+const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
 
 function ensureInitialized() {
   if (getApps().length > 0) return { ok: true };
@@ -130,6 +130,16 @@ export default async function handler(req, res) {
     let failed = 0;
     let target;
 
+    const androidConfig = {
+      priority: 'high',
+      notification: {
+        channelId: ANDROID_CHANNEL_ID,
+        sound: 'krotak_notify',
+        defaultSound: true,
+        notificationCount: 1,
+      },
+    };
+
     if (targetUid) {
       const devicesSnap = await getFirestore()
         .collection('users')
@@ -152,10 +162,7 @@ export default async function handler(req, res) {
         tokens: tokens.slice(0, 500),
         notification: { title, body: text },
         data,
-        android: {
-          priority: 'high',
-          notification: { channelId: ANDROID_CHANNEL_ID },
-        },
+        android: androidConfig,
       });
       sent = multicast.successCount;
       failed = multicast.failureCount;
@@ -165,10 +172,7 @@ export default async function handler(req, res) {
         topic,
         notification: { title, body: text },
         data,
-        android: {
-          priority: 'high',
-          notification: { channelId: ANDROID_CHANNEL_ID },
-        },
+        android: androidConfig,
       });
       sent = 1;
       target = `topic:${topic}`;
