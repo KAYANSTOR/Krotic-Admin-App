@@ -9,3 +9,8 @@ dist
 *serviceAccount*.json
 *firebase-adminsdk*.json
 service-account*.json
+
+# Generated from official Android app icon at build time
+scripts/app_icon_cache.png
+public/icons/
+public/favicon.ico
