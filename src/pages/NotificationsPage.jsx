@@ -74,39 +74,94 @@ export default function NotificationsPage() {
 
     setSending(true);
     try {
-      const notificationData = {
-        title: title.trim(),
-        body: message.trim(),
-        message: message.trim(),
-        audienceType: type,
-        ...(type === 'user' ? { targetUid: selectedUser } : {}),
-        data: { route: '/account-notifications' },
-        createdBy: auth.currentUser?.uid || null,
-        status: 'queued',
-        createdAt: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, 'notification_requests'), notificationData);
-      if (type === 'global') {
-        await addDoc(collection(db, 'app_settings', 'global_config', 'notifications'), {
-          ...notificationData,
-          timestamp: Date.now(),
-        });
-        toast.success('تم وضع الإشعار العام في طابور الإرسال');
-      } else {
-        const userName = users.find((u) => u.uid === selectedUser)?.name || selectedUser;
-        toast.success(`تم وضع إشعار ${userName} في طابور الإرسال`);
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) {
+        toast.error('انتهت الجلسة، يرجى تسجيل الدخول من جديد');
+        setSending(false);
+        return;
       }
 
-      // Reset form
+      // 1) الإرسال الفعلي عبر دالة Vercel الآمنة (FCM)
+      const res = await fetch('/api/send-fcm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: message.trim(),
+          data: {
+            route: '/account-notifications',
+            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+          ...(type === 'user' ? { targetUid: selectedUser } : {}),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        const errorMessages = {
+          missing_token: 'انتهت الجلسة، يرجى تسجيل الدخول من جديد',
+          invalid_token: 'انتهت الجلسة، يرجى تسجيل الدخول من جديد',
+          not_admin: 'هذا الحساب لا يملك صلاحية إرسال الإشعارات',
+          no_devices: 'لا توجد أجهزة مسجّلة لهذا المستخدم بعد',
+          server_not_configured: 'خدمة الإشعارات غير مهيأة على الخادم بعد',
+          title_and_body_required: 'يرجى ملء العنوان والنص',
+        };
+        toast.error(errorMessages[data.error] || `فشل إرسال الإشعار (${data.error || res.status})`);
+        setSending(false);
+        return;
+      }
+
+      // 2) تسجيل الإشعار في Firestore (سجل اللوحة + صندوق إشعارات التطبيق)
+      try {
+        const notificationData = {
+          title: title.trim(),
+          body: message.trim(),
+          message: message.trim(),
+          audienceType: type,
+          ...(type === 'user' ? { targetUid: selectedUser } : {}),
+          data: { route: '/account-notifications' },
+          createdBy: auth.currentUser?.uid || null,
+          status: 'sent',
+          sentCount: data.sent ?? 1,
+          createdAt: serverTimestamp(),
+        };
+
+        if (type === 'global') {
+          await addDoc(collection(db, 'app_settings', 'global_config', 'notifications'), {
+            ...notificationData,
+            timestamp: Date.now(),
+          });
+        } else {
+          await addDoc(collection(db, 'users', selectedUser, 'notifications'), {
+            title: notificationData.title,
+            message: notificationData.message,
+            is_read: false,
+            timestamp: Date.now(),
+            createdAt: serverTimestamp(),
+          });
+        }
+      } catch (logError) {
+        console.warn('Notification history write failed', logError);
+      }
+
+      if (type === 'global') {
+        toast.success('تم إرسال الإشعار لجميع الأجهزة بنجاح!');
+      } else {
+        const userName = users.find((u) => u.uid === selectedUser)?.name || selectedUser;
+        toast.success(`تم إرسال الإشعار إلى ${userName} بنجاح`);
+      }
+
+      // إعادة ضبط النموذج وتحديث القائمة
       setTitle('');
       setMessage('');
-
-      // Refresh notifications list
       fetchData();
     } catch (error) {
       console.error('Error sending notification:', error);
-      toast.error('حدث خطأ أثناء إرسال الإشعار');
+      toast.error('تعذر الاتصال بالخادم');
     }
     setSending(false);
   };
@@ -234,6 +289,10 @@ export default function NotificationsPage() {
                 </>
               )}
             </button>
+
+            <p className="text-xs text-gray-400 text-center">
+              يُرسَل الإشعار مباشرة إلى الأجهزة عبر FCM بعد التحقق من صلاحيات المدير.
+            </p>
           </form>
         </div>
 

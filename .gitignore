@@ -4,3 +4,8 @@ dist
 .env.local
 *.local
 .DS_Store
+
+# Firebase service account keys — never commit
+*serviceAccount*.json
+*firebase-adminsdk*.json
+service-account*.json

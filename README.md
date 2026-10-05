@@ -59,3 +59,8 @@ firebase deploy --only firestore:rules
 تم فصل المشروع بالكامل عن أي مشروع Firebase سابق.
 
 > مهم: نشر Vercel يحدّث واجهة الموقع فقط، ولا يحدّث قواعد Firestore. يجب تنفيذ أمر `firebase deploy --only firestore:rules` مرة واحدة من جهاز لديه صلاحية مشروع Firebase، ثم إعادة تحميل الموقع.
+
+## إشعارات FCM (عبر Vercel Serverless)
+- الإرسال يتم من صفحة `/notifications` عبر `POST /api/send-fcm` (الملف `api/send-fcm.js`).
+- يتطلب متغير البيئة `FIREBASE_SERVICE_ACCOUNT` في إعدادات مشروع Vercel — لا يوضع المفتاح في الكود أبداً.
+- راجع [notifications-deployment-ar.md](notifications-deployment-ar.md) للتفاصيل الكاملة.
