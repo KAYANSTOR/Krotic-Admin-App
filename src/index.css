@@ -8,7 +8,7 @@
   }
   
   body {
-    @apply bg-slate-50 font-sans text-slate-900 antialiased;
+    @apply bg-[#F7F4EF] font-sans text-[#292524] antialiased;
   }
 
   ::-webkit-scrollbar {
@@ -31,11 +31,11 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-2xl shadow-card border border-slate-200/80 p-6;
+    @apply bg-white rounded-2xl shadow-card border border-[#E7E2DC] p-6;
   }
 
   .btn-primary {
-    @apply bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-medium py-2.5 px-5 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md;
+    @apply bg-primary-500 hover:bg-primary-600 active:bg-primary-700 text-white font-medium py-2.5 px-5 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md;
   }
 
   .btn-secondary {
@@ -51,7 +51,7 @@
   }
 
   .input-field {
-    @apply w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 outline-none transition-all duration-200 bg-white text-slate-900 placeholder:text-slate-400;
+    @apply w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 outline-none transition-all duration-200 bg-white text-slate-900 placeholder:text-slate-400;
   }
 
   .label-field {
@@ -83,10 +83,9 @@
   }
 
   .badge-info {
-    @apply badge bg-teal-50 text-teal-700 ring-1 ring-teal-600/20;
+    @apply badge bg-primary-50 text-primary-700 ring-1 ring-primary-600/20;
   }
 
-  /* App shell */
   .app-shell {
     min-height: 100vh;
     min-height: 100dvh;
@@ -98,10 +97,9 @@
     min-height: calc(100dvh - 73px);
   }
 
-  /* Dashboard */
   .dashboard-page {
     @apply mx-auto max-w-[1500px];
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-intro {
@@ -110,35 +108,35 @@
 
   .dashboard-kicker {
     @apply mb-3 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold;
-    color: #0f766e;
-    background: #ccfbf1;
+    color: #B85C3E;
+    background: #F3C5B5;
   }
 
   .dashboard-heading {
     @apply text-2xl font-extrabold tracking-tight sm:text-3xl;
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-subheading {
     @apply mt-2 text-sm leading-6 sm:text-base;
-    color: #64748b;
+    color: #78716C;
   }
 
   .dashboard-date-card {
     @apply rounded-2xl px-5 py-3 text-right sm:min-w-[190px];
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E7E2DC;
     background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 4px 20px -4px rgba(41, 37, 36, 0.06);
   }
 
   .dashboard-date-card span {
     @apply block text-xs font-semibold;
-    color: #94a3b8;
+    color: #A8A29E;
   }
 
   .dashboard-date-card strong {
     @apply mt-1 block text-sm font-bold;
-    color: #475569;
+    color: #78716C;
   }
 
   .dashboard-maintenance {
@@ -162,8 +160,8 @@
   .dashboard-hero-card {
     @apply relative min-h-[280px] overflow-hidden rounded-[28px] p-7 text-white sm:p-8;
     isolation: isolate;
-    background: linear-gradient(125deg, #0d9488 0%, #0f766e 40%, #134e4a 100%);
-    box-shadow: 0 22px 48px rgba(13, 148, 136, 0.22);
+    background: linear-gradient(125deg, #D97757 0%, #B85C3E 45%, #9A4A32 100%);
+    box-shadow: 0 22px 48px rgba(217, 119, 87, 0.28);
   }
 
   .dashboard-hero-card::before,
@@ -261,14 +259,14 @@
 
   .dashboard-page .dashboard-stat-grid .card {
     @apply flex min-h-[132px] flex-col justify-center rounded-[22px] p-5;
-    border-color: #e2e8f0;
-    box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05);
+    border-color: #E7E2DC;
+    box-shadow: 0 4px 20px -4px rgba(41, 37, 36, 0.05);
     transition: transform 180ms ease, box-shadow 180ms ease;
   }
 
   .dashboard-page .dashboard-stat-grid .card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.1);
+    box-shadow: 0 12px 28px -6px rgba(41, 37, 36, 0.1);
   }
 
   .dashboard-page .dashboard-stat-grid .card > div {
@@ -282,25 +280,22 @@
   .dashboard-page .dashboard-stat-grid .card > div > div:last-child {
     @apply shrink-0;
     order: 1;
-  }
-
-  .dashboard-page .dashboard-stat-grid .card > div > div:last-child {
     border-radius: 15px;
   }
 
   .dashboard-page .dashboard-stat-grid .card p:first-child {
     @apply text-xs font-semibold;
-    color: #94a3b8;
+    color: #A8A29E;
   }
 
   .dashboard-page .dashboard-stat-grid .card p:nth-child(2) {
     @apply mt-1 text-2xl;
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-page .dashboard-stat-grid .card p:nth-child(3) {
     @apply text-xs;
-    color: #94a3b8;
+    color: #A8A29E;
   }
 
   .dashboard-page .dashboard-stat-grid .card:last-child {
@@ -317,12 +312,12 @@
 
   .dashboard-section-heading h2 {
     @apply mt-1 text-lg font-extrabold;
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-section-eyebrow {
     @apply text-xs font-bold;
-    color: #94a3b8;
+    color: #A8A29E;
   }
 
   .dashboard-actions-grid {
@@ -331,16 +326,16 @@
 
   .dashboard-action-card {
     @apply relative flex min-h-[112px] items-center gap-3 overflow-hidden rounded-[22px] bg-white p-5 no-underline;
-    border: 1px solid #e2e8f0;
-    color: #1e293b;
-    box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05);
+    border: 1px solid #E7E2DC;
+    color: #292524;
+    box-shadow: 0 4px 20px -4px rgba(41, 37, 36, 0.05);
     transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
   }
 
   .dashboard-action-card:hover {
     transform: translateY(-3px);
-    border-color: #99f6e4;
-    box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.1);
+    border-color: #E8A890;
+    box-shadow: 0 12px 28px -6px rgba(41, 37, 36, 0.1);
   }
 
   .dashboard-action-card > span:nth-child(2) {
@@ -351,9 +346,9 @@
     @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl;
   }
 
-  .dashboard-action-icon-teal {
-    background: #ccfbf1;
-    color: #0d9488;
+  .dashboard-action-icon-brand {
+    background: #F3C5B5;
+    color: #D97757;
   }
 
   .dashboard-action-icon-indigo {
@@ -379,7 +374,7 @@
 
   .dashboard-action-card:hover .dashboard-action-arrow {
     transform: translate(-2px, -2px);
-    color: #0d9488;
+    color: #D97757;
   }
 
   .dashboard-lower-grid {
@@ -388,8 +383,8 @@
 
   .dashboard-summary-card {
     @apply rounded-[24px] bg-white p-6;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05);
+    border: 1px solid #E7E2DC;
+    box-shadow: 0 4px 20px -4px rgba(41, 37, 36, 0.05);
   }
 
   .dashboard-summary-card .dashboard-section-heading {
@@ -406,23 +401,23 @@
 
   .dashboard-finance-row span {
     @apply text-xs font-semibold;
-    color: #94a3b8;
+    color: #A8A29E;
   }
 
   .dashboard-finance-row strong {
     @apply text-2xl font-extrabold;
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-finance-row small {
     @apply text-xs font-bold;
-    color: #64748b;
+    color: #78716C;
   }
 
   .dashboard-finance-divider {
     height: 48px;
     width: 1px;
-    background: #e2e8f0;
+    background: #E7E2DC;
   }
 
   .dashboard-status-card {
@@ -431,8 +426,8 @@
 
   .dashboard-status-dot {
     @apply h-3 w-3 rounded-full;
-    background: #14b8a6;
-    box-shadow: 0 0 0 5px #ccfbf1;
+    background: #D97757;
+    box-shadow: 0 0 0 5px #F3C5B5;
   }
 
   .dashboard-status-dot.is-warning {
@@ -446,12 +441,12 @@
 
   .dashboard-status-copy strong {
     @apply text-base font-extrabold;
-    color: #0f172a;
+    color: #292524;
   }
 
   .dashboard-status-copy span {
     @apply text-sm;
-    color: #64748b;
+    color: #78716C;
   }
 }
 
@@ -468,10 +463,10 @@
   left: 12px;
   z-index: 40;
   padding: 6px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(231, 226, 220, 0.9);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 42px rgba(41, 37, 36, 0.12);
   backdrop-filter: blur(18px);
 }
 
@@ -496,7 +491,7 @@
   gap: 5px;
   min-height: 58px;
   border-radius: 18px;
-  color: #94a3b8;
+  color: #A8A29E;
   font-size: 0.64rem;
   font-weight: 700;
   line-height: 1.15;
@@ -506,8 +501,8 @@
 }
 
 .bottom-nav-item:hover {
-  color: #0d9488;
-  background: #f0fdfa;
+  color: #D97757;
+  background: #FDF6F3;
 }
 
 .bottom-nav-item:active {
@@ -515,8 +510,8 @@
 }
 
 .bottom-nav-item.is-active {
-  color: #0d9488;
-  background: #ccfbf1;
+  color: #B85C3E;
+  background: #F3C5B5;
 }
 
 .bottom-nav-icon {
