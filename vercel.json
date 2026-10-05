@@ -3,7 +3,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/send-fcm.cjs": {
+    "api/send-fcm.js": {
       "maxDuration": 30,
       "memory": 512
     }
