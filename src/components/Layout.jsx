@@ -40,11 +40,11 @@ export default function Layout({ children }) {
   };
 
   return (
-    <div className="app-shell min-h-screen bg-slate-50">
+    <div className="app-shell min-h-screen bg-[#F7F4EF]">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="lg:mr-72">
-        <header className="app-header sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 lg:px-8 py-3.5">
+        <header className="app-header sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-[#E7E2DC] px-4 lg:px-8 py-3.5">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -55,8 +55,8 @@ export default function Layout({ children }) {
 
             <div className="flex items-center gap-3 mr-auto lg:mr-0">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-gradient-to-br from-teal-100 to-teal-50 rounded-full flex items-center justify-center ring-1 ring-teal-200/50">
-                  <User className="w-4.5 h-4.5 text-teal-700" />
+                <div className="w-9 h-9 bg-gradient-to-br from-primary-100 to-primary-50 rounded-full flex items-center justify-center ring-1 ring-primary-200/60">
+                  <User className="w-4.5 h-4.5 text-primary-700" />
                 </div>
                 <div className="hidden sm:block">
                   <p className="text-sm font-semibold text-slate-900 leading-tight">
@@ -69,7 +69,7 @@ export default function Layout({ children }) {
               {installPrompt && (
                 <button
                   onClick={handleInstall}
-                  className="flex items-center gap-2 rounded-xl bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+                  className="flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100"
                 >
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">تثبيت</span>
