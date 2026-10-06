@@ -3,20 +3,13 @@ import { Link } from 'react-router-dom';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  Activity,
-  AlertTriangle,
-  ArrowUpRight,
-  ChevronDown,
-  Coins,
-  CreditCard,
-  Phone,
-  Sparkles,
-  UserCheck,
-  UserPlus,
-  Users,
+  Activity, AlertTriangle, ArrowUpRight, ChevronDown, Coins,
+  CreditCard, Phone, Sparkles, UserCheck, UserPlus, Users,
 } from 'lucide-react';
-import StatsCard from '../components/StatsCard';
-import LoadingSpinner from '../components/LoadingSpinner';
+import StatCard from '../components/ui/StatCard';
+import IconTile from '../components/ui/IconTile';
+import { PageSkeleton } from '../components/ui/Skeleton';
+import { formatNumber, formatToday } from '../lib/format';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -55,9 +48,7 @@ export default function DashboardPage() {
           ? user.commission_rate
           : globalCommission;
 
-        const salesSnap = await getDocs(
-          collection(db, 'networks', user.uid, 'sales')
-        );
+        const salesSnap = await getDocs(collection(db, 'networks', user.uid, 'sales'));
         salesSnap.forEach((saleDoc) => {
           const sale = saleDoc.data();
           if (sale.status === 'COMPLETED') {
@@ -70,13 +61,8 @@ export default function DashboardPage() {
       }
 
       setStats({
-        totalUsers,
-        trialUsers,
-        activeUsers,
-        blockedUsers,
-        totalSales,
-        totalAdminEarnings,
-        totalTransactions,
+        totalUsers, trialUsers, activeUsers, blockedUsers,
+        totalSales, totalAdminEarnings, totalTransactions,
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -84,48 +70,30 @@ export default function DashboardPage() {
     setLoading(false);
   };
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (loading) return <PageSkeleton />;
 
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat('ar-YE').format(Math.round(num || 0));
-  };
-
-  const today = new Intl.DateTimeFormat('ar-YE', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date());
+  const maintenance = appStatus && !appStatus.is_app_active;
 
   return (
     <div className="dashboard-page">
       <section className="dashboard-intro">
         <div>
-          <div className="dashboard-kicker">
-            <Sparkles className="h-4 w-4" />
-            <span>ملخص لوحة الإدارة</span>
-          </div>
+          <span className="dashboard-kicker"><Sparkles className="w-4 h-4" /> ملخص لوحة الإدارة</span>
           <h1 className="dashboard-heading">مرحبًا بك في لوحة التحكم</h1>
-          <p className="dashboard-subheading">
-            نظرة واضحة وسريعة على نشاط الشبكة وأداء الحسابات.
-          </p>
+          <p className="dashboard-subheading">نظرة واضحة وسريعة على نشاط الشبكة وأداء الحسابات.</p>
         </div>
         <div className="dashboard-date-card">
           <span>اليوم</span>
-          <strong>{today}</strong>
+          <strong>{formatToday()}</strong>
         </div>
       </section>
 
-      {appStatus && !appStatus.is_app_active && (
+      {maintenance && (
         <div className="dashboard-maintenance" role="status">
-          <div className="dashboard-maintenance-icon">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
+          <span className="dashboard-maintenance-icon"><AlertTriangle className="w-5 h-5" /></span>
           <div>
             <p className="font-semibold">التطبيق متوقف حالياً (وضع الصيانة)</p>
-            {appStatus.maintenance_message && (
-              <p className="mt-1 text-sm">{appStatus.maintenance_message}</p>
-            )}
+            {appStatus.maintenance_message && <p className="mt-1 text-sm">{appStatus.maintenance_message}</p>}
           </div>
         </div>
       )}
@@ -137,10 +105,7 @@ export default function DashboardPage() {
               <div className="dashboard-hero-content">
                 <div className="dashboard-hero-topline">
                   <span>إجمالي المبيعات</span>
-                  <span className="dashboard-period-pill">
-                    <ChevronDown className="h-4 w-4" />
-                    كل الوقت
-                  </span>
+                  <span className="dashboard-period-pill"><ChevronDown className="w-4 h-4" /> كل الوقت</span>
                 </div>
                 <div className="dashboard-hero-value">
                   <strong>{formatNumber(stats.totalSales)}</strong>
@@ -153,29 +118,17 @@ export default function DashboardPage() {
                 <strong>{formatNumber(stats.totalAdminEarnings)} <small>ريال يمني</small></strong>
               </div>
               <svg className="dashboard-hero-chart" viewBox="0 0 520 180" fill="none" aria-hidden="true">
-                <path
-                  d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9"
-                  stroke="currentColor"
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9"
-                  stroke="rgba(255,255,255,0.38)"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                <path d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9" stroke="rgba(255,255,255,0.38)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
 
             <div className="dashboard-stat-grid">
-              <StatsCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} color="blue" />
-              <StatsCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} color="green" />
-              <StatsCard title="مستخدمون تجريبيون" value={formatNumber(stats.trialUsers)} icon={Activity} color="orange" />
-              <StatsCard title="محظورون" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} color="red" />
-              <StatsCard title="عمليات البيع الناجحة" value={formatNumber(stats.totalTransactions)} icon={Coins} color="purple" />
+              <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} tone="brand" iconStart />
+              <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" iconStart />
+              <StatCard title="مستخدمون تجريبيون" value={formatNumber(stats.trialUsers)} icon={Activity} tone="warning" iconStart />
+              <StatCard title="محظورون" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} tone="danger" iconStart />
+              <StatCard title="عمليات البيع الناجحة" value={formatNumber(stats.totalTransactions)} icon={Coins} tone="gold" iconStart />
             </div>
           </section>
 
@@ -185,27 +138,27 @@ export default function DashboardPage() {
                 <span className="dashboard-section-eyebrow">تنقل أسرع</span>
                 <h2>الوصول السريع</h2>
               </div>
-              <ArrowUpRight className="h-5 w-5 text-slate-300" />
+              <ArrowUpRight className="w-5 h-5 text-slate-300" aria-hidden="true" />
             </div>
             <div className="dashboard-actions-grid">
               <Link to="/users" className="dashboard-action-card">
-                <span className="dashboard-action-icon dashboard-action-icon-brand"><UserPlus className="h-6 w-6" /></span>
-                <span>إدارة المستخدمين</span>
+                <IconTile icon={UserPlus} tone="brand" />
+                <span className="dashboard-action-label">إدارة المستخدمين</span>
                 <ArrowUpRight className="dashboard-action-arrow" />
               </Link>
               <Link to="/sales" className="dashboard-action-card">
-                <span className="dashboard-action-icon dashboard-action-icon-indigo"><CreditCard className="h-6 w-6" /></span>
-                <span>متابعة المبيعات</span>
+                <IconTile icon={CreditCard} tone="gold" />
+                <span className="dashboard-action-label">متابعة المبيعات</span>
                 <ArrowUpRight className="dashboard-action-arrow" />
               </Link>
               <Link to="/settings" className="dashboard-action-card">
-                <span className="dashboard-action-icon dashboard-action-icon-amber"><Phone className="h-6 w-6" /></span>
-                <span>إعدادات النظام</span>
+                <IconTile icon={Phone} tone="neutral" />
+                <span className="dashboard-action-label">إعدادات النظام</span>
                 <ArrowUpRight className="dashboard-action-arrow" />
               </Link>
               <Link to="/admins" className="dashboard-action-card">
-                <span className="dashboard-action-icon dashboard-action-icon-violet"><Users className="h-6 w-6" /></span>
-                <span>إدارة المدراء</span>
+                <IconTile icon={Users} tone="brand" />
+                <span className="dashboard-action-label">إدارة المدراء</span>
                 <ArrowUpRight className="dashboard-action-arrow" />
               </Link>
             </div>
@@ -218,7 +171,7 @@ export default function DashboardPage() {
                   <span className="dashboard-section-eyebrow">نظرة مالية</span>
                   <h2>ملخص الإيرادات</h2>
                 </div>
-                <Coins className="h-5 w-5 text-primary-500" />
+                <Coins className="w-5 h-5 text-primary-500" aria-hidden="true" />
               </div>
               <div className="dashboard-finance-row">
                 <div>
@@ -239,10 +192,10 @@ export default function DashboardPage() {
                   <span className="dashboard-section-eyebrow">المؤشر التشغيلي</span>
                   <h2>حالة التطبيق</h2>
                 </div>
-                <span className={`dashboard-status-dot ${appStatus && !appStatus.is_app_active ? 'is-warning' : ''}`} />
+                <span className={`dashboard-status-dot ${maintenance ? 'is-warning' : ''}`} />
               </div>
               <div className="dashboard-status-copy">
-                <strong>{appStatus && !appStatus.is_app_active ? 'وضع الصيانة مفعّل' : 'التطبيق يعمل بشكل طبيعي'}</strong>
+                <strong>{maintenance ? 'وضع الصيانة مفعّل' : 'التطبيق يعمل بشكل طبيعي'}</strong>
                 <span>{formatNumber(stats.totalTransactions)} عملية بيع مكتملة حتى الآن</span>
               </div>
             </div>

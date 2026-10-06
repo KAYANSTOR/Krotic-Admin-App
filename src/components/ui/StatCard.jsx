@@ -1,0 +1,27 @@
+import { cn } from '../../lib/cn';
+
+const TONES = {
+  brand: 'icon-tile--brand',
+  success: 'icon-tile--success',
+  warning: 'icon-tile--warning',
+  danger: 'icon-tile--danger',
+  gold: 'icon-tile--gold',
+  neutral: 'icon-tile--neutral',
+};
+
+export default function StatCard({ title, value, icon: Icon, tone = 'brand', subtitle, iconStart = false, className }) {
+  return (
+    <div className={cn('card stat-card', iconStart && 'stat-card--icon-start', className)}>
+      <div className="stat-card__body">
+        <p className="stat-card__label">{title}</p>
+        <p className="stat-card__value">{value}</p>
+        {subtitle && <p className="stat-card__hint">{subtitle}</p>}
+      </div>
+      {Icon && (
+        <span className={cn('icon-tile stat-card__icon', TONES[tone] || TONES.brand)}>
+          <Icon className="w-5 h-5" aria-hidden="true" />
+        </span>
+      )}
+    </div>
+  );
+}

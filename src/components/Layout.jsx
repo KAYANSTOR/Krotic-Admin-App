@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
-import { Download, Menu, LogOut, User } from 'lucide-react';
+import { Download, Menu, LogOut } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,7 +17,6 @@ export default function Layout({ children }) {
       event.preventDefault();
       setInstallPrompt(event);
     };
-
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
@@ -39,47 +38,41 @@ export default function Layout({ children }) {
     }
   };
 
+  const initial = (adminData?.name || 'م').trim().charAt(0);
+
   return (
-    <div className="app-shell min-h-screen bg-[#F7F4EF]">
+    <div className="app-shell">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="lg:mr-72">
-        <header className="app-header sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-[#E7E2DC] px-4 lg:px-8 py-3.5">
-          <div className="flex items-center justify-between">
+      <div className="app-body lg:ms-72">
+        <header className="app-header">
+          <div className="app-header__inner">
             <button
+              type="button"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl hover:bg-slate-100 transition-colors"
+              className="app-header__menu lg:hidden"
+              aria-label="فتح القائمة"
             >
-              <Menu className="w-6 h-6 text-slate-600" />
+              <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 mr-auto lg:mr-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-gradient-to-br from-primary-100 to-primary-50 rounded-full flex items-center justify-center ring-1 ring-primary-200/60">
-                  <User className="w-4.5 h-4.5 text-primary-700" />
-                </div>
+            <div className="app-header__actions">
+              <div className="admin-chip">
+                <span className="admin-chip__avatar">{initial}</span>
                 <div className="hidden sm:block">
-                  <p className="text-sm font-semibold text-slate-900 leading-tight">
-                    {adminData?.name || 'المدير'}
-                  </p>
-                  <p className="text-xs text-slate-500">{adminData?.email}</p>
+                  <p className="admin-chip__name">{adminData?.name || 'المدير'}</p>
+                  <p className="admin-chip__email">{adminData?.email}</p>
                 </div>
               </div>
 
               {installPrompt && (
-                <button
-                  onClick={handleInstall}
-                  className="flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100"
-                >
-                  <Download className="h-4 w-4" />
+                <button type="button" onClick={handleInstall} className="app-header__install">
+                  <Download className="w-4 h-4" />
                   <span className="hidden sm:inline">تثبيت</span>
                 </button>
               )}
 
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-              >
+              <button type="button" onClick={handleLogout} className="app-header__logout" title="خروج">
                 <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">خروج</span>
               </button>
@@ -87,7 +80,7 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <main className="app-main p-4 pb-28 lg:p-8 lg:pb-8">{children}</main>
+        <main className="app-main">{children}</main>
         <BottomNav />
       </div>
     </div>

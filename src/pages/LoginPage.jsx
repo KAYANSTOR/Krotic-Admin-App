@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Button from '../components/ui/Button';
+import { Field, Input } from '../components/ui/Field';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -43,71 +45,48 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login-screen min-h-screen bg-[#1F1F1F] flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="login-screen">
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-10">
-          <div className="login-brand-mark inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5 shadow-brand overflow-hidden bg-white">
+          <div className="login-brand-mark">
             <img src="/icons/krotak-pro-192.png" alt="كروتك برو" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">كروتك برو</h1>
           <p className="text-stone-400 mt-2 text-sm">لوحة التحكم الإدارية</p>
         </div>
 
-        <div className="login-panel bg-white/95 backdrop-blur-xl rounded-3xl shadow-elevated p-8 border border-white/20">
-          <h2 className="text-xl font-bold text-slate-900 mb-6 text-center">
-            تسجيل الدخول
-          </h2>
+        <div className="login-panel">
+          <h2 className="text-xl font-bold text-slate-900 mb-6 text-center">تسجيل الدخول</h2>
 
           <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="label-field">البريد الإلكتروني</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input-field"
-                placeholder="admin@example.com"
-                required
-                autoComplete="email"
+            <Field label="البريد الإلكتروني">
+              <Input
+                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@example.com" required autoComplete="email"
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="label-field">كلمة المرور</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-field pl-11"
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
+            <Field label="كلمة المرور">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••" required autoComplete="current-password"
+                endAdornment={
+                  <button
+                    type="button"
+                    className="field-adorn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                }
+              />
+            </Field>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-primary flex items-center justify-center gap-2 py-3.5 text-base"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <LogIn className="w-5 h-5" />
-                  دخول
-                </>
-              )}
-            </button>
+            <Button type="submit" variant="primary" block size="lg" loading={loading} icon={!loading ? LogIn : null}>
+              دخول
+            </Button>
           </form>
         </div>
 

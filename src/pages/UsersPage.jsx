@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, getDoc, updateDoc, Timestamp, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  Users, Search, UserCheck, UserX, RefreshCw, Edit, Ban,
-  CheckCircle, ArrowUpDown, Filter, DollarSign, CalendarPlus
+  Users, Search, UserCheck, Ban, RefreshCw, Edit,
+  CheckCircle, DollarSign, CalendarPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
+import PageHeader from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import { SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { formatNumber, formatDate, isExpired } from '../lib/format';
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -17,7 +22,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
-  
+
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -29,7 +34,6 @@ export default function UsersPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch global config for default commission
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       let globalCommission = 5;
       if (configDoc.exists()) {
@@ -38,18 +42,14 @@ export default function UsersPage() {
         globalCommission = configData.default_commission_rate || 5;
       }
 
-      // Fetch users
       const usersSnap = await getDocs(collection(db, 'users'));
       const usersData = [];
 
       for (const userDoc of usersSnap.docs) {
         const userData = { uid: userDoc.id, ...userDoc.data() };
 
-        // Fetch network metadata
         try {
-          const metaDoc = await getDoc(
-            doc(db, 'networks', userDoc.id, '_metadata', 'info')
-          );
+          const metaDoc = await getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info'));
           if (metaDoc.exists()) {
             const meta = metaDoc.data();
             userData.networkName = meta.name || '';
@@ -59,15 +59,14 @@ export default function UsersPage() {
           console.warn('Could not fetch metadata for', userDoc.id);
         }
 
-        // Fetch Sales & Payments to calculate balance
         let totalDue = 0;
         let totalPaid = 0;
-        const activeRate = (userData.commission_rate != null && userData.commission_rate > 0) 
-          ? userData.commission_rate 
+        const activeRate = (userData.commission_rate != null && userData.commission_rate > 0)
+          ? userData.commission_rate
           : globalCommission;
 
         const salesSnap = await getDocs(collection(db, 'networks', userDoc.id, 'sales'));
-        salesSnap.forEach(saleDoc => {
+        salesSnap.forEach((saleDoc) => {
           const sale = saleDoc.data();
           if (sale.status === 'COMPLETED') {
             totalDue += (sale.faceValue || 0) * (activeRate / 100);
@@ -75,7 +74,7 @@ export default function UsersPage() {
         });
 
         const paymentsSnap = await getDocs(collection(db, 'networks', userDoc.id, 'payments'));
-        paymentsSnap.forEach(payDoc => {
+        paymentsSnap.forEach((payDoc) => {
           totalPaid += (payDoc.data().amount || 0);
         });
 
@@ -102,9 +101,7 @@ export default function UsersPage() {
       action: async () => {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
-          setUsers((prev) =>
-            prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u))
-          );
+          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
           toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
         } catch (error) {
           toast.error('حدث خطأ');
@@ -122,9 +119,7 @@ export default function UsersPage() {
       action: async () => {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
-          setUsers((prev) =>
-            prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u))
-          );
+          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
           toast.success('تم تحويل المستخدم إلى رسمي');
         } catch (error) {
           toast.error('حدث خطأ');
@@ -135,18 +130,11 @@ export default function UsersPage() {
   };
 
   const handleQuickRenew = async (user) => {
-    // Calculate last day of next month
     const now = new Date();
-    // next month (0-indexed)
     const nextMonth = now.getMonth() + 1;
-    // Year might roll over if current is December
     const year = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear();
     const actualNextMonth = nextMonth % 12;
-    
-    // Setting day to 0 gets the last day of the previous month.
-    // So to get last day of next month, we need the 0th day of the month after next month.
     const lastDayOfNextMonth = new Date(year, actualNextMonth + 1, 0);
-    // Set time to end of day
     lastDayOfNextMonth.setHours(23, 59, 59, 999);
 
     setConfirmAction({
@@ -157,9 +145,7 @@ export default function UsersPage() {
         try {
           const newTimestamp = Timestamp.fromDate(lastDayOfNextMonth);
           await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
-          setUsers((prev) =>
-            prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u))
-          );
+          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
           toast.success('تم التجديد بنجاح');
         } catch (error) {
           toast.error('حدث خطأ أثناء التجديد');
@@ -173,14 +159,10 @@ export default function UsersPage() {
     try {
       const firestoreUpdates = { ...updates };
       if (updates.subscription_end_date) {
-        firestoreUpdates.subscription_end_date = Timestamp.fromDate(
-          new Date(updates.subscription_end_date)
-        );
+        firestoreUpdates.subscription_end_date = Timestamp.fromDate(new Date(updates.subscription_end_date));
       }
       await updateDoc(doc(db, 'users', uid), firestoreUpdates);
-      setUsers((prev) =>
-        prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u))
-      );
+      setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
       setEditingUser(null);
       toast.success('تم حفظ التعديلات بنجاح');
     } catch (error) {
@@ -189,39 +171,6 @@ export default function UsersPage() {
     }
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '—';
-    let date;
-    if (timestamp.toDate) {
-      date = timestamp.toDate();
-    } else if (timestamp.seconds) {
-      date = new Date(timestamp.seconds * 1000);
-    } else if (typeof timestamp === 'number') {
-      date = new Date(timestamp);
-    } else {
-      date = new Date(timestamp);
-    }
-    return date.toLocaleDateString('ar-IQ', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const isExpired = (timestamp) => {
-    if (!timestamp) return false;
-    let date;
-    if (timestamp.toDate) {
-      date = timestamp.toDate();
-    } else if (timestamp.seconds) {
-      date = new Date(timestamp.seconds * 1000);
-    } else {
-      date = new Date(timestamp);
-    }
-    return date < new Date();
-  };
-
-  // Filter users
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
       (user.networkName || '').includes(searchTerm) ||
@@ -235,37 +184,34 @@ export default function UsersPage() {
     return matchesSearch;
   });
 
-  const formatNumber = (num) => new Intl.NumberFormat('ar-YE').format(Math.round(num || 0));
-
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="إدارة المستخدمين والفوترة" description="جارٍ التحميل..." />
+        <Card flush><SkeletonTable rows={6} /></Card>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <div>
-          <h1 className="page-title flex items-center gap-3">
-            <Users className="w-7 h-7 text-primary-600" />
-            إدارة المستخدمين والفوترة
-          </h1>
-          <p className="text-gray-500 mt-1">{users.length} مستخدم مسجل</p>
-        </div>
-        <button onClick={fetchData} className="btn-secondary flex items-center gap-2">
-          <RefreshCw className="w-4 h-4" />
-          تحديث البيانات
-        </button>
-      </div>
+      <PageHeader
+        icon={Users}
+        title="إدارة المستخدمين والفوترة"
+        description={`${users.length} مستخدم مسجل`}
+        actions={<Button variant="secondary" icon={RefreshCw} onClick={fetchData}>تحديث البيانات</Button>}
+      />
 
-      {/* Filters */}
-      <div className="card mb-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+      <Card className="mb-6">
+        <div className="toolbar">
+          <div className="relative flex-1">
+            <Search className="field-affix field-affix--lead w-5 h-5" aria-hidden="true" />
             <input
               type="text"
               placeholder="بحث بالاسم، رقم الهاتف..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field pr-10"
+              className="input-field input-field--lead"
             />
           </div>
           <select
@@ -280,10 +226,9 @@ export default function UsersPage() {
             <option value="blocked">محظور</option>
           </select>
         </div>
-      </div>
+      </Card>
 
-      {/* Users Table */}
-      <div className="card overflow-hidden p-0">
+      <Card flush>
         <div className="overflow-x-auto">
           <table className="responsive-data-table w-full">
             <thead>
@@ -299,111 +244,59 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    لا يوجد مستخدمين
-                  </td>
+                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">لا يوجد مستخدمين</td>
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
                   <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4" data-label="الشبكة">
                       <div>
-                        <p className="font-semibold text-gray-900">
-                          {user.networkName || '—'}
-                        </p>
+                        <p className="font-semibold text-gray-900">{user.networkName || '—'}</p>
                         <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
                       </div>
                     </td>
                     <td className="px-6 py-4" data-label="النوع">
                       <div className="flex flex-col gap-1 items-start">
-                        {user.is_trial ? (
-                          <span className="badge-warning">تجريبي</span>
-                        ) : (
-                          <span className="badge-success">رسمي</span>
-                        )}
-                        {user.is_active === false && (
-                          <span className="badge-danger">محظور</span>
-                        )}
+                        {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
+                        {user.is_active === false && <Badge tone="danger">محظور</Badge>}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600" data-label="العمولة">
-                      {user.commission_rate != null && user.commission_rate > 0 
+                      {user.commission_rate != null && user.commission_rate > 0
                         ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
-                        : `${globalConfig?.default_commission_rate || 5}% (عامة)`
-                      }
+                        : `${globalConfig?.default_commission_rate || 5}% (عامة)`}
                     </td>
                     <td className="px-6 py-4" data-label="الديون">
-                      <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                        {formatNumber(user.balance)}
-                      </span>
+                      <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatNumber(user.balance)}</span>
                     </td>
                     <td className="px-6 py-4" data-label="تاريخ التصفية">
-                      <span
-                        className={`text-sm ${
-                          isExpired(user.subscription_end_date)
-                            ? 'text-red-600 font-semibold'
-                            : 'text-gray-600'
-                        }`}
-                      >
+                      <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
                         {formatDate(user.subscription_end_date)}
                       </span>
                     </td>
                     <td className="px-6 py-4" data-label="الإجراءات السريعة">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {/* Financials / Billing */}
-                        <button
-                          onClick={() => setBillingUser(user)}
-                          className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg flex items-center gap-1"
-                          title="الفوترة والدفعات"
-                        >
+                        <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
                           <DollarSign className="w-4 h-4" />
                           <span className="text-xs font-medium">الفوترة</span>
                         </button>
-                        
-                        {/* Quick Renew */}
-                        <button
-                          onClick={() => handleQuickRenew(user)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1"
-                          title="تجديد لآخر يوم من الشهر القادم"
-                        >
+                        <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم">
                           <CalendarPlus className="w-4 h-4" />
                         </button>
-
-                        {/* Edit Settings */}
-                        <button
-                          onClick={() => setEditingUser(user)}
-                          className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                          title="تعديل الإعدادات"
-                        >
+                        <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
                           <Edit className="w-4 h-4" />
                         </button>
-
-                        {/* Make Official */}
                         {user.is_trial && (
-                          <button
-                            onClick={() => handleMakeOfficial(user)}
-                            className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg"
-                            title="تحويل لرسمي"
-                          >
+                          <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                             <CheckCircle className="w-4 h-4" />
                           </button>
                         )}
-
-                        {/* Ban / Activate */}
                         <button
                           onClick={() => handleToggleActive(user)}
-                          className={`p-2 rounded-lg ${
-                            user.is_active === false
-                              ? 'text-emerald-600 hover:bg-emerald-50'
-                              : 'text-red-600 hover:bg-red-50'
-                          }`}
+                          className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
                           title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
                         >
-                          {user.is_active === false ? (
-                            <UserCheck className="w-4 h-4" />
-                          ) : (
-                            <Ban className="w-4 h-4" />
-                          )}
+                          {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                         </button>
                       </div>
                     </td>
@@ -413,9 +306,8 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
 
-      {/* Edit Settings Modal */}
       <UserEditModal
         isOpen={!!editingUser}
         onClose={() => setEditingUser(null)}
@@ -423,25 +315,17 @@ export default function UsersPage() {
         onSave={handleSaveEdit}
       />
 
-      {/* Billing Modal */}
       <UserBillingModal
         isOpen={!!billingUser}
-        onClose={() => {
-          setBillingUser(null);
-          fetchData(); // Refresh list to get updated balances
-        }}
+        onClose={() => { setBillingUser(null); fetchData(); }}
         user={billingUser}
         globalCommission={globalConfig?.default_commission_rate || 5}
       />
 
-      {/* Confirm Dialog */}
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={() => {
-          confirmAction?.action();
-          setConfirmAction(null);
-        }}
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null); }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
