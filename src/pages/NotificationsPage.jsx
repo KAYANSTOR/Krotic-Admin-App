@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, addDoc, doc, getDoc, query, orderBy, limit, serverTimestamp
+  collection, collectionGroup, getDocs, doc, getDoc, query, orderBy, limit,
+  serverTimestamp, deleteDoc, setDoc, updateDoc, writeBatch, where
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { mapWithConcurrency } from '../lib/mapWithConcurrency';
 import {
-  Bell, Send, Users, User, Globe, History, RefreshCw
+  Bell, Send, Users, User, Globe, History, RefreshCw, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -17,6 +20,11 @@ export default function NotificationsPage() {
   const [sending, setSending] = useState(false);
   const [users, setUsers] = useState([]);
   const [recentNotifications, setRecentNotifications] = useState([]);
+  const [historyUserUid, setHistoryUserUid] = useState('');
+  const [userNotifications, setUserNotifications] = useState([]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [loadingUserHistory, setLoadingUserHistory] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,40 +33,131 @@ export default function NotificationsPage() {
 
   const fetchData = async () => {
     try {
-      // Fetch users for dropdown
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const usersData = [];
-      for (const userDoc of usersSnap.docs) {
-        let name = userDoc.id;
-        try {
-          const metaDoc = await getDoc(
-            doc(db, 'networks', userDoc.id, '_metadata', 'info')
-          );
-          if (metaDoc.exists()) {
-            name = metaDoc.data().name || userDoc.id;
+      const [usersSnap, historyResult, legacyResult] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(query(
+          collection(db, 'admin_notification_history'),
+          orderBy('timestamp', 'desc'),
+          limit(20),
+        )).then((snapshot) => ({ snapshot })).catch((error) => ({ error })),
+        getDocs(query(
+          collection(db, 'app_settings', 'global_config', 'notifications'),
+          orderBy('timestamp', 'desc'),
+          limit(20),
+        )).then((snapshot) => ({ snapshot })).catch((error) => ({ error })),
+      ]);
+      const usersData = await mapWithConcurrency(usersSnap.docs, 8, async (userDoc) => {
+        const userData = userDoc.data();
+        let name = userData.network_name || userDoc.id;
+        if (!userData.network_name) {
+          try {
+            const metaDoc = await getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info'));
+            if (metaDoc.exists()) name = metaDoc.data().name || userDoc.id;
+          } catch (error) {
+            console.warn('Could not fetch metadata for', userDoc.id);
           }
-        } catch (e) {}
-        usersData.push({ uid: userDoc.id, name });
-      }
+        }
+        return { uid: userDoc.id, name };
+      });
       setUsers(usersData);
 
-      // Fetch recent global notifications
-      try {
-        const notifSnap = await getDocs(
-          collection(db, 'app_settings', 'global_config', 'notifications')
-        );
-        const notifs = [];
-        notifSnap.forEach((d) => notifs.push({ id: d.id, ...d.data(), type: 'global' }));
-        notifs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        setRecentNotifications(notifs.slice(0, 20));
-      } catch (e) {
-        console.warn('Could not fetch notifications history');
-      }
+      const history = historyResult.snapshot?.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        source: 'history',
+      })) || [];
+      const legacy = legacyResult.snapshot?.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        audienceType: 'global',
+        source: 'legacy',
+      })) || [];
+      const toMillis = (value) => value?.toMillis?.() ?? Number(value || 0);
+      setRecentNotifications([...history, ...legacy]
+        .sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp))
+        .slice(0, 20));
+      if (!historyResult.snapshot) console.warn('Could not fetch admin notification history:', historyResult.error);
+      if (!legacyResult.snapshot) console.warn('Could not fetch legacy notifications history:', legacyResult.error);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('خطأ في تحميل البيانات');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const fetchUserInbox = async (uid) => {
+    setHistoryUserUid(uid);
+    if (!uid) {
+      setUserNotifications([]);
+      return;
+    }
+    setLoadingUserHistory(true);
+    try {
+      const inboxSnap = await getDocs(query(
+        collection(db, 'users', uid, 'notifications'),
+        orderBy('timestamp', 'desc'),
+        limit(20),
+      ));
+      setUserNotifications(inboxSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        source: 'userInbox',
+        targetUid: uid,
+      })));
+    } catch (error) {
+      console.error('Error fetching user notification history:', error);
+      toast.error('تعذر تحميل إشعارات الحساب');
+    } finally {
+      setLoadingUserHistory(false);
+    }
+  };
+
+  const handleDeleteNotification = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.source === 'legacy') {
+        await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
+      } else if (deleteTarget.source === 'userInbox') {
+        await deleteDoc(doc(db, 'users', deleteTarget.targetUid, 'notifications', deleteTarget.id));
+      } else {
+        if (deleteTarget.audienceType === 'global' && deleteTarget.broadcastId) {
+          const copies = await getDocs(query(
+            collectionGroup(db, 'notifications'),
+            where('broadcastId', '==', deleteTarget.broadcastId),
+          ));
+          for (let start = 0; start < copies.docs.length; start += 400) {
+            const batch = writeBatch(db);
+            copies.docs.slice(start, start + 400).forEach((copy) => batch.delete(copy.ref));
+            await batch.commit();
+          }
+        } else if (deleteTarget.targetUid && deleteTarget.inboxNotificationId) {
+          await deleteDoc(doc(
+            db,
+            'users',
+            deleteTarget.targetUid,
+            'notifications',
+            deleteTarget.inboxNotificationId,
+          ));
+        }
+        await deleteDoc(doc(db, 'admin_notification_history', deleteTarget.id));
+      }
+
+      if (deleteTarget.source === 'userInbox') {
+        await fetchUserInbox(deleteTarget.targetUid);
+        toast.success('تم حذف الإشعار من صندوق الحساب');
+      } else {
+        await fetchData();
+        toast.success('تم حذف الإشعار من سجل الإدارة وصناديق التطبيق');
+      }
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      toast.error('تعذر حذف الإشعار');
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   const handleSend = async (e) => {
@@ -115,37 +214,66 @@ export default function NotificationsPage() {
         return;
       }
 
-      // 2) تسجيل الإشعار في Firestore (سجل اللوحة + صندوق إشعارات التطبيق)
+      // Keep admin history private, and materialize inbox items only for current accounts.
+      let createdHistoryRef = null;
       try {
+        const historyRef = doc(collection(db, 'admin_notification_history'));
+        createdHistoryRef = historyRef;
+        const sentAt = Date.now();
         const notificationData = {
           title: title.trim(),
           body: message.trim(),
           message: message.trim(),
           audienceType: type,
-          ...(type === 'user' ? { targetUid: selectedUser } : {}),
+          ...(type === 'user'
+            ? { targetUid: selectedUser, inboxNotificationId: historyRef.id }
+            : { broadcastId: historyRef.id, inboxRecipientCount: users.length }),
           data: { route: '/account-notifications' },
           createdBy: auth.currentUser?.uid || null,
           status: 'sent',
           sentCount: data.sent ?? 1,
+          timestamp: sentAt,
           createdAt: serverTimestamp(),
         };
 
+        await setDoc(historyRef, notificationData);
         if (type === 'global') {
-          await addDoc(collection(db, 'app_settings', 'global_config', 'notifications'), {
-            ...notificationData,
-            timestamp: Date.now(),
-          });
+          for (let start = 0; start < users.length; start += 400) {
+            const batch = writeBatch(db);
+            users.slice(start, start + 400).forEach((user) => {
+              batch.set(doc(db, 'users', user.uid, 'notifications', historyRef.id), {
+                title: notificationData.title,
+                message: notificationData.message,
+                body: notificationData.body,
+                is_read: false,
+                timestamp: sentAt,
+                createdAt: serverTimestamp(),
+                broadcastId: historyRef.id,
+              });
+            });
+            await batch.commit();
+          }
         } else {
-          await addDoc(collection(db, 'users', selectedUser, 'notifications'), {
+          await setDoc(doc(db, 'users', selectedUser, 'notifications', historyRef.id), {
             title: notificationData.title,
             message: notificationData.message,
+            body: notificationData.body,
             is_read: false,
-            timestamp: Date.now(),
+            timestamp: sentAt,
             createdAt: serverTimestamp(),
           });
         }
       } catch (logError) {
-        console.warn('Notification history write failed', logError);
+        console.error('Notification inbox/history write failed after FCM send:', logError);
+        if (createdHistoryRef) {
+          await updateDoc(createdHistoryRef, { status: 'partial' }).catch(() => undefined);
+        }
+        toast.error('أُرسل التنبيه عبر FCM، لكن تعذر حفظه كاملًا في سجل/صندوق الإشعارات');
+        setTitle('');
+        setMessage('');
+        await fetchData();
+        setSending(false);
+        return;
       }
 
       if (type === 'global') {
@@ -158,7 +286,7 @@ export default function NotificationsPage() {
       // إعادة ضبط النموذج وتحديث القائمة
       setTitle('');
       setMessage('');
-      fetchData();
+      await fetchData();
     } catch (error) {
       console.error('Error sending notification:', error);
       toast.error('تعذر الاتصال بالخادم');
@@ -168,7 +296,8 @@ export default function NotificationsPage() {
 
   const formatDate = (timestamp) => {
     if (!timestamp) return '—';
-    return new Date(timestamp).toLocaleDateString('ar-IQ', {
+    const value = timestamp?.toDate?.() || new Date(timestamp?.toMillis?.() ?? timestamp);
+    return value.toLocaleDateString('ar-IQ', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -178,6 +307,9 @@ export default function NotificationsPage() {
   };
 
   if (loading) return <LoadingSpinner size="lg" />;
+
+  const historyItems = historyUserUid ? userNotifications : recentNotifications;
+  const historyTitle = historyUserUid ? 'صندوق إشعارات الحساب' : 'سجل الإشعارات المرسلة';
 
   return (
     <div>
@@ -291,7 +423,7 @@ export default function NotificationsPage() {
             </button>
 
             <p className="text-xs text-gray-400 text-center">
-              يُرسَل الإشعار مباشرة إلى الأجهزة عبر FCM بعد التحقق من صلاحيات المدير.
+              يُرسَل عبر FCM. الإشعار العام يُحفظ لصندوق الحسابات الموجودة وقت الإرسال فقط؛ الحسابات الجديدة لا ترث الرسائل السابقة.
             </p>
           </form>
         </div>
@@ -300,23 +432,57 @@ export default function NotificationsPage() {
         <div className="card">
           <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
             <History className="w-5 h-5" />
-            آخر الإشعارات العامة المرسلة
+            {historyTitle}
           </h3>
 
-          {recentNotifications.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">لا يوجد إشعارات سابقة</p>
+          <div className="mb-4">
+            <label className="label-field">السجل المعروض</label>
+            <select
+              value={historyUserUid}
+              onChange={(e) => fetchUserInbox(e.target.value)}
+              className="input-field"
+            >
+              <option value="">سجل الإرسال (عام وخاص)</option>
+              {users.map((u) => (
+                <option key={u.uid} value={u.uid}>صندوق: {u.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {loadingUserHistory ? (
+            <LoadingSpinner />
+          ) : historyItems.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">لا توجد إشعارات في هذا السجل</p>
           ) : (
             <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {recentNotifications.map((notif) => (
+              {historyItems.map((notif) => (
                 <div
-                  key={notif.id}
+                  key={`${notif.source}-${notif.id}`}
                   className="p-4 bg-gray-50 rounded-xl border border-gray-100"
                 >
                   <div className="flex items-start justify-between mb-1">
                     <p className="font-semibold text-gray-900 text-sm">{notif.title}</p>
-                    <span className="badge-info text-xs">عام</span>
+                    <div className="flex items-center gap-2">
+                      <span className="badge-info text-xs">
+                        {notif.source === 'legacy' ? 'عام سابق' : notif.audienceType === 'user' ? 'خاص' : 'عام'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(notif)}
+                        className="row-action row-action--danger"
+                        title="حذف الإشعار"
+                        aria-label="حذف الإشعار"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-600 mb-2">{notif.message}</p>
+                  <p className="text-sm text-gray-600 mb-2">{notif.message || notif.body}</p>
+                  {notif.audienceType === 'user' && notif.targetUid && (
+                    <p className="text-xs text-gray-500 mb-2">
+                      إلى: {users.find((user) => user.uid === notif.targetUid)?.name || notif.targetUid}
+                    </p>
+                  )}
                   <p className="text-xs text-gray-400">{formatDate(notif.timestamp)}</p>
                 </div>
               ))}
@@ -324,6 +490,22 @@ export default function NotificationsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteNotification}
+        title="حذف الإشعار"
+        message={deleteTarget?.source === 'history' && deleteTarget?.audienceType === 'global'
+          ? 'سيُحذف الإشعار من سجل الإدارة ومن صناديق الحسابات التي استلمته. لا يمكن التراجع عن الحذف.'
+          : deleteTarget?.source === 'legacy'
+            ? 'سيُحذف الإشعار العام القديم من مصدر التطبيق، ولن يظهر بعد ذلك عند تحديث صندوق الإشعارات. لا يمكن التراجع عن الحذف.'
+            : deleteTarget?.source === 'userInbox'
+              ? 'سيُحذف الإشعار من صندوق هذا الحساب فقط. سيبقى سجل الإرسال الإداري محفوظًا.'
+              : 'سيُحذف الإشعار من السجل وصندوق الحساب المقصود. لا يمكن التراجع عن الحذف.'}
+        confirmText={deleting ? 'جارٍ الحذف...' : 'حذف الإشعار'}
+        variant="danger"
+      />
     </div>
   );
 }

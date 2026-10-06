@@ -26,11 +26,19 @@ service cloud.firestore {
       allow delete: if isAdmin() && adminId != request.auth.uid;
     }
 
-    // Global settings are readable by any signed-in app account (trial config,
-    // maintenance state, admin notifications). Only admins may write them.
-    match /app_settings/{document=**} {
-      allow read: if isAdmin() || signedIn();
+    // Root app settings (including global_config) remain readable to signed-in
+    // app accounts. Nested admin history is not exposed to app accounts.
+    match /app_settings/{document} {
+      allow read: if signedIn();
       allow write: if isAdmin();
+    }
+
+    match /app_settings/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_notification_history/{notificationId} {
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /notification_requests/{requestId} {

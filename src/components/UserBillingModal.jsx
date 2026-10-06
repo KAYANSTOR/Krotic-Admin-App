@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, query, orderBy, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, orderBy, where, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { DollarSign, PlusCircle, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -27,22 +27,29 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
   const fetchFinancials = async () => {
     setLoading(true);
     try {
-      const salesSnap = await getDocs(collection(db, 'networks', user.uid, 'sales'));
+      const [salesSnap, paymentsSnap] = await Promise.all([
+        getDocs(query(
+          collection(db, 'networks', user.uid, 'sales'),
+          where('status', '==', 'COMPLETED'),
+        )),
+        getDocs(query(
+          collection(db, 'networks', user.uid, 'payments'),
+          orderBy('timestamp', 'desc'),
+        )),
+      ]);
       const salesData = [];
       salesSnap.forEach((doc) => salesData.push({ id: doc.id, ...doc.data() }));
       setSales(salesData);
 
-      const paymentsRef = collection(db, 'networks', user.uid, 'payments');
-      const q = query(paymentsRef, orderBy('timestamp', 'desc'));
-      const paymentsSnap = await getDocs(q);
       const paymentsData = [];
       paymentsSnap.forEach((doc) => paymentsData.push({ id: doc.id, ...doc.data() }));
       setPayments(paymentsData);
     } catch (error) {
       console.error('Error fetching financials:', error);
       toast.error('حدث خطأ أثناء جلب البيانات المالية');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const notifyClientPayment = async (paidAmount, monthKey) => {

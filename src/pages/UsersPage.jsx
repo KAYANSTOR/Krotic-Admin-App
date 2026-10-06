@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, Timestamp, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { mapWithConcurrency } from '../lib/mapWithConcurrency';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus,
@@ -34,7 +35,10 @@ export default function UsersPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
+      const [configDoc, usersSnap] = await Promise.all([
+        getDoc(doc(db, 'app_settings', 'global_config')),
+        getDocs(collection(db, 'users')),
+      ]);
       let globalCommission = 5;
       if (configDoc.exists()) {
         const configData = configDoc.data();
@@ -42,52 +46,47 @@ export default function UsersPage() {
         globalCommission = configData.default_commission_rate || 5;
       }
 
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const usersData = [];
-
-      for (const userDoc of usersSnap.docs) {
+      const usersData = await mapWithConcurrency(usersSnap.docs, 5, async (userDoc) => {
         const userData = { uid: userDoc.id, ...userDoc.data() };
-
-        try {
-          const metaDoc = await getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info'));
-          if (metaDoc.exists()) {
-            const meta = metaDoc.data();
-            userData.networkName = meta.name || '';
-            userData.phoneNumber = meta.phoneNumber || '';
-          }
-        } catch (e) {
-          console.warn('Could not fetch metadata for', userDoc.id);
+        const [metaDoc, salesSnap, paymentsSnap] = await Promise.all([
+          getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info')).catch(() => null),
+          getDocs(query(
+            collection(db, 'networks', userDoc.id, 'sales'),
+            where('status', '==', 'COMPLETED'),
+          )),
+          getDocs(collection(db, 'networks', userDoc.id, 'payments')),
+        ]);
+        if (metaDoc?.exists()) {
+          const meta = metaDoc.data();
+          userData.networkName = meta.name || '';
+          userData.phoneNumber = meta.phoneNumber || '';
         }
-
         let totalDue = 0;
         let totalPaid = 0;
         const activeRate = (userData.commission_rate != null && userData.commission_rate > 0)
           ? userData.commission_rate
           : globalCommission;
 
-        const salesSnap = await getDocs(collection(db, 'networks', userDoc.id, 'sales'));
         salesSnap.forEach((saleDoc) => {
           const sale = saleDoc.data();
-          if (sale.status === 'COMPLETED') {
-            totalDue += (sale.faceValue || 0) * (activeRate / 100);
-          }
+          totalDue += (sale.faceValue || 0) * (activeRate / 100);
         });
 
-        const paymentsSnap = await getDocs(collection(db, 'networks', userDoc.id, 'payments'));
         paymentsSnap.forEach((payDoc) => {
           totalPaid += (payDoc.data().amount || 0);
         });
 
         userData.balance = totalDue - totalPaid;
-        usersData.push(userData);
-      }
+        return userData;
+      });
 
       setUsers(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('خطأ في تحميل بيانات المستخدمين');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleToggleActive = (user) => {

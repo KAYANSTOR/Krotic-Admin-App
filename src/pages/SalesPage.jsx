@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { mapWithConcurrency } from '../lib/mapWithConcurrency';
 import {
   DollarSign, TrendingUp, Search, Filter, RefreshCw,
   ChevronDown, ChevronUp, Receipt
@@ -24,64 +25,50 @@ export default function SalesPage() {
   const fetchSales = async () => {
     setLoading(true);
     try {
-      // Fetch global config
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
+      const [configDoc, usersSnap] = await Promise.all([
+        getDoc(doc(db, 'app_settings', 'global_config')),
+        getDocs(collection(db, 'users')),
+      ]);
       let globalCommission = 5;
       if (configDoc.exists()) {
         globalCommission = configDoc.data().default_commission_rate || 5;
       }
 
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const allNetworkSales = [];
-
-      for (const userDoc of usersSnap.docs) {
+      const networkResults = await mapWithConcurrency(usersSnap.docs, 5, async (userDoc) => {
         const userData = userDoc.data();
-
-        // Fetch network metadata
-        let networkName = '';
-        let phoneNumber = '';
-        try {
-          const metaDoc = await getDoc(
-            doc(db, 'networks', userDoc.id, '_metadata', 'info')
-          );
-          if (metaDoc.exists()) {
-            networkName = metaDoc.data().name || '';
-            phoneNumber = metaDoc.data().phoneNumber || '';
-          }
-        } catch (e) {}
-
-        // Active rate
+        const [metaDoc, salesSnap] = await Promise.all([
+          getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info')).catch(() => null),
+          getDocs(collection(db, 'networks', userDoc.id, 'sales')),
+        ]);
+        const metadata = metaDoc?.exists() ? metaDoc.data() : {};
+        const networkName = metadata.name || '';
+        const phoneNumber = metadata.phoneNumber || '';
         const activeRate = (userData.commission_rate != null && userData.commission_rate > 0)
           ? userData.commission_rate
           : globalCommission;
 
-        // Fetch sales
-        const salesSnap = await getDocs(
-          collection(db, 'networks', userDoc.id, 'sales')
-        );
         const sales = [];
         salesSnap.forEach((saleDoc) => {
           sales.push({ id: saleDoc.id, ...saleDoc.data() });
         });
 
-        if (sales.length > 0) {
-          allNetworkSales.push({
+        return sales.length > 0 ? {
             uid: userDoc.id,
             networkName,
             phoneNumber,
             commissionRate: activeRate,
             isCustomRate: userData.commission_rate != null && userData.commission_rate > 0,
             sales,
-          });
-        }
-      }
+          } : null;
+      });
 
-      setNetworkSales(allNetworkSales);
+      setNetworkSales(networkResults.filter(Boolean));
     } catch (error) {
       console.error('Error fetching sales:', error);
       toast.error('خطأ في تحميل بيانات المبيعات');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const filterSales = (sales) => {

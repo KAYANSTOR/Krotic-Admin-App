@@ -18,8 +18,16 @@ api/send-fcm.js  (Vercel Function)
         ▼
 Firebase Cloud Messaging ──► أجهزة الأندرويد
         │
-        └─ يُسجَّل الإرسال في notification_deliveries (سجل تدقيقي)
+        ├─ يُسجَّل الإرسال في notification_deliveries (سجل تدقيقي)
+        └─ تسجل اللوحة الإشعار في admin_notification_history (خاص بالمدراء)
+           وتنسخ الإشعار العام إلى صناديق الحسابات المسجلة لحظة الإرسال فقط
 ```
+
+الإشعارات العامة الجديدة لا تُكتب في المسار القديم
+`app_settings/global_config/notifications` الذي يقرأه التطبيق كأرشيف عام. لذلك لا يرث
+الحساب الذي يُنشأ لاحقاً إشعارات أُرسلت قبل تسجيله. عند حذف إشعار عام جديد من اللوحة،
+يُحذف كذلك من صناديق الحسابات التي استلمته. أما سجلات الإشعارات العامة القديمة فتظهر
+في اللوحة كـ«عام سابق» ويمكن حذفها من المصدر القديم.
 
 ## الإعداد المطلوب (مرة واحدة فقط)
 
@@ -50,6 +58,16 @@ await FirebaseMessaging.instance.subscribeToTopic('krotak_all_users');
 
 ويُفضَّل تعريف قناة أندرويد باسم `krotak_admin` لعرض الإشعارات بالشكل الصحيح.
 
+لا يحتاج هذا التغيير إلى إصدار Android جديد: التطبيق يقرأ الإشعارات الخاصة بالحساب
+من `users/{uid}/notifications` بالفعل. يجب نشر قواعد Firestore المحدّثة حتى يبقى
+`app_settings/global_config` متاحاً للتطبيق بينما يُحصر أرشيف الإشعارات العامة القديم
+على المدراء، ويُسمح للوحة باستخدام `admin_notification_history`.
+
+```bash
+firebase use <FIREBASE_PROJECT_ID>
+firebase deploy --only firestore:rules
+```
+
 ## استجابات الدالة
 
 | الحالة | المعنى |
@@ -66,4 +84,6 @@ await FirebaseMessaging.instance.subscribeToTopic('krotak_all_users');
 
 - Cloud Function القديمة في `functions/` لم تعد مستخدمة (تبقى كمرجع فقط).
 - لم تعد الصفحة تكتب في `notification_requests` — الإرسال مباشر الآن.
+- بعد الإرسال الناجح، تحفظ اللوحة سجلًا إداريًا خاصًا وتنسخ إشعارًا عامًا إلى صناديق
+  الحسابات الموجودة؛ إنشاء حساب جديد لاحقًا لا ينشئ له نسخًا من الإشعارات السابقة.
 - لا تضع أي مفتاح Service Account داخل `src/` أو `.env` الخاص بالواجهة.

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { mapWithConcurrency } from '../lib/mapWithConcurrency';
 import {
   Activity, AlertTriangle, ArrowUpRight, ChevronDown, Coins,
   CreditCard, Phone, Sparkles, UserCheck, UserPlus, Users,
@@ -22,7 +23,10 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
+      const [configDoc, usersSnap] = await Promise.all([
+        getDoc(doc(db, 'app_settings', 'global_config')),
+        getDocs(collection(db, 'users')),
+      ]);
       let globalCommission = 5;
       if (configDoc.exists()) {
         const configData = configDoc.data();
@@ -30,7 +34,6 @@ export default function DashboardPage() {
         globalCommission = configData.default_commission_rate || 5;
       }
 
-      const usersSnap = await getDocs(collection(db, 'users'));
       const users = [];
       usersSnap.forEach((d) => users.push({ uid: d.id, ...d.data() }));
 
@@ -39,35 +42,43 @@ export default function DashboardPage() {
       const activeUsers = users.filter((u) => u.is_active !== false).length;
       const blockedUsers = users.filter((u) => u.is_active === false).length;
 
-      let totalSales = 0;
-      let totalAdminEarnings = 0;
-      let totalTransactions = 0;
-
-      for (const user of users) {
+      const perUserTotals = await mapWithConcurrency(users, 6, async (user) => {
         const activeRate = (user.commission_rate != null && user.commission_rate > 0)
           ? user.commission_rate
           : globalCommission;
 
-        const salesSnap = await getDocs(collection(db, 'networks', user.uid, 'sales'));
+        const salesSnap = await getDocs(query(
+          collection(db, 'networks', user.uid, 'sales'),
+          where('status', '==', 'COMPLETED'),
+        ));
+        let totalSales = 0;
+        let totalAdminEarnings = 0;
+        let totalTransactions = 0;
         salesSnap.forEach((saleDoc) => {
           const sale = saleDoc.data();
-          if (sale.status === 'COMPLETED') {
-            totalTransactions++;
-            const faceValue = sale.faceValue || 0;
-            totalSales += faceValue;
-            totalAdminEarnings += faceValue * (activeRate / 100);
-          }
+          totalTransactions++;
+          const faceValue = sale.faceValue || 0;
+          totalSales += faceValue;
+          totalAdminEarnings += faceValue * (activeRate / 100);
         });
-      }
+        return { totalSales, totalAdminEarnings, totalTransactions };
+      });
+
+      const totals = perUserTotals.reduce((sum, userTotals) => ({
+        totalSales: sum.totalSales + userTotals.totalSales,
+        totalAdminEarnings: sum.totalAdminEarnings + userTotals.totalAdminEarnings,
+        totalTransactions: sum.totalTransactions + userTotals.totalTransactions,
+      }), { totalSales: 0, totalAdminEarnings: 0, totalTransactions: 0 });
 
       setStats({
         totalUsers, trialUsers, activeUsers, blockedUsers,
-        totalSales, totalAdminEarnings, totalTransactions,
+        ...totals,
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (loading) return <PageSkeleton />;

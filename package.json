@@ -12,6 +12,7 @@
     "prebuild": "node scripts/generate-icons.js",
     "dev": "vite",
     "build": "vite build",
+    "test": "node --test",
     "preview": "vite preview"
   },
   "dependencies": {
