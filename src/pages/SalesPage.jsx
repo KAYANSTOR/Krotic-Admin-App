@@ -1,9 +1,10 @@
+// src/pages/SalesPage.jsx
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  DollarSign, TrendingUp, Search, Filter, RefreshCw,
-  ChevronDown, ChevronUp, Receipt
+  DollarSign, TrendingUp, Filter, RefreshCw,
+  ChevronDown, ChevronUp, Receipt, Wallet, Inbox, AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -156,26 +157,43 @@ export default function SalesPage() {
     SMS_PENDING: { text: 'بانتظار SMS', class: 'badge-warning' },
   };
 
+  const hasActiveFilters = statusFilter !== 'COMPLETED' || dateFrom || dateTo;
+
+  const resetFilters = () => {
+    setStatusFilter('COMPLETED');
+    setDateFrom('');
+    setDateTo('');
+  };
+
   if (loading) return <LoadingSpinner size="lg" />;
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <div>
-          <h1 className="page-title flex items-center gap-3">
-            <DollarSign className="w-7 h-7 text-primary-600" />
-            المبيعات والعمولات
-          </h1>
-          <p className="text-gray-500 mt-1">سجل مبيعات جميع الشبكات</p>
+    <div className="sales-page">
+      {/* Page Header */}
+      <div className="sales-header">
+        <div className="sales-header__main">
+          <span className="sales-header__icon icon-tile icon-tile--brand icon-tile--lg">
+            <DollarSign className="w-5 h-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h1 className="page-title">المبيعات والعمولات</h1>
+            <p className="sales-header__desc">سجل مبيعات جميع الشبكات وأرباح الإدارة</p>
+          </div>
         </div>
-        <button onClick={fetchSales} className="btn-secondary flex items-center gap-2">
-          <RefreshCw className="w-4 h-4" />
-          تحديث
-        </button>
+        <div className="sales-header__actions">
+          <button
+            onClick={fetchSales}
+            className="btn-secondary flex items-center gap-2"
+            type="button"
+          >
+            <RefreshCw className="w-4 h-4" />
+            تحديث
+          </button>
+        </div>
       </div>
 
       {/* Grand Totals */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="sales-kpi">
         <StatsCard
           title="إجمالي المبيعات"
           value={formatNumber(grandTotals.totalSales)}
@@ -200,15 +218,31 @@ export default function SalesPage() {
         <StatsCard
           title="عمليات مكتملة"
           value={formatNumber(grandTotals.totalCount)}
-          icon={DollarSign}
+          icon={Wallet}
           color="green"
+          subtitle="عملية"
         />
       </div>
 
       {/* Filters */}
-      <div className="card mb-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div>
+      <div className="card sales-filters">
+        <div className="sales-filters__head">
+          <div className="sales-filters__title">
+            <Filter className="w-4 h-4" aria-hidden="true" />
+            <span>تصفية النتائج</span>
+          </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="sales-filters__reset"
+            >
+              إعادة تعيين
+            </button>
+          )}
+        </div>
+        <div className="sales-filters__grid">
+          <div className="sales-filters__field">
             <label className="label-field">حالة البيع</label>
             <select
               value={statusFilter}
@@ -221,7 +255,7 @@ export default function SalesPage() {
               <option value="SMS_PENDING">بانتظار SMS</option>
             </select>
           </div>
-          <div>
+          <div className="sales-filters__field">
             <label className="label-field">من تاريخ</label>
             <input
               type="date"
@@ -230,7 +264,7 @@ export default function SalesPage() {
               className="input-field"
             />
           </div>
-          <div>
+          <div className="sales-filters__field">
             <label className="label-field">إلى تاريخ</label>
             <input
               type="date"
@@ -243,122 +277,168 @@ export default function SalesPage() {
       </div>
 
       {/* Networks Sales */}
-      <div className="space-y-4">
+      <div className="sales-networks">
         {networkSales.length === 0 ? (
-          <div className="card text-center py-12 text-gray-500">
-            لا يوجد مبيعات مسجلة بعد
+          <div className="card sales-empty">
+            <span className="sales-empty__icon icon-tile icon-tile--neutral icon-tile--lg">
+              <Inbox className="w-6 h-6" aria-hidden="true" />
+            </span>
+            <p className="sales-empty__title">لا يوجد مبيعات مسجلة بعد</p>
+            <p className="sales-empty__desc">
+              ستظهر هنا مبيعات الشبكات وأرباح الإدارة بمجرد تسجيل أول عملية.
+            </p>
           </div>
         ) : (
           networkSales.map((network) => {
             const stats = calcNetworkStats(network);
             const isExpanded = expandedNetwork === network.uid;
+            const displayName = network.networkName || network.uid.substring(0, 12);
 
             return (
-              <div key={network.uid} className="card p-0 overflow-hidden">
+              <div
+                key={network.uid}
+                className={`card card--flush sales-network ${isExpanded ? 'is-expanded' : ''}`}
+              >
                 {/* Network Header */}
                 <button
+                  type="button"
                   onClick={() =>
                     setExpandedNetwork(isExpanded ? null : network.uid)
                   }
-                  className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors"
+                  className="sales-network__toggle"
+                  aria-expanded={isExpanded}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
-                      <DollarSign className="w-6 h-6 text-primary-600" />
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-gray-900">
-                        {network.networkName || network.uid.substring(0, 12)}
-                      </p>
-                      <p className="text-sm text-gray-500" dir="ltr">
-                        {network.phoneNumber}
+                  <div className="sales-network__identity">
+                    <span className="sales-network__avatar icon-tile icon-tile--brand">
+                      <DollarSign className="w-5 h-5" aria-hidden="true" />
+                    </span>
+                    <div className="sales-network__meta">
+                      <p className="sales-network__name">{displayName}</p>
+                      <p className="sales-network__phone" dir="ltr">
+                        {network.phoneNumber || '—'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-6">
-                    <div className="hidden sm:flex items-center gap-6 text-sm">
-                      <div className="text-center">
-                        <p className="text-gray-500">المبيعات</p>
-                        <p className="font-bold text-gray-900">
-                          {formatNumber(stats.totalFaceValue)}
-                        </p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-gray-500">العمولة ({network.commissionRate}%)</p>
-                        <p className="font-bold text-purple-600">
-                          {formatNumber(stats.adminEarnings)}
-                        </p>
-                      </div>
+                  <div className="sales-network__stats">
+                    <div className="sales-network__stat">
+                      <span className="sales-network__stat-label">المبيعات</span>
+                      <span className="sales-network__stat-value">
+                        {formatNumber(stats.totalFaceValue)}
+                      </span>
                     </div>
-                    {isExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
+                    <div className="sales-network__stat">
+                      <span className="sales-network__stat-label">
+                        العمولة ({network.commissionRate}%)
+                      </span>
+                      <span className="sales-network__stat-value sales-network__stat-value--gold">
+                        {formatNumber(stats.adminEarnings)}
+                      </span>
+                    </div>
+                    <div className="sales-network__stat sales-network__stat--count">
+                      <span className="sales-network__stat-label">عمليات</span>
+                      <span className="sales-network__stat-value">
+                        {formatNumber(stats.completedCount)}
+                      </span>
+                    </div>
+                    <span className="sales-network__chevron">
+                      {isExpanded ? (
+                        <ChevronUp className="w-5 h-5" aria-hidden="true" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5" aria-hidden="true" />
+                      )}
+                    </span>
                   </div>
                 </button>
 
                 {/* Expanded Sales Table */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100">
+                  <div className="sales-network__body">
                     {/* Mobile stats */}
-                    <div className="sm:hidden p-4 bg-gray-50 grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <p className="text-gray-500">المبيعات</p>
-                        <p className="font-bold">{formatNumber(stats.totalFaceValue)}</p>
+                    <div className="sales-network__mobile-stats">
+                      <div className="sales-network__mobile-stat">
+                        <span>المبيعات</span>
+                        <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
-                      <div>
-                        <p className="text-gray-500">العمولة ({network.commissionRate}%)</p>
-                        <p className="font-bold text-purple-600">
+                      <div className="sales-network__mobile-stat">
+                        <span>العمولة ({network.commissionRate}%)</span>
+                        <strong className="sales-network__stat-value--gold">
                           {formatNumber(stats.adminEarnings)}
-                        </p>
+                        </strong>
+                      </div>
+                      <div className="sales-network__mobile-stat">
+                        <span>عمليات مكتملة</span>
+                        <strong>{formatNumber(stats.completedCount)}</strong>
                       </div>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="responsive-data-table w-full">
-                        <thead>
-                          <tr className="table-header">
-                            <th className="text-right px-6 py-3">التاريخ</th>
-                            <th className="text-right px-6 py-3">الزبون</th>
-                            <th className="text-right px-6 py-3">القيمة</th>
-                            <th className="text-right px-6 py-3">العمولة (صراف)</th>
-                            <th className="text-right px-6 py-3">الصافي</th>
-                            <th className="text-right px-6 py-3">الحالة</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {stats.filteredSales.map((sale) => (
-                            <tr key={sale.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-3 text-sm text-gray-600" data-label="التاريخ">
-                                {formatDate(sale.createdAt)}
-                              </td>
-                              <td className="px-6 py-3 text-sm" dir="ltr" data-label="الزبون">
-                                {sale.customerId || '—'}
-                              </td>
-                              <td className="px-6 py-3 text-sm font-medium" data-label="القيمة">
-                                {formatNumber(sale.faceValue)}
-                              </td>
-                              <td className="px-6 py-3 text-sm text-gray-600" data-label="العمولة (صراف)">
-                                {formatNumber(sale.commission)}
-                              </td>
-                              <td className="px-6 py-3 text-sm font-medium" data-label="الصافي">
-                                {formatNumber(sale.netAmount)}
-                              </td>
-                              <td className="px-6 py-3" data-label="الحالة">
-                                <span
-                                  className={
-                                    statusLabel[sale.status]?.class || 'badge-info'
-                                  }
-                                >
-                                  {statusLabel[sale.status]?.text || sale.status}
-                                </span>
-                              </td>
+
+                    {stats.filteredSales.length === 0 ? (
+                      <div className="sales-network__empty">
+                        <AlertCircle className="w-5 h-5" aria-hidden="true" />
+                        <span>لا توجد مبيعات مطابقة للفلاتر الحالية</span>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="responsive-data-table w-full">
+                          <thead>
+                            <tr className="table-header">
+                              <th className="text-right px-6 py-3">التاريخ</th>
+                              <th className="text-right px-6 py-3">الزبون</th>
+                              <th className="text-right px-6 py-3">القيمة</th>
+                              <th className="text-right px-6 py-3">العمولة (صراف)</th>
+                              <th className="text-right px-6 py-3">الصافي</th>
+                              <th className="text-right px-6 py-3">الحالة</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {stats.filteredSales.map((sale) => (
+                              <tr key={sale.id} className="hover:bg-gray-50">
+                                <td
+                                  className="px-6 py-3 text-sm text-gray-600"
+                                  data-label="التاريخ"
+                                >
+                                  {formatDate(sale.createdAt)}
+                                </td>
+                                <td
+                                  className="px-6 py-3 text-sm"
+                                  dir="ltr"
+                                  data-label="الزبون"
+                                >
+                                  {sale.customerId || '—'}
+                                </td>
+                                <td
+                                  className="px-6 py-3 text-sm font-medium"
+                                  data-label="القيمة"
+                                >
+                                  {formatNumber(sale.faceValue)}
+                                </td>
+                                <td
+                                  className="px-6 py-3 text-sm text-gray-600"
+                                  data-label="العمولة (صراف)"
+                                >
+                                  {formatNumber(sale.commission)}
+                                </td>
+                                <td
+                                  className="px-6 py-3 text-sm font-medium"
+                                  data-label="الصافي"
+                                >
+                                  {formatNumber(sale.netAmount)}
+                                </td>
+                                <td className="px-6 py-3" data-label="الحالة">
+                                  <span
+                                    className={
+                                      statusLabel[sale.status]?.class || 'badge-info'
+                                    }
+                                  >
+                                    {statusLabel[sale.status]?.text || sale.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
-  collection, getDocs, addDoc, doc, getDoc, query, orderBy, limit, serverTimestamp
+  collection, getDocs, addDoc, doc, getDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
-  Bell, Send, Users, User, Globe, History, RefreshCw
+  Bell, Send, Users, User, Globe, History, RefreshCw,
+  AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import PageHeader from '../components/ui/PageHeader';
+import { Card, CardHeader } from '../components/ui/Card';
+import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -18,12 +23,14 @@ export default function NotificationsPage() {
   const [users, setUsers] = useState([]);
   const [recentNotifications, setRecentNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
+    setLoadError(false);
     try {
       // Fetch users for dropdown
       const usersSnap = await getDocs(collection(db, 'users'));
@@ -56,6 +63,7 @@ export default function NotificationsPage() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      setLoadError(true);
       toast.error('خطأ في تحميل البيانات');
     }
     setLoading(false);
@@ -177,63 +185,97 @@ export default function NotificationsPage() {
     });
   };
 
+  const selectedUserName = useMemo(
+    () => users.find((u) => u.uid === selectedUser)?.name || '',
+    [users, selectedUser]
+  );
+
+  const canSend = title.trim().length > 0 && message.trim().length > 0 && (type === 'global' || !!selectedUser);
+
   if (loading) return <LoadingSpinner size="lg" />;
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="page-title flex items-center gap-3">
-          <Bell className="w-7 h-7 text-primary-600" />
-          الإشعارات
-        </h1>
-        <p className="text-gray-500 mt-1">إرسال إشعارات للمستخدمين</p>
-      </div>
+    <div className="notifications-page">
+      <PageHeader
+        icon={Bell}
+        title="الإشعارات"
+        description="إرسال إشعارات فورية عبر FCM إلى جميع الأجهزة أو إلى مستخدم محدد، مع سجل كامل للإشعارات العامة."
+        meta={`${users.length} مستخدم متاح • ${recentNotifications.length} إشعار عام في السجل`}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RefreshCw}
+            onClick={fetchData}
+            disabled={sending}
+          >
+            تحديث
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Send Notification Form */}
-        <div className="card">
-          <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <Send className="w-5 h-5" />
-            إرسال إشعار جديد
-          </h3>
+      {loadError && (
+        <div className="notif-error" role="alert">
+          <span className="notif-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="notif-error__body">
+            <p className="notif-error__title">تعذّر تحميل البيانات</p>
+            <p className="notif-error__msg">تحقق من الاتصال ثم أعد المحاولة.</p>
+          </div>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
+            إعادة المحاولة
+          </Button>
+        </div>
+      )}
 
-          <form onSubmit={handleSend} className="space-y-4">
-            {/* Type Selection */}
-            <div>
-              <label className="label-field">نوع الإشعار</label>
-              <div className="flex gap-3">
+      <div className="notif-grid">
+        {/* ====== نموذج الإرسال ====== */}
+        <Card className="notif-compose">
+          <CardHeader
+            icon={Send}
+            title="إرسال إشعار جديد"
+            description="يُرسَل الإشعار مباشرة إلى الأجهزة عبر FCM بعد التحقق من صلاحيات المدير."
+          />
+
+          <form onSubmit={handleSend} className="notif-form" noValidate>
+            {/* الجمهور */}
+            <div className="notif-field">
+              <label className="label-field">الجمهور</label>
+              <div className="notif-audience" role="radiogroup" aria-label="نوع الإشعار">
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={type === 'global'}
                   onClick={() => setType('global')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                    type === 'global'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                  }`}
+                  className={`notif-audience__btn ${type === 'global' ? 'is-active' : ''}`}
                 >
-                  <Globe className="w-5 h-5" />
-                  للجميع
+                  <span className="notif-audience__icon"><Globe className="w-5 h-5" /></span>
+                  <span className="notif-audience__text">
+                    <strong>للجميع</strong>
+                    <small>إلى جميع الأجهزة المسجّلة</small>
+                  </span>
                 </button>
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={type === 'user'}
                   onClick={() => setType('user')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                    type === 'user'
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                  }`}
+                  className={`notif-audience__btn ${type === 'user' ? 'is-active' : ''}`}
                 >
-                  <User className="w-5 h-5" />
-                  لمستخدم محدد
+                  <span className="notif-audience__icon"><User className="w-5 h-5" /></span>
+                  <span className="notif-audience__text">
+                    <strong>لمستخدم محدد</strong>
+                    <small>إلى أجهزة مستخدم واحد</small>
+                  </span>
                 </button>
               </div>
             </div>
 
-            {/* User Selection */}
+            {/* المستلم */}
             {type === 'user' && (
-              <div>
-                <label className="label-field">اختر المستخدم</label>
+              <div className="notif-field">
+                <label className="label-field" htmlFor="notif-user">المستلم</label>
                 <select
+                  id="notif-user"
                   value={selectedUser}
                   onChange={(e) => setSelectedUser(e.target.value)}
                   className="input-field"
@@ -246,83 +288,141 @@ export default function NotificationsPage() {
                     </option>
                   ))}
                 </select>
+                {selectedUserName && (
+                  <p className="field-hint">
+                    سيُرسَل الإشعار إلى أجهزة: <strong>{selectedUserName}</strong>
+                  </p>
+                )}
               </div>
             )}
 
-            {/* Title */}
-            <div>
-              <label className="label-field">عنوان الإشعار</label>
+            {/* العنوان */}
+            <div className="notif-field">
+              <label className="label-field" htmlFor="notif-title">عنوان الإشعار</label>
               <input
+                id="notif-title"
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="input-field"
                 placeholder="أدخل عنوان الإشعار..."
+                maxLength={120}
                 required
               />
             </div>
 
-            {/* Message */}
-            <div>
-              <label className="label-field">نص الإشعار</label>
+            {/* الرسالة */}
+            <div className="notif-field">
+              <label className="label-field" htmlFor="notif-message">نص الإشعار</label>
               <textarea
+                id="notif-message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 className="input-field resize-none"
                 rows={4}
                 placeholder="أدخل نص الإشعار..."
+                maxLength={500}
                 required
               />
+              <p className="field-hint">{message.length}/500 حرف</p>
             </div>
 
-            <button
-              type="submit"
-              disabled={sending}
-              className="w-full btn-primary flex items-center justify-center gap-2 py-3"
-            >
-              {sending ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-5 h-5" />
-                  إرسال الإشعار
-                </>
-              )}
-            </button>
+            {/* معاينة الإشعار */}
+            <div className="notif-field">
+              <label className="label-field">معاينة الإشعار</label>
+              <div className="notif-preview" aria-live="polite">
+                <div className="notif-preview__icon">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div className="notif-preview__body">
+                  <div className="notif-preview__head">
+                    <span className="notif-preview__app">Krotak Pro</span>
+                    <span className="notif-preview__time">الآن</span>
+                  </div>
+                  <p className="notif-preview__title">
+                    {title.trim() || 'عنوان الإشعار'}
+                  </p>
+                  <p className="notif-preview__text">
+                    {message.trim() || 'سيظهر نص الإشعار هنا كما سيستلمه المستخدم.'}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-            <p className="text-xs text-gray-400 text-center">
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              block
+              loading={sending}
+              disabled={!canSend}
+              icon={sending ? undefined : Send}
+            >
+              {sending ? 'جارٍ الإرسال...' : 'إرسال الإشعار'}
+            </Button>
+
+            <p className="notif-note">
+              <ShieldCheck className="w-4 h-4" />
               يُرسَل الإشعار مباشرة إلى الأجهزة عبر FCM بعد التحقق من صلاحيات المدير.
             </p>
           </form>
-        </div>
+        </Card>
 
-        {/* Recent Notifications */}
-        <div className="card">
-          <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <History className="w-5 h-5" />
-            آخر الإشعارات العامة المرسلة
-          </h3>
+        {/* ====== سجل الإشعارات ====== */}
+        <Card className="notif-history">
+          <CardHeader
+            icon={History}
+            title="آخر الإشعارات العامة المرسلة"
+            description="أحدث 20 إشعارًا عامًا مسجّلًا في السجل."
+            action={
+              <Badge tone="brand" dot>
+                {recentNotifications.length}
+              </Badge>
+            }
+          />
 
           {recentNotifications.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">لا يوجد إشعارات سابقة</p>
-          ) : (
-            <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {recentNotifications.map((notif) => (
-                <div
-                  key={notif.id}
-                  className="p-4 bg-gray-50 rounded-xl border border-gray-100"
-                >
-                  <div className="flex items-start justify-between mb-1">
-                    <p className="font-semibold text-gray-900 text-sm">{notif.title}</p>
-                    <span className="badge-info text-xs">عام</span>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-2">{notif.message}</p>
-                  <p className="text-xs text-gray-400">{formatDate(notif.timestamp)}</p>
-                </div>
-              ))}
+            <div className="empty-state">
+              <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg">
+                <Inbox className="w-6 h-6" />
+              </span>
+              <p className="empty-state__title">لا يوجد إشعارات سابقة</p>
+              <p className="empty-state__desc">
+                ستظهر هنا الإشعارات العامة التي تُرسَل من هذه اللوحة.
+              </p>
             </div>
+          ) : (
+            <ul className="notif-list">
+              {recentNotifications.map((notif) => (
+                <li key={notif.id} className="notif-item">
+                  <div className="notif-item__icon">
+                    <Radio className="w-4 h-4" />
+                  </div>
+                  <div className="notif-item__body">
+                    <div className="notif-item__head">
+                      <p className="notif-item__title">{notif.title}</p>
+                      <Badge tone="info">عام</Badge>
+                    </div>
+                    <p className="notif-item__text">{notif.message}</p>
+                    <div className="notif-item__meta">
+                      <span className="notif-item__meta-item">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {notif.status === 'sent' ? 'تم الإرسال' : (notif.status || 'مرسل')}
+                      </span>
+                      <span className="notif-item__meta-item">
+                        <Users className="w-3.5 h-3.5" />
+                        {notif.sentCount ?? 1} جهاز
+                      </span>
+                      <span className="notif-item__meta-item">
+                        {formatDate(notif.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+// src/pages/UsersPage.jsx
+import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -16,10 +17,19 @@ import UserBillingModal from '../components/UserBillingModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
 
+const FILTERS = [
+  { value: 'all', label: 'الكل' },
+  { value: 'trial', label: 'تجريبي' },
+  { value: 'official', label: 'رسمي' },
+  { value: 'debt', label: 'عليهم ديون' },
+  { value: 'blocked', label: 'محظور' },
+];
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [globalConfig, setGlobalConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
 
@@ -33,6 +43,7 @@ export default function UsersPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       let globalCommission = 5;
@@ -83,8 +94,9 @@ export default function UsersPage() {
       }
 
       setUsers(usersData);
-    } catch (error) {
-      console.error('Error fetching data:', error);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
       toast.error('خطأ في تحميل بيانات المستخدمين');
     }
     setLoading(false);
@@ -103,7 +115,7 @@ export default function UsersPage() {
           await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
           toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
-        } catch (error) {
+        } catch (err) {
           toast.error('حدث خطأ');
         }
       },
@@ -121,7 +133,7 @@ export default function UsersPage() {
           await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
           toast.success('تم تحويل المستخدم إلى رسمي');
-        } catch (error) {
+        } catch (err) {
           toast.error('حدث خطأ');
         }
       },
@@ -147,7 +159,7 @@ export default function UsersPage() {
           await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
           toast.success('تم التجديد بنجاح');
-        } catch (error) {
+        } catch (err) {
           toast.error('حدث خطأ أثناء التجديد');
         }
       },
@@ -165,24 +177,36 @@ export default function UsersPage() {
       setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
       setEditingUser(null);
       toast.success('تم حفظ التعديلات بنجاح');
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       toast.error('حدث خطأ في حفظ التعديلات');
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      (user.networkName || '').includes(searchTerm) ||
-      (user.phoneNumber || '').includes(searchTerm) ||
-      user.uid.includes(searchTerm);
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const matchesSearch =
+        (user.networkName || '').includes(searchTerm) ||
+        (user.phoneNumber || '').includes(searchTerm) ||
+        user.uid.includes(searchTerm);
 
-    if (filterType === 'trial') return matchesSearch && user.is_trial === true;
-    if (filterType === 'official') return matchesSearch && user.is_trial === false;
-    if (filterType === 'blocked') return matchesSearch && user.is_active === false;
-    if (filterType === 'debt') return matchesSearch && user.balance > 0;
-    return matchesSearch;
-  });
+      if (filterType === 'trial') return matchesSearch && user.is_trial === true;
+      if (filterType === 'official') return matchesSearch && user.is_trial === false;
+      if (filterType === 'blocked') return matchesSearch && user.is_active === false;
+      if (filterType === 'debt') return matchesSearch && user.balance > 0;
+      return matchesSearch;
+    });
+  }, [users, searchTerm, filterType]);
+
+  const stats = useMemo(() => {
+    const total = users.length;
+    const trial = users.filter((u) => u.is_trial === true).length;
+    const debt = users.filter((u) => u.balance > 0).length;
+    const blocked = users.filter((u) => u.is_active === false).length;
+    return { total, trial, debt, blocked };
+  }, [users]);
+
+  const defaultCommission = globalConfig?.default_commission_rate || 5;
 
   if (loading) {
     return (
@@ -194,17 +218,53 @@ export default function UsersPage() {
   }
 
   return (
-    <div>
+    <div className="users-page">
       <PageHeader
         icon={Users}
         title="إدارة المستخدمين والفوترة"
         description={`${users.length} مستخدم مسجل`}
-        actions={<Button variant="secondary" icon={RefreshCw} onClick={fetchData}>تحديث البيانات</Button>}
+        actions={
+          <Button variant="secondary" icon={RefreshCw} onClick={fetchData}>
+            تحديث البيانات
+          </Button>
+        }
       />
 
-      <Card className="mb-6">
-        <div className="toolbar">
-          <div className="relative flex-1">
+      {error && (
+        <div className="users-error" role="alert">
+          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">تعذر تحميل البيانات</p>
+            <p className="users-error__msg">{error}</p>
+          </div>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
+            إعادة المحاولة
+          </Button>
+        </div>
+      )}
+
+      <div className="users-stats">
+        <div className="users-stat">
+          <span className="users-stat__label">إجمالي المستخدمين</span>
+          <strong className="users-stat__value">{formatNumber(stats.total)}</strong>
+        </div>
+        <div className="users-stat users-stat--warning">
+          <span className="users-stat__label">حسابات تجريبية</span>
+          <strong className="users-stat__value">{formatNumber(stats.trial)}</strong>
+        </div>
+        <div className="users-stat users-stat--danger">
+          <span className="users-stat__label">عليهم ديون</span>
+          <strong className="users-stat__value">{formatNumber(stats.debt)}</strong>
+        </div>
+        <div className="users-stat users-stat--neutral">
+          <span className="users-stat__label">محظورون</span>
+          <strong className="users-stat__value">{formatNumber(stats.blocked)}</strong>
+        </div>
+      </div>
+
+      <Card className="users-toolbar-card">
+        <div className="users-toolbar">
+          <div className="users-search">
             <Search className="field-affix field-affix--lead w-5 h-5" aria-hidden="true" />
             <input
               type="text"
@@ -212,101 +272,194 @@ export default function UsersPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="input-field input-field--lead"
+              aria-label="بحث"
             />
           </div>
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="input-field w-full sm:w-48"
-          >
-            <option value="all">الكل</option>
-            <option value="trial">تجريبي</option>
-            <option value="official">رسمي</option>
-            <option value="debt">عليهم ديون</option>
-            <option value="blocked">محظور</option>
-          </select>
+          <div className="users-filters" role="tablist" aria-label="تصفية المستخدمين">
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                role="tab"
+                aria-selected={filterType === f.value}
+                onClick={() => setFilterType(f.value)}
+                className={`users-filter ${filterType === f.value ? 'is-active' : ''}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
       </Card>
 
-      <Card flush>
-        <div className="overflow-x-auto">
-          <table className="responsive-data-table w-full">
-            <thead>
-              <tr className="table-header">
-                <th className="text-right px-6 py-4">الشبكة</th>
-                <th className="text-right px-6 py-4">النوع</th>
-                <th className="text-right px-6 py-4">العمولة</th>
-                <th className="text-right px-6 py-4">الديون (ريال يمني)</th>
-                <th className="text-right px-6 py-4">تاريخ التصفية</th>
-                <th className="text-right px-6 py-4">الإجراءات السريعة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">لا يوجد مستخدمين</td>
-                </tr>
-              ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4" data-label="الشبكة">
-                      <div>
-                        <p className="font-semibold text-gray-900">{user.networkName || '—'}</p>
-                        <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4" data-label="النوع">
-                      <div className="flex flex-col gap-1 items-start">
-                        {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
-                        {user.is_active === false && <Badge tone="danger">محظور</Badge>}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-600" data-label="العمولة">
-                      {user.commission_rate != null && user.commission_rate > 0
-                        ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
-                        : `${globalConfig?.default_commission_rate || 5}% (عامة)`}
-                    </td>
-                    <td className="px-6 py-4" data-label="الديون">
-                      <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatNumber(user.balance)}</span>
-                    </td>
-                    <td className="px-6 py-4" data-label="تاريخ التصفية">
-                      <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                        {formatDate(user.subscription_end_date)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4" data-label="الإجراءات السريعة">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
-                          <DollarSign className="w-4 h-4" />
-                          <span className="text-xs font-medium">الفوترة</span>
-                        </button>
-                        <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم">
-                          <CalendarPlus className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {user.is_trial && (
-                          <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleToggleActive(user)}
-                          className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
-                          title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
-                        >
-                          {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </td>
+      {filteredUsers.length === 0 ? (
+        <Card>
+          <div className="empty-state">
+            <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg">
+              <Inbox className="w-6 h-6" />
+            </span>
+            <p className="empty-state__title">لا يوجد مستخدمون مطابقون</p>
+            <p className="empty-state__desc">
+              {searchTerm || filterType !== 'all'
+                ? 'جرّب تعديل كلمة البحث أو التصفية.'
+                : 'لم يتم تسجيل أي مستخدم بعد.'}
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* جدول لسطح المكتب */}
+          <Card flush className="users-table-card">
+            <div className="overflow-x-auto">
+              <table className="responsive-data-table w-full">
+                <thead>
+                  <tr className="table-header">
+                    <th className="text-right px-6 py-4">الشبكة</th>
+                    <th className="text-right px-6 py-4">النوع</th>
+                    <th className="text-right px-6 py-4">العمولة</th>
+                    <th className="text-right px-6 py-4">الديون (ريال يمني)</th>
+                    <th className="text-right px-6 py-4">تاريخ التصفية</th>
+                    <th className="text-right px-6 py-4">الإجراءات السريعة</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredUsers.map((user) => (
+                    <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4" data-label="الشبكة">
+                        <div>
+                          <p className="font-semibold text-gray-900">{user.networkName || '—'}</p>
+                          <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4" data-label="النوع">
+                        <div className="flex flex-col gap-1 items-start">
+                          {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
+                          {user.is_active === false && <Badge tone="danger">محظور</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600" data-label="العمولة">
+                        {user.commission_rate != null && user.commission_rate > 0
+                          ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
+                          : `${defaultCommission}% (عامة)`}
+                      </td>
+                      <td className="px-6 py-4" data-label="الديون">
+                        <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                          {formatNumber(user.balance)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4" data-label="تاريخ التصفية">
+                        <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                          {formatDate(user.subscription_end_date)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4" data-label="الإجراءات السريعة">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
+                            <DollarSign className="w-4 h-4" />
+                            <span className="text-xs font-medium">الفوترة</span>
+                          </button>
+                          <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم">
+                            <CalendarPlus className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          {user.is_trial && (
+                            <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleToggleActive(user)}
+                            className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
+                            title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                          >
+                            {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* بطاقات للجوال */}
+          <div className="users-cards">
+            {filteredUsers.map((user) => {
+              const expired = isExpired(user.subscription_end_date);
+              const hasDebt = user.balance > 0;
+              return (
+                <article key={user.uid} className="user-card">
+                  <header className="user-card__head">
+                    <div className="user-card__identity">
+                      <p className="user-card__name">{user.networkName || '—'}</p>
+                      <p className="user-card__phone" dir="ltr">{user.phoneNumber || '—'}</p>
+                    </div>
+                    <div className="user-card__badges">
+                      {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
+                      {user.is_active === false && <Badge tone="danger">محظور</Badge>}
+                    </div>
+                  </header>
+
+                  <dl className="user-card__meta">
+                    <div className="user-card__meta-item">
+                      <dt>العمولة</dt>
+                      <dd>
+                        {user.commission_rate != null && user.commission_rate > 0
+                          ? <span className="text-primary-600 font-bold">{user.commission_rate}% (خاصة)</span>
+                          : <span>{defaultCommission}% (عامة)</span>}
+                      </dd>
+                    </div>
+                    <div className="user-card__meta-item">
+                      <dt>الديون</dt>
+                      <dd className={hasDebt ? 'text-red-600 font-bold' : 'font-bold'}>
+                        {formatNumber(user.balance)}
+                      </dd>
+                    </div>
+                    <div className="user-card__meta-item">
+                      <dt>تاريخ التصفية</dt>
+                      <dd className={expired ? 'text-red-600 font-semibold' : ''}>
+                        {formatDate(user.subscription_end_date)}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="user-card__actions">
+                    <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
+                      <DollarSign className="w-4 h-4" />
+                      <span className="text-xs font-medium">الفوترة</span>
+                    </button>
+                    <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد">
+                      <CalendarPlus className="w-4 h-4" />
+                      <span className="text-xs font-medium">تجديد</span>
+                    </button>
+                    <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل">
+                      <Edit className="w-4 h-4" />
+                      <span className="text-xs font-medium">تعديل</span>
+                    </button>
+                    {user.is_trial && (
+                      <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-xs font-medium">رسمي</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleToggleActive(user)}
+                      className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
+                      title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                    >
+                      {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                      <span className="text-xs font-medium">{user.is_active === false ? 'إلغاء الحظر' : 'حظر'}</span>
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <UserEditModal
         isOpen={!!editingUser}
@@ -319,7 +472,7 @@ export default function UsersPage() {
         isOpen={!!billingUser}
         onClose={() => { setBillingUser(null); fetchData(); }}
         user={billingUser}
-        globalCommission={globalConfig?.default_commission_rate || 5}
+        globalCommission={defaultCommission}
       />
 
       <ConfirmDialog

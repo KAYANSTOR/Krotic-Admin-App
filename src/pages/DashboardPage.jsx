@@ -1,27 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
 import {
-  Activity, AlertTriangle, ArrowUpRight, ChevronDown, Coins,
-  CreditCard, Phone, Sparkles, UserCheck, UserPlus, Users,
+  Activity, AlertTriangle, ArrowUpLeft, Bell, Coins, CreditCard,
+  LayoutDashboard, RefreshCw, Settings, ShieldCheck, Sparkles,
+  TrendingUp, UserCheck, UserPlus, Users, Wallet,
 } from 'lucide-react';
 import StatCard from '../components/ui/StatCard';
 import IconTile from '../components/ui/IconTile';
+import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import { formatNumber, formatToday } from '../lib/format';
 
 export default function DashboardPage() {
+  const { adminData } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [appStatus, setAppStatus] = useState(null);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
+      // 1) إعدادات عامة — نفس الاستعلام الأصلي
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       let globalCommission = 5;
       if (configDoc.exists()) {
@@ -30,6 +34,7 @@ export default function DashboardPage() {
         globalCommission = configData.default_commission_rate || 5;
       }
 
+      // 2) المستخدمون — نفس الاستعلام الأصلي
       const usersSnap = await getDocs(collection(db, 'users'));
       const users = [];
       usersSnap.forEach((d) => users.push({ uid: d.id, ...d.data() }));
@@ -43,6 +48,7 @@ export default function DashboardPage() {
       let totalAdminEarnings = 0;
       let totalTransactions = 0;
 
+      // 3) مبيعات كل شبكة — نفس الاستعلام الأصلي
       for (const user of users) {
         const activeRate = (user.commission_rate != null && user.commission_rate > 0)
           ? user.commission_rate
@@ -64,143 +70,232 @@ export default function DashboardPage() {
         totalUsers, trialUsers, activeUsers, blockedUsers,
         totalSales, totalAdminEarnings, totalTransactions,
       });
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   if (loading) return <PageSkeleton />;
 
   const maintenance = appStatus && !appStatus.is_app_active;
+  const adminName = (adminData?.name || 'المدير').trim();
 
   return (
     <div className="dashboard-page">
-      <section className="dashboard-intro">
-        <div>
-          <span className="dashboard-kicker"><Sparkles className="w-4 h-4" /> ملخص لوحة الإدارة</span>
-          <h1 className="dashboard-heading">مرحبًا بك في لوحة التحكم</h1>
-          <p className="dashboard-subheading">نظرة واضحة وسريعة على نشاط الشبكة وأداء الحسابات.</p>
+      {/* ===== ترحيب ===== */}
+      <section className="dash-hello" aria-label="ترحيب">
+        <div className="dash-hello__main">
+          <span className="dash-hello__kicker">
+            <Sparkles className="w-4 h-4" aria-hidden="true" />
+            لوحة الإدارة
+          </span>
+          <h1 className="dash-hello__title">أهلاً، {adminName}</h1>
+          <p className="dash-hello__sub">
+            نظرة سريعة على نشاط الشبكة والمؤشرات الرئيسية.
+          </p>
         </div>
-        <div className="dashboard-date-card">
+        <div className="dash-hello__date" aria-label="تاريخ اليوم">
           <span>اليوم</span>
           <strong>{formatToday()}</strong>
         </div>
       </section>
 
+      {/* ===== تنبيه الصيانة ===== */}
       {maintenance && (
-        <div className="dashboard-maintenance" role="status">
-          <span className="dashboard-maintenance-icon"><AlertTriangle className="w-5 h-5" /></span>
-          <div>
-            <p className="font-semibold">التطبيق متوقف حالياً (وضع الصيانة)</p>
-            {appStatus.maintenance_message && <p className="mt-1 text-sm">{appStatus.maintenance_message}</p>}
+        <div className="dash-alert" role="status" aria-live="polite">
+          <span className="dash-alert__icon" aria-hidden="true">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <div className="dash-alert__body">
+            <p className="dash-alert__title">التطبيق في وضع الصيانة</p>
+            {appStatus.maintenance_message && (
+              <p className="dash-alert__msg">{appStatus.maintenance_message}</p>
+            )}
           </div>
         </div>
       )}
 
+      {/* ===== خطأ ===== */}
+      {error && (
+        <div className="dash-error" role="alert">
+          <span className="dash-error__icon" aria-hidden="true">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <div className="dash-error__body">
+            <p className="dash-error__title">حدث خطأ</p>
+            <p className="dash-error__msg">{error}</p>
+          </div>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchDashboardData}>
+            إعادة المحاولة
+          </Button>
+        </div>
+      )}
+
+      {/* ===== KPI ===== */}
       {stats && (
         <>
-          <section className="dashboard-overview-grid" aria-label="ملخص الأداء">
-            <div className="dashboard-hero-card">
-              <div className="dashboard-hero-content">
-                <div className="dashboard-hero-topline">
-                  <span>إجمالي المبيعات</span>
-                  <span className="dashboard-period-pill"><ChevronDown className="w-4 h-4" /> كل الوقت</span>
-                </div>
-                <div className="dashboard-hero-value">
-                  <strong>{formatNumber(stats.totalSales)}</strong>
-                  <span>ريال يمني</span>
-                </div>
-                <p>إجمالي قيمة عمليات البيع المكتملة</p>
-              </div>
-              <div className="dashboard-hero-secondary">
-                <span>أرباح الإدارة</span>
-                <strong>{formatNumber(stats.totalAdminEarnings)} <small>ريال يمني</small></strong>
-              </div>
-              <svg className="dashboard-hero-chart" viewBox="0 0 520 180" fill="none" aria-hidden="true">
-                <path d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M-20 154C36 150 46 102 102 116C144 126 143 72 190 86C235 100 240 128 274 91C306 57 317 74 347 46C379 15 409 42 434 20C459 -2 489 20 542 -9" stroke="rgba(255,255,255,0.38)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
+          <section className="dash-kpi" aria-label="المؤشرات الرئيسية">
+            <StatCard
+              title="إجمالي المستخدمين"
+              value={formatNumber(stats.totalUsers)}
+              icon={Users}
+              tone="brand"
+              iconStart
+            />
+            <StatCard
+              title="المستخدمون النشطون"
+              value={formatNumber(stats.activeUsers)}
+              icon={UserCheck}
+              tone="success"
+              iconStart
+            />
+            <StatCard
+              title="حسابات تجريبية"
+              value={formatNumber(stats.trialUsers)}
+              icon={Activity}
+              tone="warning"
+              iconStart
+            />
+            <StatCard
+              title="حسابات محظورة"
+              value={formatNumber(stats.blockedUsers)}
+              icon={AlertTriangle}
+              tone="danger"
+              iconStart
+            />
+          </section>
 
-            <div className="dashboard-stat-grid">
-              <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} tone="brand" iconStart />
-              <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" iconStart />
-              <StatCard title="مستخدمون تجريبيون" value={formatNumber(stats.trialUsers)} icon={Activity} tone="warning" iconStart />
-              <StatCard title="محظورون" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} tone="danger" iconStart />
-              <StatCard title="عمليات البيع الناجحة" value={formatNumber(stats.totalTransactions)} icon={Coins} tone="gold" iconStart />
+          {/* ===== المالية ===== */}
+          <section className="dash-finance" aria-label="الملخص المالي">
+            <article className="dash-finance__primary">
+              <header className="dash-finance__head">
+                <span className="dash-finance__eyebrow">إجمالي المبيعات المكتملة</span>
+                <span className="dash-finance__pill">
+                  <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
+                  كل الوقت
+                </span>
+              </header>
+              <div className="dash-finance__value">
+                <strong>{formatNumber(stats.totalSales)}</strong>
+                <span>ريال يمني</span>
+              </div>
+              <p className="dash-finance__hint">
+                مجموع قيمة عمليات البيع بحالة «مكتمل» عبر جميع الشبكات.
+              </p>
+            </article>
+
+            <div className="dash-finance__side">
+              <article className="dash-finance__tile dash-finance__tile--gold">
+                <span className="dash-finance__tile-icon" aria-hidden="true">
+                  <Coins className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="dash-finance__tile-label">أرباح الإدارة</p>
+                  <p className="dash-finance__tile-value">
+                    {formatNumber(stats.totalAdminEarnings)}
+                    <small> ريال يمني</small>
+                  </p>
+                </div>
+              </article>
+
+              <article className="dash-finance__tile dash-finance__tile--brand">
+                <span className="dash-finance__tile-icon" aria-hidden="true">
+                  <Wallet className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="dash-finance__tile-label">عمليات بيع مكتملة</p>
+                  <p className="dash-finance__tile-value">
+                    {formatNumber(stats.totalTransactions)}
+                    <small> عملية</small>
+                  </p>
+                </div>
+              </article>
             </div>
           </section>
 
-          <section className="dashboard-section">
-            <div className="dashboard-section-heading">
+          {/* ===== إجراءات سريعة ===== */}
+          <section className="dash-section" aria-label="إجراءات سريعة">
+            <header className="dash-section__head">
               <div>
-                <span className="dashboard-section-eyebrow">تنقل أسرع</span>
-                <h2>الوصول السريع</h2>
+                <span className="dash-section__eyebrow">تنقل سريع</span>
+                <h2 className="dash-section__title">إجراءات سريعة</h2>
               </div>
-              <ArrowUpRight className="w-5 h-5 text-slate-300" aria-hidden="true" />
-            </div>
-            <div className="dashboard-actions-grid">
-              <Link to="/users" className="dashboard-action-card">
+            </header>
+            <div className="dash-actions">
+              <Link to="/users" className="dash-action">
                 <IconTile icon={UserPlus} tone="brand" />
-                <span className="dashboard-action-label">إدارة المستخدمين</span>
-                <ArrowUpRight className="dashboard-action-arrow" />
+                <span className="dash-action__label">إدارة المستخدمين</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
-              <Link to="/sales" className="dashboard-action-card">
+              <Link to="/sales" className="dash-action">
                 <IconTile icon={CreditCard} tone="gold" />
-                <span className="dashboard-action-label">متابعة المبيعات</span>
-                <ArrowUpRight className="dashboard-action-arrow" />
+                <span className="dash-action__label">المبيعات والعمولات</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
-              <Link to="/settings" className="dashboard-action-card">
-                <IconTile icon={Phone} tone="neutral" />
-                <span className="dashboard-action-label">إعدادات النظام</span>
-                <ArrowUpRight className="dashboard-action-arrow" />
+              <Link to="/notifications" className="dash-action">
+                <IconTile icon={Bell} tone="warning" />
+                <span className="dash-action__label">إرسال إشعار</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
-              <Link to="/admins" className="dashboard-action-card">
-                <IconTile icon={Users} tone="brand" />
-                <span className="dashboard-action-label">إدارة المدراء</span>
-                <ArrowUpRight className="dashboard-action-arrow" />
+              <Link to="/settings" className="dash-action">
+                <IconTile icon={Settings} tone="neutral" />
+                <span className="dash-action__label">الإعدادات العامة</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/admins" className="dash-action">
+                <IconTile icon={ShieldCheck} tone="success" />
+                <span className="dash-action__label">إدارة المدراء</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
             </div>
           </section>
 
-          <section className="dashboard-lower-grid">
-            <div className="dashboard-summary-card">
-              <div className="dashboard-section-heading">
+          {/* ===== حالة النظام ===== */}
+          <section className="dash-section" aria-label="حالة النظام">
+            <article className="dash-status">
+              <div className="dash-status__main">
+                <span
+                  className={`dash-status__dot ${maintenance ? 'is-warning' : 'is-ok'}`}
+                  aria-hidden="true"
+                />
                 <div>
-                  <span className="dashboard-section-eyebrow">نظرة مالية</span>
-                  <h2>ملخص الإيرادات</h2>
-                </div>
-                <Coins className="w-5 h-5 text-primary-500" aria-hidden="true" />
-              </div>
-              <div className="dashboard-finance-row">
-                <div>
-                  <span>إجمالي المبيعات</span>
-                  <strong>{formatNumber(stats.totalSales)} <small>ريال يمني</small></strong>
-                </div>
-                <div className="dashboard-finance-divider" />
-                <div>
-                  <span>أرباح الإدارة</span>
-                  <strong>{formatNumber(stats.totalAdminEarnings)} <small>ريال يمني</small></strong>
+                  <p className="dash-status__title">
+                    {maintenance ? 'وضع الصيانة مفعّل' : 'التطبيق يعمل بشكل طبيعي'}
+                  </p>
+                  <p className="dash-status__sub">
+                    {maintenance
+                      ? 'المستخدمون يرون رسالة الصيانة عند فتح التطبيق.'
+                      : 'لا توجد أعطال معلنة، وجميع الخدمات متاحة.'}
+                  </p>
                 </div>
               </div>
-            </div>
-
-            <div className="dashboard-summary-card dashboard-status-card">
-              <div className="dashboard-section-heading">
-                <div>
-                  <span className="dashboard-section-eyebrow">المؤشر التشغيلي</span>
-                  <h2>حالة التطبيق</h2>
-                </div>
-                <span className={`dashboard-status-dot ${maintenance ? 'is-warning' : ''}`} />
-              </div>
-              <div className="dashboard-status-copy">
-                <strong>{maintenance ? 'وضع الصيانة مفعّل' : 'التطبيق يعمل بشكل طبيعي'}</strong>
-                <span>{formatNumber(stats.totalTransactions)} عملية بيع مكتملة حتى الآن</span>
-              </div>
-            </div>
+              <Link to="/settings" className="dash-status__link">
+                <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
+                إدارة الحالة
+              </Link>
+            </article>
           </section>
         </>
+      )}
+
+      {/* ===== حالة فارغة ===== */}
+      {!stats && !error && (
+        <div className="dash-empty" role="status">
+          <span className="dash-empty__icon" aria-hidden="true">
+            <Users className="w-6 h-6" />
+          </span>
+          <p className="dash-empty__title">لا توجد بيانات لعرضها بعد</p>
+          <p className="dash-empty__desc">
+            لم يتم العثور على مستخدمين أو مبيعات مسجّلة حتى الآن.
+          </p>
+        </div>
       )}
     </div>
   );
