@@ -63,6 +63,14 @@ await FirebaseMessaging.instance.subscribeToTopic('krotak_all_users');
 `app_settings/global_config` متاحاً للتطبيق بينما يُحصر أرشيف الإشعارات العامة القديم
 على المدراء، ويُسمح للوحة باستخدام `admin_notification_history`.
 
+عند منع القراءة عن الحسابات العادية، يتجاهل التطبيق فشل قراءة الأرشيف العام القديم
+ويواصل عرض صندوق الحساب؛ لذلك لا يرى الحساب الجديد الإشعارات التاريخية. لا تُنشأ له
+نسخة من إشعار عام إلا إذا كان حسابه موجوداً عند الإرسال.
+
+تمنع القواعد إنشاء سجل مدير ذاتياً. يجب إنشاء أول مستند `Admins/{UID}` من مسار موثوق
+خارج العميل (Firebase Console أو Admin SDK)، وبعدها يستطيع المدير الحالي إنشاء مدراء
+آخرين من لوحة التحكم.
+
 ```bash
 firebase use <FIREBASE_PROJECT_ID>
 firebase deploy --only firestore:rules
