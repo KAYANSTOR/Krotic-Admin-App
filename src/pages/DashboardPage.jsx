@@ -90,7 +90,7 @@ export default function DashboardPage() {
 
       {stats && (
         <>
-          <section className="dash-kpi" aria-label="المؤشرات الرئيسية">
+          <section className="grid-kpi" aria-label="المؤشرات الرئيسية">
             <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} tone="brand" iconStart />
             <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" iconStart />
             <StatCard title="حسابات تجريبية" value={formatNumber(stats.trialUsers)} icon={Activity} tone="warning" iconStart />

@@ -2,6 +2,9 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
+// Literal class names so the Tailwind scanner keeps the matching size rules.
+const SIZES = { sm: 'modal--sm', md: 'modal--md', lg: 'modal--lg', xl: 'modal--xl' };
+
 export default function Modal({ isOpen, onClose, title, icon: Icon, description, children, footer, size = 'md', className }) {
   useEffect(() => {
     if (!isOpen) return;
@@ -19,7 +22,7 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
   return (
     <div className="modal-root" role="presentation">
       <div className="overlay" onClick={onClose} aria-hidden="true" />
-      <div className={cn('modal', `modal--${size}`, className)} role="dialog" aria-modal="true">
+      <div className={cn('modal', SIZES[size] || SIZES.md, className)} role="dialog" aria-modal="true">
         {(title || Icon) && (
           <div className="modal__header">
             <div className="flex items-start gap-3 min-w-0">

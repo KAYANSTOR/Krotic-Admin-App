@@ -111,7 +111,7 @@ export default function SalesPage() {
         }
       />
 
-      <div className="sales-kpi">
+      <div className="grid-kpi">
         <StatCard title="إجمالي المبيعات" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
         <StatCard title="إجمالي الصافي" value={formatNumber(grandTotals.totalNet)} icon={Receipt} tone="neutral" subtitle="ريال يمني" />
         <StatCard title="أرباح الإدارة" value={formatNumber(grandTotals.totalEarnings)} icon={TrendingUp} tone="gold" subtitle="ريال يمني" />
