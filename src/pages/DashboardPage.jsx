@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Activity, AlertTriangle, ArrowUpLeft, Bell, Coins, CreditCard,
@@ -13,6 +11,7 @@ import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import { formatNumber, formatToday } from '../lib/format';
+import { fetchDashboardStats } from '../lib/adminData';
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
@@ -21,55 +20,13 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [appStatus, setAppStatus] = useState(null);
 
-  const fetchDashboardData = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // 1) إعدادات عامة — نفس الاستعلام الأصلي
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
-      let globalCommission = 5;
-      if (configDoc.exists()) {
-        const configData = configDoc.data();
-        setAppStatus(configData);
-        globalCommission = configData.default_commission_rate || 5;
-      }
-
-      // 2) المستخدمون — نفس الاستعلام الأصلي
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const users = [];
-      usersSnap.forEach((d) => users.push({ uid: d.id, ...d.data() }));
-
-      const totalUsers = users.length;
-      const trialUsers = users.filter((u) => u.is_trial === true).length;
-      const activeUsers = users.filter((u) => u.is_active !== false).length;
-      const blockedUsers = users.filter((u) => u.is_active === false).length;
-
-      let totalSales = 0;
-      let totalAdminEarnings = 0;
-      let totalTransactions = 0;
-
-      // 3) مبيعات كل شبكة — نفس الاستعلام الأصلي
-      for (const user of users) {
-        const activeRate = (user.commission_rate != null && user.commission_rate > 0)
-          ? user.commission_rate
-          : globalCommission;
-
-        const salesSnap = await getDocs(collection(db, 'networks', user.uid, 'sales'));
-        salesSnap.forEach((saleDoc) => {
-          const sale = saleDoc.data();
-          if (sale.status === 'COMPLETED') {
-            totalTransactions++;
-            const faceValue = sale.faceValue || 0;
-            totalSales += faceValue;
-            totalAdminEarnings += faceValue * (activeRate / 100);
-          }
-        });
-      }
-
-      setStats({
-        totalUsers, trialUsers, activeUsers, blockedUsers,
-        totalSales, totalAdminEarnings, totalTransactions,
-      });
+      const { appStatus: status, stats: nextStats } = await fetchDashboardStats();
+      setAppStatus(status);
+      setStats(nextStats);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
@@ -79,8 +36,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    load();
+  }, [load]);
 
   if (loading) return <PageSkeleton />;
 
@@ -89,7 +46,6 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      {/* ===== ترحيب ===== */}
       <section className="dash-hello" aria-label="ترحيب">
         <div className="dash-hello__main">
           <span className="dash-hello__kicker">
@@ -107,7 +63,6 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* ===== تنبيه الصيانة ===== */}
       {maintenance && (
         <div className="dash-alert" role="status" aria-live="polite">
           <span className="dash-alert__icon" aria-hidden="true">
@@ -122,7 +77,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ===== خطأ ===== */}
       {error && (
         <div className="dash-error" role="alert">
           <span className="dash-error__icon" aria-hidden="true">
@@ -132,47 +86,21 @@ export default function DashboardPage() {
             <p className="dash-error__title">حدث خطأ</p>
             <p className="dash-error__msg">{error}</p>
           </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchDashboardData}>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load}>
             إعادة المحاولة
           </Button>
         </div>
       )}
 
-      {/* ===== KPI ===== */}
       {stats && (
         <>
           <section className="dash-kpi" aria-label="المؤشرات الرئيسية">
-            <StatCard
-              title="إجمالي المستخدمين"
-              value={formatNumber(stats.totalUsers)}
-              icon={Users}
-              tone="brand"
-              iconStart
-            />
-            <StatCard
-              title="المستخدمون النشطون"
-              value={formatNumber(stats.activeUsers)}
-              icon={UserCheck}
-              tone="success"
-              iconStart
-            />
-            <StatCard
-              title="حسابات تجريبية"
-              value={formatNumber(stats.trialUsers)}
-              icon={Activity}
-              tone="warning"
-              iconStart
-            />
-            <StatCard
-              title="حسابات محظورة"
-              value={formatNumber(stats.blockedUsers)}
-              icon={AlertTriangle}
-              tone="danger"
-              iconStart
-            />
+            <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} tone="brand" iconStart />
+            <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" iconStart />
+            <StatCard title="حسابات تجريبية" value={formatNumber(stats.trialUsers)} icon={Activity} tone="warning" iconStart />
+            <StatCard title="حسابات محظورة" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} tone="danger" iconStart />
           </section>
 
-          {/* ===== المالية ===== */}
           <section className="dash-finance" aria-label="الملخص المالي">
             <article className="dash-finance__primary">
               <header className="dash-finance__head">
@@ -220,7 +148,6 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ===== إجراءات سريعة ===== */}
           <section className="dash-section" aria-label="إجراءات سريعة">
             <header className="dash-section__head">
               <div>
@@ -257,7 +184,6 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* ===== حالة النظام ===== */}
           <section className="dash-section" aria-label="حالة النظام">
             <article className="dash-status">
               <div className="dash-status__main">
@@ -285,7 +211,6 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ===== حالة فارغة ===== */}
       {!stats && !error && (
         <div className="dash-empty" role="status">
           <span className="dash-empty__icon" aria-hidden="true">
