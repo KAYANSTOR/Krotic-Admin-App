@@ -4,13 +4,26 @@ import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import { Download, Menu, LogOut } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+/** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
+const PAGE_TITLES = {
+  '/': 'الرئيسية',
+  '/settings': 'الإعدادات العامة',
+  '/users': 'إدارة المستخدمين',
+  '/sales': 'المبيعات والعمولات',
+  '/notifications': 'الإشعارات',
+  '/admins': 'إدارة المدراء',
+};
 
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event) => {
@@ -47,14 +60,17 @@ export default function Layout({ children }) {
       <div className="app-body lg:ms-72">
         <header className="app-header">
           <div className="app-header__inner">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="app-header__menu lg:hidden"
-              aria-label="فتح القائمة"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            <div className="app-header__lead">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="app-header__menu lg:hidden"
+                aria-label="فتح القائمة"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <p className="app-header__title">{pageTitle}</p>
+            </div>
 
             <div className="app-header__actions">
               <div className="admin-chip">

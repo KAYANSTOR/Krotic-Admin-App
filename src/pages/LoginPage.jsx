@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
@@ -52,11 +52,19 @@ export default function LoginPage() {
             <img src="/icons/krotak-pro-192.png" alt="كروتك برو" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">كروتك برو</h1>
-          <p className="text-stone-400 mt-2 text-sm">لوحة التحكم الإدارية</p>
+          <p className="text-ink-tertiary mt-2 text-sm">لوحة التحكم الإدارية</p>
         </div>
 
         <div className="login-panel">
-          <h2 className="text-xl font-bold text-slate-900 mb-6 text-center">تسجيل الدخول</h2>
+          <div className="login-panel__head">
+            <span className="icon-tile icon-tile--brand icon-tile--lg" aria-hidden="true">
+              <ShieldCheck className="w-5 h-5" />
+            </span>
+            <div>
+              <h2 className="login-panel__title">تسجيل الدخول</h2>
+              <p className="login-panel__desc">أدخل بيانات حساب المدير للمتابعة إلى اللوحة.</p>
+            </div>
+          </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <Field label="البريد الإلكتروني">
@@ -90,7 +98,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-stone-500 text-xs mt-8">
+        <p className="text-center text-ink-secondary text-xs mt-8">
           كروتك برو — لوحة التحكم © {new Date().getFullYear()}
         </p>
       </div>
