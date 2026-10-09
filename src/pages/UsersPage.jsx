@@ -276,13 +276,13 @@ export default function UsersPage() {
                     <th className="text-right px-6 py-4">الإجراءات السريعة</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-line">
                   {filteredUsers.map((user) => (
-                    <tr key={user.uid} className="hover:bg-gray-50 transition-colors">
+                    <tr key={user.uid} className="hover:bg-surface-sunken transition-colors">
                       <td className="px-6 py-4" data-label="الشبكة">
                         <div>
-                          <p className="font-semibold text-gray-900">{user.networkName || '—'}</p>
-                          <p className="text-xs text-gray-400 mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
+                          <p className="font-semibold text-ink">{user.networkName || '—'}</p>
+                          <p className="text-xs text-ink-tertiary mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
                         </div>
                       </td>
                       <td className="px-6 py-4" data-label="النوع">
@@ -291,18 +291,18 @@ export default function UsersPage() {
                           {user.is_active === false && <Badge tone="danger">محظور</Badge>}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-gray-600" data-label="العمولة">
+                      <td className="px-6 py-4 text-ink-soft" data-label="العمولة">
                         {user.commission_rate != null && user.commission_rate > 0
                           ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
                           : `${defaultCommission}% (عامة)`}
                       </td>
                       <td className="px-6 py-4" data-label="الديون">
-                        <span className={`font-bold ${user.balance > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                        <span className={`font-bold ${user.balance > 0 ? 'text-danger-ink' : 'text-ink'}`}>
                           {formatNumber(user.balance)}
                         </span>
                       </td>
                       <td className="px-6 py-4" data-label="تاريخ التصفية">
-                        <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                        <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-danger-ink font-semibold' : 'text-ink-soft'}`}>
                           {formatDate(user.subscription_end_date)}
                         </span>
                       </td>
@@ -367,13 +367,13 @@ export default function UsersPage() {
                     </div>
                     <div className="user-card__meta-item">
                       <dt>الديون</dt>
-                      <dd className={hasDebt ? 'text-red-600 font-bold' : 'font-bold'}>
+                      <dd className={hasDebt ? 'text-danger-ink font-bold' : 'font-bold'}>
                         {formatNumber(user.balance)}
                       </dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>تاريخ التصفية</dt>
-                      <dd className={expired ? 'text-red-600 font-semibold' : ''}>
+                      <dd className={expired ? 'text-danger-ink font-semibold' : ''}>
                         {formatDate(user.subscription_end_date)}
                       </dd>
                     </div>

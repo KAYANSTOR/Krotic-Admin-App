@@ -86,7 +86,7 @@ export default function UserEditModal({ isOpen, onClose, user, onSave }) {
               />
             </div>
           ) : (
-            <p className="text-xs text-gray-500 mt-3">
+            <p className="text-xs text-ink-secondary mt-3">
               التطبيق سيعرض رسالة التحذير العامة المحددة في الإعدادات.
             </p>
           )}

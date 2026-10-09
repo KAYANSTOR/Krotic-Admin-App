@@ -209,7 +209,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
 
           <div className="bg-[var(--ui-sunken)] p-5 rounded-2xl border border-[var(--ui-line)]">
             <h4 className="font-bold flex items-center gap-2 mb-1"><PlusCircle className="w-5 h-5" /> إضافة دفعة جديدة</h4>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-xs text-ink-secondary mb-4">
               عند تأكيد الدفعة يُرسل إشعار فوري إلى تطبيق العميل، ويُحدَّث المتبقي تلقائياً (مستحق −
               مدفوع). إذا سُدّد الشهر بالكامل يظهر صفر ويبدأ الحساب من المبيعات الجديدة.
             </p>
@@ -233,7 +233,7 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
           <div>
             <h4 className="font-bold flex items-center gap-2 mb-4"><CreditCard className="w-5 h-5" /> تفاصيل الأشهر</h4>
             {sortedMonths.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">لا يوجد حركات مسجلة</p>
+              <p className="text-ink-secondary text-center py-4">لا يوجد حركات مسجلة</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="responsive-data-table w-full text-sm">
@@ -246,18 +246,18 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
                       <th className="px-4 py-3 text-right">المتبقي (ريال يمني)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-line">
                     {sortedMonths.map((month) => {
                       const m = monthsData[month];
                       const remaining = m.commissionDue - m.paid;
                       return (
-                        <tr key={month} className="hover:bg-gray-50">
+                        <tr key={month} className="hover:bg-surface-sunken">
                           <td className="px-4 py-3 font-bold" dir="ltr" data-label="الشهر">{month}</td>
-                          <td className="px-4 py-3 text-gray-600" data-label="إجمالي المبيعات">{formatNumber(m.salesTotal)}</td>
-                          <td className="px-4 py-3 text-gray-700 font-medium" data-label="العمولة المستحقة">{formatNumber(m.commissionDue)}</td>
-                          <td className="px-4 py-3 text-gray-700 font-medium" data-label="تم سداده">{formatNumber(m.paid)}</td>
+                          <td className="px-4 py-3 text-ink-soft" data-label="إجمالي المبيعات">{formatNumber(m.salesTotal)}</td>
+                          <td className="px-4 py-3 text-ink-soft font-medium" data-label="العمولة المستحقة">{formatNumber(m.commissionDue)}</td>
+                          <td className="px-4 py-3 text-ink-soft font-medium" data-label="تم سداده">{formatNumber(m.paid)}</td>
                           <td className="px-4 py-3" data-label="المتبقي">
-                            <span className={`font-bold ${remaining > 0 ? 'text-red-600' : remaining < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                            <span className={`font-bold ${remaining > 0 ? 'text-danger-ink' : remaining < 0 ? 'text-success-ink' : 'text-ink'}`}>
                               {formatNumber(remaining)}
                             </span>
                           </td>

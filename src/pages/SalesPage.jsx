@@ -259,10 +259,10 @@ export default function SalesPage() {
                               <th className="text-right px-6 py-3">الحالة</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-50">
+                          <tbody className="divide-y divide-line">
                             {stats.filteredSales.map((sale) => (
-                              <tr key={sale.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-3 text-sm text-gray-600" data-label="التاريخ">
+                              <tr key={sale.id} className="hover:bg-surface-sunken">
+                                <td className="px-6 py-3 text-sm text-ink-soft" data-label="التاريخ">
                                   {formatDate(sale.createdAt, { withTime: true })}
                                 </td>
                                 <td className="px-6 py-3 text-sm" dir="ltr" data-label="الزبون">
@@ -271,7 +271,7 @@ export default function SalesPage() {
                                 <td className="px-6 py-3 text-sm font-medium" data-label="القيمة">
                                   {formatNumber(sale.faceValue)}
                                 </td>
-                                <td className="px-6 py-3 text-sm text-gray-600" data-label="العمولة (صراف)">
+                                <td className="px-6 py-3 text-sm text-ink-soft" data-label="العمولة (صراف)">
                                   {formatNumber(sale.commission)}
                                 </td>
                                 <td className="px-6 py-3 text-sm font-medium" data-label="الصافي">

@@ -2,15 +2,34 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, X,
 } from 'lucide-react';
+import { loadRoute } from '../lib/routeLoaders';
 
-const navItems = [
-  { path: '/', label: 'الرئيسية', icon: LayoutDashboard },
-  { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
-  { path: '/users', label: 'إدارة المستخدمين', icon: Users },
-  { path: '/sales', label: 'المبيعات والعمولات', icon: DollarSign },
-  { path: '/notifications', label: 'الإشعارات', icon: Bell },
-  { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
+/** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي. */
+const navGroups = [
+  {
+    label: 'نظرة عامة',
+    items: [{ path: '/', label: 'الرئيسية', icon: LayoutDashboard }],
+  },
+  {
+    label: 'العمليات',
+    items: [
+      { path: '/users', label: 'إدارة المستخدمين', icon: Users },
+      { path: '/sales', label: 'المبيعات والعمولات', icon: DollarSign },
+      { path: '/notifications', label: 'الإشعارات', icon: Bell },
+    ],
+  },
+  {
+    label: 'النظام',
+    items: [
+      { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
+      { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
+    ],
+  },
 ];
+
+function preloadRoute(path) {
+  loadRoute(path).catch((error) => console.debug('Route preloading skipped:', error));
+}
 
 export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
@@ -36,22 +55,30 @@ export default function Sidebar({ isOpen, onClose }) {
         </div>
 
         <nav className="sidebar__nav" aria-label="التنقل الرئيسي">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === '/'}
-                onClick={onClose}
-                className={`sidebar__link ${isActive ? 'is-active' : ''}`}
-              >
-                <Icon className="sidebar__link-icon" aria-hidden="true" />
-                <span>{item.label}</span>
-              </NavLink>
-            );
-          })}
+          {navGroups.map((group) => (
+            <div className="sidebar__group" key={group.label}>
+              <p className="sidebar__group-label">{group.label}</p>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.path;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.path === '/'}
+                    onClick={onClose}
+                    onPointerEnter={() => preloadRoute(item.path)}
+                    onFocus={() => preloadRoute(item.path)}
+                    className={`sidebar__link ${isActive ? 'is-active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
+                  >
+                    <Icon className="sidebar__link-icon" aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar__footer">
