@@ -1,22 +1,40 @@
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-/**
- * Shared admin data helpers — parallel Firestore reads, no sequential N+1.
- */
+const CACHE_TTL = 15_000;
+const cache = new Map();
+const inFlight = new Map();
 
-export async function fetchGlobalConfig() {
-  const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
-  if (!configDoc.exists()) {
-    return { default_commission_rate: 5, is_app_active: true };
-  }
-  return configDoc.data();
+async function readCached(key, loader, { force = false } = {}) {
+  const now = Date.now();
+  const cached = cache.get(key);
+  if (!force && cached && now - cached.createdAt < CACHE_TTL) return cached.value;
+  if (!force && inFlight.has(key)) return inFlight.get(key);
+  const request = Promise.resolve().then(loader).then((value) => {
+    cache.set(key, { value, createdAt: Date.now() });
+    inFlight.delete(key);
+    return value;
+  }).catch((error) => {
+    inFlight.delete(key);
+    throw error;
+  });
+  inFlight.set(key, request);
+  return request;
+}
+
+export function clearAdminDataCache() {
+  cache.clear();
+}
+
+export async function fetchGlobalConfig(options) {
+  return readCached('global-config', async () => {
+    const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
+    return configDoc.exists() ? configDoc.data() : { default_commission_rate: 5, is_app_active: true };
+  }, options);
 }
 
 export function resolveCommissionRate(userData, globalRate) {
-  if (userData?.commission_rate != null && userData.commission_rate > 0) {
-    return userData.commission_rate;
-  }
+  if (userData?.commission_rate != null && userData.commission_rate > 0) return userData.commission_rate;
   return globalRate ?? 5;
 }
 
@@ -24,185 +42,114 @@ async function fetchNetworkMeta(uid) {
   try {
     const metaDoc = await getDoc(doc(db, 'networks', uid, '_metadata', 'info'));
     if (metaDoc.exists()) {
-      const m = metaDoc.data();
-      return {
-        networkName: m.name || '',
-        phoneNumber: m.phoneNumber || '',
-      };
+      const metadata = metaDoc.data();
+      return { networkName: metadata.name || '', phoneNumber: metadata.phoneNumber || '' };
     }
   } catch {
-    /* metadata optional */
+    // Network metadata is optional.
   }
   return { networkName: '', phoneNumber: '' };
 }
 
 async function fetchSalesForUser(uid) {
   const snap = await getDocs(collection(db, 'networks', uid, 'sales'));
-  const sales = [];
-  snap.forEach((d) => sales.push({ id: d.id, ...d.data() }));
-  return sales;
+  return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
 }
 
 async function fetchPaymentsForUser(uid) {
   const snap = await getDocs(collection(db, 'networks', uid, 'payments'));
-  let totalPaid = 0;
-  snap.forEach((d) => {
-    totalPaid += d.data().amount || 0;
-  });
-  return totalPaid;
+  return snap.docs.reduce((total, paymentDoc) => total + (paymentDoc.data().amount || 0), 0);
 }
 
-/**
- * Load all users (raw docs) in one collection read.
- */
-export async function fetchAllUsers() {
-  const snap = await getDocs(collection(db, 'users'));
-  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+export async function fetchAllUsers(options) {
+  return readCached('all-users', async () => {
+    const snap = await getDocs(collection(db, 'users'));
+    return snap.docs.map((userDoc) => ({ uid: userDoc.id, ...userDoc.data() }));
+  }, options);
 }
 
-/**
- * Enrich a single user with network meta + sales aggregates + balance.
- * Used by Users page.
- */
 async function enrichUserForBilling(user, globalCommission) {
   const [meta, sales, totalPaid] = await Promise.all([
     fetchNetworkMeta(user.uid),
     fetchSalesForUser(user.uid),
     fetchPaymentsForUser(user.uid),
   ]);
-
   const activeRate = resolveCommissionRate(user, globalCommission);
-  let totalDue = 0;
-  sales.forEach((sale) => {
-    if (sale.status === 'COMPLETED') {
-      totalDue += (sale.faceValue || 0) * (activeRate / 100);
-    }
-  });
-
-  return {
-    ...user,
-    ...meta,
-    balance: totalDue - totalPaid,
-  };
+  const totalDue = sales.reduce((total, sale) => (
+    sale.status === 'COMPLETED' ? total + (sale.faceValue || 0) * (activeRate / 100) : total
+  ), 0);
+  return { ...user, ...meta, balance: totalDue - totalPaid };
 }
 
-/**
- * Users page: parallel enrichment of every user.
- */
-export async function fetchUsersWithBilling() {
-  const [config, users] = await Promise.all([
-    fetchGlobalConfig(),
-    fetchAllUsers(),
-  ]);
-  const globalCommission = config.default_commission_rate || 5;
-
-  const enriched = await Promise.all(
-    users.map((u) => enrichUserForBilling(u, globalCommission))
-  );
-
-  return { users: enriched, globalConfig: config, globalCommission };
+export async function fetchUsersWithBilling(options) {
+  return readCached('users-with-billing', async () => {
+    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
+    const globalCommission = config.default_commission_rate || 5;
+    const enriched = await Promise.all(users.map((user) => enrichUserForBilling(user, globalCommission)));
+    return { users: enriched, globalConfig: config, globalCommission };
+  }, options);
 }
 
-/**
- * Dashboard: aggregate KPIs without blocking on sequential sales.
- */
-export async function fetchDashboardStats() {
-  const [config, users] = await Promise.all([
-    fetchGlobalConfig(),
-    fetchAllUsers(),
-  ]);
-  const globalCommission = config.default_commission_rate || 5;
-
-  const totalUsers = users.length;
-  const trialUsers = users.filter((u) => u.is_trial === true).length;
-  const activeUsers = users.filter((u) => u.is_active !== false).length;
-  const blockedUsers = users.filter((u) => u.is_active === false).length;
-
-  const salesResults = await Promise.all(
-    users.map(async (user) => {
+export async function fetchDashboardStats(options) {
+  return readCached('dashboard-stats', async () => {
+    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
+    const globalCommission = config.default_commission_rate || 5;
+    const salesResults = await Promise.all(users.map(async (user) => {
       const sales = await fetchSalesForUser(user.uid);
-      const activeRate = resolveCommissionRate(user, globalCommission);
-      let face = 0;
-      let earnings = 0;
-      let count = 0;
-      sales.forEach((sale) => {
-        if (sale.status === 'COMPLETED') {
-          count += 1;
-          const fv = sale.faceValue || 0;
-          face += fv;
-          earnings += fv * (activeRate / 100);
-        }
-      });
-      return { face, earnings, count };
-    })
-  );
-
-  let totalSales = 0;
-  let totalAdminEarnings = 0;
-  let totalTransactions = 0;
-  salesResults.forEach((r) => {
-    totalSales += r.face;
-    totalAdminEarnings += r.earnings;
-    totalTransactions += r.count;
-  });
-
-  return {
-    appStatus: config,
-    stats: {
-      totalUsers,
-      trialUsers,
-      activeUsers,
-      blockedUsers,
-      totalSales,
-      totalAdminEarnings,
-      totalTransactions,
-    },
-  };
+      return sales.reduce((result, sale) => {
+        if (sale.status !== 'COMPLETED') return result;
+        const faceValue = sale.faceValue || 0;
+        result.face += faceValue;
+        result.earnings += faceValue * (resolveCommissionRate(user, globalCommission) / 100);
+        result.count += 1;
+        return result;
+      }, { face: 0, earnings: 0, count: 0 });
+    }));
+    const totals = salesResults.reduce((result, saleResult) => ({
+      totalSales: result.totalSales + saleResult.face,
+      totalAdminEarnings: result.totalAdminEarnings + saleResult.earnings,
+      totalTransactions: result.totalTransactions + saleResult.count,
+    }), { totalSales: 0, totalAdminEarnings: 0, totalTransactions: 0 });
+    return {
+      appStatus: config,
+      stats: {
+        totalUsers: users.length,
+        trialUsers: users.filter((user) => user.is_trial === true).length,
+        activeUsers: users.filter((user) => user.is_active !== false).length,
+        blockedUsers: users.filter((user) => user.is_active === false).length,
+        ...totals,
+      },
+    };
+  }, options);
 }
 
-/**
- * Sales page: networks with full sales lists, all parallel.
- */
-export async function fetchNetworkSales() {
-  const [config, users] = await Promise.all([
-    fetchGlobalConfig(),
-    fetchAllUsers(),
-  ]);
-  const globalCommission = config.default_commission_rate || 5;
-
-  const networks = await Promise.all(
-    users.map(async (user) => {
-      const [meta, sales] = await Promise.all([
-        fetchNetworkMeta(user.uid),
-        fetchSalesForUser(user.uid),
-      ]);
+export async function fetchNetworkSales(options) {
+  return readCached('network-sales', async () => {
+    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
+    const globalCommission = config.default_commission_rate || 5;
+    const networks = await Promise.all(users.map(async (user) => {
+      const [meta, sales] = await Promise.all([fetchNetworkMeta(user.uid), fetchSalesForUser(user.uid)]);
       if (sales.length === 0) return null;
-
-      const activeRate = resolveCommissionRate(user, globalCommission);
+      const commissionRate = resolveCommissionRate(user, globalCommission);
       return {
         uid: user.uid,
         networkName: meta.networkName,
         phoneNumber: meta.phoneNumber,
-        commissionRate: activeRate,
+        commissionRate,
         isCustomRate: user.commission_rate != null && user.commission_rate > 0,
         sales,
       };
-    })
-  );
-
-  return networks.filter(Boolean);
+    }));
+    return networks.filter(Boolean);
+  }, options);
 }
 
-/**
- * Notifications: users list with names only (parallel meta).
- */
-export async function fetchUsersForSelect() {
-  const users = await fetchAllUsers();
-  const withNames = await Promise.all(
-    users.map(async (u) => {
-      const meta = await fetchNetworkMeta(u.uid);
-      return { uid: u.uid, name: meta.networkName || u.uid };
-    })
-  );
-  return withNames;
+export async function fetchUsersForSelect(options) {
+  return readCached('users-for-select', async () => {
+    const users = await fetchAllUsers(options);
+    return Promise.all(users.map(async (user) => {
+      const meta = await fetchNetworkMeta(user.uid);
+      return { uid: user.uid, name: meta.networkName || user.uid };
+    }));
+  }, options);
 }

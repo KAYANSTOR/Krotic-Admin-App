@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 import { db } from '../firebase';
-import { Settings, Save, Power, AlertTriangle, MessageSquare, Percent, Calendar, RefreshCw } from 'lucide-react';
+import { Settings, Save, Power, AlertTriangle, MessageSquare, Percent, Calendar, RefreshCw, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -112,10 +113,16 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="page-title flex items-center gap-3">
-          <Settings className="w-7 h-7 text-primary-600" />
-          الإعدادات العامة
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="page-title flex items-center gap-3">
+            <Settings className="w-7 h-7 text-primary-600" />
+            الإعدادات العامة
+          </h1>
+          <Link to="/admins" className="btn-secondary inline-flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            إدارة المدراء
+          </Link>
+        </div>
         <p className="text-gray-500 mt-1">التحكم بإعدادات التطبيق، العمولات، والرسائل</p>
       </div>
 

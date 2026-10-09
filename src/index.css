@@ -238,12 +238,12 @@
   .sidebar__footer p { text-align:center; font-size:.75rem; color:#78716C; }
 
   /* ===== القائمة السفلية ===== */
-  .bottom-nav { position:fixed; inset-inline:8px; bottom:max(8px, env(safe-area-inset-bottom)); z-index:40; max-width:720px; margin-inline:auto; padding:6px 4px; border-radius:18px; background:rgba(255,254,252,.97); border:1px solid rgba(217,119,87,.22); box-shadow:0 12px 32px rgba(41,37,36,.13); backdrop-filter:blur(10px); }
+  .bottom-nav { position:fixed; inset-inline:8px; bottom:max(8px, env(safe-area-inset-bottom)); z-index:40; max-width:720px; margin-inline:auto; padding:6px 4px; border-radius:18px; background:var(--ui-surface); border:1px solid rgba(217,119,87,.22); box-shadow:0 12px 32px rgba(41,37,36,.13); contain:layout paint; }
   @media (min-width:1024px) { .bottom-nav { display:none; } }
-  .bottom-nav-row { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:2px; width:100%; }
-  .bottom-nav-item { display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:56px; padding:6px 2px; border-radius:13px; color:var(--ui-muted); font-size:11px; font-weight:700; line-height:1.15; text-align:center; text-decoration:none; transition:color .15s ease, background .15s ease, transform .12s ease; }
+  .bottom-nav-row { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; width:100%; }
+  .bottom-nav-item { display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:56px; padding:6px 2px; border-radius:13px; color:var(--ui-muted); font-size:11px; font-weight:700; line-height:1.15; text-align:center; text-decoration:none; transition:color .15s ease, background-color .15s ease; }
   .bottom-nav-item:hover { color:var(--ui-brand-deep); background:var(--ui-brand-soft); }
-  .bottom-nav-item:active { transform:scale(.97); }
+  .bottom-nav-item:active { background:var(--ui-brand-soft); }
   .bottom-nav-item.is-active { color:var(--ui-brand-deep); background:var(--ui-brand-soft); box-shadow:inset 0 0 0 1px rgba(217,119,87,.1); }
   .bottom-nav-label { display:block; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-inline:1px; }
   .bottom-nav-icon { width:18px; height:18px; stroke-width:2.2; flex-shrink:0; }
@@ -260,9 +260,6 @@
   .dashboard-kicker { display:inline-flex; align-items:center; gap:.5rem; margin-bottom:.75rem; padding:.375rem .75rem; border-radius:999px; font-size:.75rem; font-weight:800; color:var(--ui-brand-deep); background:var(--ui-brand-soft); box-shadow:inset 0 0 0 1px rgba(217,119,87,.14); }
   .dashboard-heading { font-size:clamp(1.5rem,3vw,1.875rem); font-weight:800; letter-spacing:-.02em; }
   .dashboard-subheading { margin-top:.5rem; font-size:.875rem; line-height:1.6; color:var(--ui-muted); }
-  .dashboard-date-card { padding:1rem 1.25rem; border:1px solid var(--ui-line); border-radius:18px; background:rgba(255,255,255,.85); box-shadow:0 4px 20px -4px rgba(41,37,36,.06); }
-  .dashboard-date-card span { display:block; font-size:.75rem; font-weight:700; color:var(--ui-muted); }
-  .dashboard-date-card strong { display:block; margin-top:.25rem; font-size:.875rem; font-weight:800; color:var(--ui-ink-soft); }
   .dashboard-maintenance { display:flex; align-items:flex-start; gap:.75rem; margin-bottom:1.5rem; padding:1rem 1.25rem; border-radius:18px; border:1px solid var(--ui-danger-soft); background:linear-gradient(135deg,#fff7f7,#fff1f2); color:var(--ui-danger-ink); }
   .dashboard-maintenance-icon { display:grid; place-items:center; width:36px; height:36px; border-radius:12px; background:var(--ui-danger-soft); color:var(--ui-danger-ink); flex-shrink:0; }
   .dashboard-overview-grid { display:grid; gap:1.25rem; grid-template-columns:minmax(0,1.2fr) minmax(340px,.8fr); margin-bottom:2rem; }
@@ -435,13 +432,6 @@
     font-weight: 800; letter-spacing: -.02em;
   }
   .dash-hello__sub { margin-top: .5rem; font-size: .875rem; color: var(--ui-muted); }
-  .dash-hello__date {
-    padding: 1rem 1.25rem; border: 1px solid var(--ui-line);
-    border-radius: 18px; background: rgba(255,255,255,.85);
-    box-shadow: 0 4px 20px -4px rgba(41,37,36,.06);
-  }
-  .dash-hello__date span { display: block; font-size: .75rem; font-weight: 700; color: var(--ui-muted); }
-  .dash-hello__date strong { display: block; margin-top: .25rem; font-size: .875rem; font-weight: 800; color: var(--ui-ink-soft); }
 
   /* تنبيه الصيانة */
   .dash-alert {

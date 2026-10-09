@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  collection, getDocs, addDoc, doc, getDoc, serverTimestamp
+  collection, getDocs, addDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
@@ -13,6 +13,7 @@ import PageHeader from '../components/ui/PageHeader';
 import { Card, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import { fetchUsersForSelect } from '../lib/adminData';
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -32,35 +33,15 @@ export default function NotificationsPage() {
   const fetchData = async () => {
     setLoadError(false);
     try {
-      // Fetch users for dropdown
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const usersData = [];
-      for (const userDoc of usersSnap.docs) {
-        let name = userDoc.id;
-        try {
-          const metaDoc = await getDoc(
-            doc(db, 'networks', userDoc.id, '_metadata', 'info')
-          );
-          if (metaDoc.exists()) {
-            name = metaDoc.data().name || userDoc.id;
-          }
-        } catch (e) {}
-        usersData.push({ uid: userDoc.id, name });
-      }
+      const [usersData, notificationResult] = await Promise.all([
+        fetchUsersForSelect(),
+        getDocs(collection(db, 'app_settings', 'global_config', 'notifications')),
+      ]);
       setUsers(usersData);
-
-      // Fetch recent global notifications
-      try {
-        const notifSnap = await getDocs(
-          collection(db, 'app_settings', 'global_config', 'notifications')
-        );
-        const notifs = [];
-        notifSnap.forEach((d) => notifs.push({ id: d.id, ...d.data(), type: 'global' }));
-        notifs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        setRecentNotifications(notifs.slice(0, 20));
-      } catch (e) {
-        console.warn('Could not fetch notifications history');
-      }
+      const notifs = notificationResult.docs
+        .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data(), type: 'global' }))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setRecentNotifications(notifs.slice(0, 20));
     } catch (error) {
       console.error('Error fetching data:', error);
       setLoadError(true);

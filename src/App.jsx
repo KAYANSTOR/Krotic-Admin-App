@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -6,16 +6,27 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
+import { loadRoute, preloadRoutes } from './lib/routeLoaders';
 
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const UsersPage = lazy(() => import('./pages/UsersPage'));
-const SalesPage = lazy(() => import('./pages/SalesPage'));
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
-const AdminsPage = lazy(() => import('./pages/AdminsPage'));
+const DashboardPage = lazy(() => loadRoute('/'));
+const SettingsPage = lazy(() => loadRoute('/settings'));
+const UsersPage = lazy(() => loadRoute('/users'));
+const SalesPage = lazy(() => loadRoute('/sales'));
+const NotificationsPage = lazy(() => loadRoute('/notifications'));
+const AdminsPage = lazy(() => loadRoute('/admins'));
 
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading || !currentUser) return undefined;
+    const idleCallback = window.requestIdleCallback || ((callback) => window.setTimeout(callback, 120));
+    const cancelIdleCallback = window.cancelIdleCallback || window.clearTimeout;
+    const handle = idleCallback(() => {
+      preloadRoutes().catch((error) => console.debug('Route preloading skipped:', error));
+    });
+    return () => cancelIdleCallback(handle);
+  }, [currentUser, loading]);
 
   if (loading) return null;
 

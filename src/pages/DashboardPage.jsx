@@ -10,7 +10,7 @@ import StatCard from '../components/ui/StatCard';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
-import { formatNumber, formatToday } from '../lib/format';
+import { formatNumber } from '../lib/format';
 import { fetchDashboardStats } from '../lib/adminData';
 
 export default function DashboardPage() {
@@ -56,10 +56,6 @@ export default function DashboardPage() {
           <p className="dash-hello__sub">
             نظرة سريعة على نشاط الشبكة والمؤشرات الرئيسية.
           </p>
-        </div>
-        <div className="dash-hello__date" aria-label="تاريخ اليوم">
-          <span>اليوم</span>
-          <strong>{formatToday()}</strong>
         </div>
       </section>
 
