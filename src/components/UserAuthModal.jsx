@@ -9,6 +9,7 @@ import Button from './ui/Button';
 import Badge from './ui/Badge';
 import { Field, Input } from './ui/Field';
 import { SkeletonLine } from './ui/Skeleton';
+import UserDevicesPanel from './UserDevicesPanel';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { formatDate } from '../lib/format';
@@ -404,6 +405,8 @@ ${resetLink}`)}`
               </Button>
             )}
           </div>
+
+          <UserDevicesPanel userId={user.uid} userLabel={networkName} />
         </div>
       )}
     </Modal>

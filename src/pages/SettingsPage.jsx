@@ -371,9 +371,10 @@ export default function SettingsPage() {
         onClose={() => setShowBatchConfirm(false)}
         onConfirm={handleBatchUpdateExpiry}
         title="تحديث مجمع للتواريخ"
-        message={`هل أنت متأكد من تغيير تاريخ الانتهاء لجميع الحسابات الرسمية ليصبح: ${batchDate}؟`}
+        message={`سيتم تغيير تاريخ الانتهاء لجميع الحسابات الرسمية ليصبح: ${batchDate}. هذا الإجراء واسع الأثر ولا يمكن التراجع عنه دفعة واحدة.`}
         confirmText="نعم، قم بالتحديث"
         variant="primary"
+        requireText="تأكيد"
       />
     </div>
   );
