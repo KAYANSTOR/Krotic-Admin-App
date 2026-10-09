@@ -1,7 +1,8 @@
 // src/pages/UsersPage.jsx
-import { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { fetchUsersWithBilling } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox,
@@ -37,62 +38,12 @@ export default function UsersPage() {
   const [billingUser, setBillingUser] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
-      let globalCommission = 5;
-      if (configDoc.exists()) {
-        const configData = configDoc.data();
-        setGlobalConfig(configData);
-        globalCommission = configData.default_commission_rate || 5;
-      }
-
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const usersData = [];
-
-      for (const userDoc of usersSnap.docs) {
-        const userData = { uid: userDoc.id, ...userDoc.data() };
-
-        try {
-          const metaDoc = await getDoc(doc(db, 'networks', userDoc.id, '_metadata', 'info'));
-          if (metaDoc.exists()) {
-            const meta = metaDoc.data();
-            userData.networkName = meta.name || '';
-            userData.phoneNumber = meta.phoneNumber || '';
-          }
-        } catch (e) {
-          console.warn('Could not fetch metadata for', userDoc.id);
-        }
-
-        let totalDue = 0;
-        let totalPaid = 0;
-        const activeRate = (userData.commission_rate != null && userData.commission_rate > 0)
-          ? userData.commission_rate
-          : globalCommission;
-
-        const salesSnap = await getDocs(collection(db, 'networks', userDoc.id, 'sales'));
-        salesSnap.forEach((saleDoc) => {
-          const sale = saleDoc.data();
-          if (sale.status === 'COMPLETED') {
-            totalDue += (sale.faceValue || 0) * (activeRate / 100);
-          }
-        });
-
-        const paymentsSnap = await getDocs(collection(db, 'networks', userDoc.id, 'payments'));
-        paymentsSnap.forEach((payDoc) => {
-          totalPaid += (payDoc.data().amount || 0);
-        });
-
-        userData.balance = totalDue - totalPaid;
-        usersData.push(userData);
-      }
-
+      const { users: usersData, globalConfig: config } = await fetchUsersWithBilling();
+      setGlobalConfig(config);
       setUsers(usersData);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -100,7 +51,11 @@ export default function UsersPage() {
       toast.error('خطأ في تحميل بيانات المستخدمين');
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleToggleActive = (user) => {
     const newStatus = !user.is_active;
@@ -308,7 +263,6 @@ export default function UsersPage() {
         </Card>
       ) : (
         <>
-          {/* جدول لسطح المكتب */}
           <Card flush className="users-table-card">
             <div className="overflow-x-auto">
               <table className="responsive-data-table w-full">
@@ -385,7 +339,6 @@ export default function UsersPage() {
             </div>
           </Card>
 
-          {/* بطاقات للجوال */}
           <div className="users-cards">
             {filteredUsers.map((user) => {
               const expired = isExpired(user.subscription_end_date);
@@ -427,22 +380,19 @@ export default function UsersPage() {
                   </dl>
 
                   <div className="user-card__actions">
-                    <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
+                    <button onClick={() => setBillingUser(user)} className="row-action row-action--success">
                       <DollarSign className="w-4 h-4" />
                       <span className="text-xs font-medium">الفوترة</span>
                     </button>
                     <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد">
                       <CalendarPlus className="w-4 h-4" />
-                      <span className="text-xs font-medium">تجديد</span>
                     </button>
                     <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل">
                       <Edit className="w-4 h-4" />
-                      <span className="text-xs font-medium">تعديل</span>
                     </button>
                     {user.is_trial && (
                       <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                         <CheckCircle className="w-4 h-4" />
-                        <span className="text-xs font-medium">رسمي</span>
                       </button>
                     )}
                     <button
@@ -451,7 +401,6 @@ export default function UsersPage() {
                       title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
                     >
                       {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                      <span className="text-xs font-medium">{user.is_active === false ? 'إلغاء الحظر' : 'حظر'}</span>
                     </button>
                   </div>
                 </article>
@@ -461,19 +410,24 @@ export default function UsersPage() {
         </>
       )}
 
-      <UserEditModal
-        isOpen={!!editingUser}
-        onClose={() => setEditingUser(null)}
-        user={editingUser}
-        onSave={handleSaveEdit}
-      />
+      {editingUser && (
+        <UserEditModal
+          isOpen={!!editingUser}
+          onClose={() => setEditingUser(null)}
+          user={editingUser}
+          onSave={handleSaveEdit}
+          globalCommission={defaultCommission}
+        />
+      )}
 
-      <UserBillingModal
-        isOpen={!!billingUser}
-        onClose={() => { setBillingUser(null); fetchData(); }}
-        user={billingUser}
-        globalCommission={defaultCommission}
-      />
+      {billingUser && (
+        <UserBillingModal
+          isOpen={!!billingUser}
+          onClose={() => { setBillingUser(null); fetchData(); }}
+          user={billingUser}
+          globalCommission={defaultCommission}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={!!confirmAction}
