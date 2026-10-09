@@ -1235,3 +1235,81 @@
   .sales-kpi .stat-card { min-height: 108px; padding: 1rem; border-radius: 18px; }
   .sales-filters__grid { gap: .75rem; }
 }
+
+/* ===== الإعدادات العامة ===== */
+@layer components {
+  .settings-page { display: flex; flex-direction: column; }
+  .settings-grid {
+    display: grid; gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 1024px) {
+    .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  }
+
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: 1rem 1.125rem;
+    border-radius: 16px; background: var(--ui-sunken);
+    border: 1px solid var(--ui-line);
+  }
+  .settings-row__body { min-width: 0; }
+  .settings-row__title { font-weight: 700; color: var(--ui-ink); }
+  .settings-row__desc { margin-top: .25rem; font-size: .8125rem; color: var(--ui-muted); }
+
+  .settings-field-block { margin-top: 1.25rem; }
+  .settings-divider {
+    padding-top: 1.25rem; border-top: 1px solid var(--ui-line);
+  }
+
+  .settings-savebar {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: 1rem;
+    margin-top: 1.5rem; padding: 1rem 1.25rem;
+    border-radius: 18px; border: 1px solid var(--ui-line);
+    background: var(--ui-surface); box-shadow: var(--ui-shadow-card);
+  }
+  .settings-savebar__hint { font-size: .8125rem; color: var(--ui-muted); max-width: 34rem; }
+
+  .settings-batch { margin-top: 1.5rem; }
+  .settings-batch__form {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem;
+  }
+  .settings-batch__field { flex: 1 1 16rem; max-width: 20rem; }
+  .settings-batch__note {
+    display: flex; align-items: center; gap: .5rem;
+    margin-top: 1rem; font-size: .8125rem; color: var(--ui-muted);
+  }
+  .settings-batch__note svg { color: var(--ui-warning); flex-shrink: 0; }
+
+  /* ===== إدارة المدراء ===== */
+  .admins-page { display: flex; flex-direction: column; }
+  .admins-grid {
+    display: grid; gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 640px) {
+    .admins-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1100px) {
+    .admins-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+
+  .admin-card { display: flex; flex-direction: column; gap: 1rem; }
+  .admin-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+  .admin-card__name { font-size: 1.0625rem; font-weight: 800; color: var(--ui-ink); }
+  .admin-card__meta { display: flex; flex-direction: column; gap: .5rem; }
+  .admin-card__meta-row {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8125rem; color: var(--ui-ink-soft); min-width: 0;
+  }
+  .admin-card__meta-row svg { color: var(--ui-faint); flex-shrink: 0; }
+  .admin-card__meta-row span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .admin-card__footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; padding-top: .875rem; border-top: 1px solid var(--ui-line);
+  }
+  .admin-card__date { font-size: .75rem; color: var(--ui-muted); }
+}

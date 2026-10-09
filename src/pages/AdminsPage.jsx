@@ -1,16 +1,51 @@
 import { useState, useEffect } from 'react';
 import {
-  collection, getDocs, doc, deleteDoc
+  collection, getDocs, doc, deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   ShieldCheck, UserPlus, Trash2, RefreshCw, Eye, EyeOff,
-  Mail, Phone, User
+  Mail, Phone, User, Users, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
+import PageHeader from '../components/ui/PageHeader';
+import { Card, CardHeader } from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import EmptyState from '../components/ui/EmptyState';
+import { Field, Input } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { SkeletonLine } from '../components/ui/Skeleton';
+
+function AdminsSkeleton() {
+  return (
+    <div className="admins-page">
+      <div className="page-header">
+        <div className="page-header__main">
+          <SkeletonLine className="w-12 h-12 rounded-[16px]" />
+          <div className="space-y-2">
+            <SkeletonLine className="w-44 h-7" />
+            <SkeletonLine className="w-32" />
+          </div>
+        </div>
+      </div>
+      <div className="admins-grid">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="card space-y-4">
+            <div className="flex items-center justify-between">
+              <SkeletonLine className="w-12 h-12 rounded-[16px]" />
+              <SkeletonLine className="w-9 h-9 rounded-[12px]" />
+            </div>
+            <SkeletonLine className="w-1/2 h-6" />
+            <SkeletonLine className="w-3/4" />
+            <SkeletonLine className="w-2/3" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminsPage() {
   const [admins, setAdmins] = useState([]);
@@ -92,158 +127,157 @@ export default function AdminsPage() {
     });
   };
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (loading) return <AdminsSkeleton />;
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <div>
-          <h1 className="page-title flex items-center gap-3">
-            <ShieldCheck className="w-7 h-7 text-primary-600" />
-            إدارة المدراء
-          </h1>
-          <p className="text-gray-500 mt-1">{admins.length} مدير مسجل</p>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={fetchAdmins} className="btn-secondary flex items-center gap-2">
-            <RefreshCw className="w-4 h-4" />
-            تحديث
-          </button>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <UserPlus className="w-4 h-4" />
-            إضافة مدير
-          </button>
-        </div>
-      </div>
+    <div className="admins-page">
+      <PageHeader
+        icon={ShieldCheck}
+        title="إدارة المدراء"
+        description="إضافة وحذف حسابات المدراء الذين يمكنهم الوصول إلى لوحة التحكم."
+        meta={`${admins.length} مدير مسجل`}
+        actions={
+          <>
+            <Button variant="secondary" icon={RefreshCw} onClick={fetchAdmins}>
+              تحديث
+            </Button>
+            <Button
+              variant={showForm ? 'ghost' : 'primary'}
+              icon={showForm ? X : UserPlus}
+              onClick={() => setShowForm((v) => !v)}
+            >
+              {showForm ? 'إلغاء' : 'إضافة مدير'}
+            </Button>
+          </>
+        }
+      />
 
-      {/* Create Admin Form */}
       {showForm && (
-        <div className="card mb-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">إنشاء حساب مدير جديد</h3>
+        <Card className="mb-6">
+          <CardHeader
+            icon={UserPlus}
+            title="إنشاء حساب مدير جديد"
+            description="سيتمكن هذا الحساب من تسجيل الدخول إلى لوحة التحكم مباشرة."
+          />
           <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label-field">الاسم الكامل</label>
-              <div className="relative">
-                <User className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="input-field pr-10"
-                  placeholder="أدخل الاسم"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="label-field">البريد الإلكتروني</label>
-              <div className="relative">
-                <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="input-field pr-10"
-                  placeholder="admin@example.com"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="label-field">رقم الهاتف</label>
-              <div className="relative">
-                <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="input-field pr-10"
-                  placeholder="07xxxxxxxxx"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="label-field">كلمة المرور</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="input-field pl-10"
-                  placeholder="6 أحرف على الأقل"
-                  minLength={6}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div className="sm:col-span-2 flex gap-3 justify-end">
-              <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">
+            <Field label="الاسم الكامل" required>
+              <Input
+                type="text"
+                icon={User}
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="أدخل الاسم"
+                required
+              />
+            </Field>
+            <Field label="البريد الإلكتروني" required>
+              <Input
+                type="email"
+                icon={Mail}
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="admin@example.com"
+                required
+              />
+            </Field>
+            <Field label="رقم الهاتف" required>
+              <Input
+                type="tel"
+                icon={Phone}
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="07xxxxxxxxx"
+                required
+              />
+            </Field>
+            <Field label="كلمة المرور" hint="6 أحرف على الأقل." required>
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder="••••••••"
+                minLength={6}
+                required
+                endAdornment={
+                  <button
+                    type="button"
+                    className="field-adorn"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
+              />
+            </Field>
+            <div className="sm:col-span-2 flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowForm(false)}>
                 إلغاء
-              </button>
-              <button type="submit" disabled={creating} className="btn-primary flex items-center gap-2">
-                {creating ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <UserPlus className="w-4 h-4" />
-                )}
+              </Button>
+              <Button type="submit" variant="primary" icon={UserPlus} loading={creating}>
                 إنشاء الحساب
-              </button>
+              </Button>
             </div>
           </form>
+        </Card>
+      )}
+
+      {admins.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={Users}
+            title="لا يوجد مدراء مسجّلون"
+            description="أضف أول حساب مدير للتمكن من إدارة اللوحة."
+            action={
+              <Button variant="primary" icon={UserPlus} onClick={() => setShowForm(true)}>
+                إضافة مدير
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="admins-grid">
+          {admins.map((admin) => (
+            <Card key={admin.id} className="admin-card">
+              <div className="admin-card__head">
+                <span className="icon-tile icon-tile--brand icon-tile--lg">
+                  <ShieldCheck className="w-5 h-5" aria-hidden="true" />
+                </span>
+                {admin.id !== currentUser?.uid && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(admin)}
+                    className="row-action row-action--danger"
+                    title="حذف"
+                    aria-label={`حذف ${admin.name || 'المدير'}`}
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+
+              <p className="admin-card__name">{admin.name || '—'}</p>
+
+              <div className="admin-card__meta">
+                <div className="admin-card__meta-row">
+                  <Mail className="w-4 h-4" aria-hidden="true" />
+                  <span dir="ltr">{admin.email || '—'}</span>
+                </div>
+                <div className="admin-card__meta-row">
+                  <Phone className="w-4 h-4" aria-hidden="true" />
+                  <span dir="ltr">{admin.phone || '—'}</span>
+                </div>
+              </div>
+
+              <div className="admin-card__footer">
+                <span className="admin-card__date">أُضيف في {formatDate(admin.createdAt)}</span>
+                {admin.id === currentUser?.uid && <Badge tone="brand">أنت</Badge>}
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* Admins Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {admins.map((admin) => (
-          <div key={admin.id} className="card">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center">
-                <ShieldCheck className="w-6 h-6 text-primary-600" />
-              </div>
-              {admin.id !== currentUser?.uid && (
-                <button
-                  onClick={() => setDeleteTarget(admin)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                  title="حذف"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            <h3 className="font-bold text-gray-900 text-lg">{admin.name || '—'}</h3>
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Mail className="w-4 h-4 text-gray-400" />
-                <span dir="ltr">{admin.email || '—'}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Phone className="w-4 h-4 text-gray-400" />
-                <span dir="ltr">{admin.phone || '—'}</span>
-              </div>
-            </div>
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs text-gray-400">تاريخ الإنشاء: {formatDate(admin.createdAt)}</p>
-              {admin.id === currentUser?.uid && (
-                <span className="badge-info mt-2">أنت</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Delete Confirmation */}
       <ConfirmDialog
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}

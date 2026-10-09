@@ -1,27 +1,65 @@
+// src/pages/SettingsPage.jsx
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch, Timestamp } from 'firebase/firestore';
+import {
+  doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch, Timestamp,
+} from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { db } from '../firebase';
-import { Settings, Save, Power, AlertTriangle, MessageSquare, Percent, Calendar, RefreshCw, ShieldCheck } from 'lucide-react';
-import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
+import {
+  Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
+  ShieldCheck, AlertTriangle, Users,
+} from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import { Card, CardHeader } from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import Switch from '../components/ui/Switch';
+import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { SkeletonLine } from '../components/ui/Skeleton';
+
+const DEFAULTS = {
+  is_app_active: true,
+  maintenance_message: '',
+  default_trial_days: 3,
+  default_trial_warning: '',
+  default_commission_rate: 5,
+  global_official_warning: '',
+  warning_days_before_expiry: 5,
+};
+
+function SettingsSkeleton() {
+  return (
+    <div className="settings-page">
+      <div className="page-header">
+        <div className="page-header__main">
+          <SkeletonLine className="w-12 h-12 rounded-[16px]" />
+          <div className="space-y-2">
+            <SkeletonLine className="w-48 h-7" />
+            <SkeletonLine className="w-64" />
+          </div>
+        </div>
+      </div>
+      <div className="settings-grid">
+        {[0, 1].map((i) => (
+          <div key={i} className="card space-y-5">
+            <SkeletonLine className="w-1/3 h-6" />
+            <SkeletonLine className="w-full h-14 rounded-[14px]" />
+            <SkeletonLine className="w-full h-14 rounded-[14px]" />
+            <SkeletonLine className="w-2/3 h-14 rounded-[14px]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
-  const [config, setConfig] = useState({
-    is_app_active: true,
-    maintenance_message: '',
-    default_trial_days: 3,
-    default_trial_warning: '',
-    default_commission_rate: 5,
-    global_official_warning: '',
-    warning_days_before_expiry: 5
-  });
-  
+  const [config, setConfig] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  
+
   // For batch update expiry
   const [batchDate, setBatchDate] = useState('');
   const [updatingBatch, setUpdatingBatch] = useState(false);
@@ -35,7 +73,7 @@ export default function SettingsPage() {
     try {
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       if (configDoc.exists()) {
-        setConfig({ ...config, ...configDoc.data() });
+        setConfig((prev) => ({ ...prev, ...configDoc.data() }));
       }
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -60,12 +98,12 @@ export default function SettingsPage() {
     if (config.is_app_active) {
       setShowConfirm(true);
     } else {
-      setConfig({ ...config, is_app_active: true });
+      setConfig((prev) => ({ ...prev, is_app_active: true }));
     }
   };
 
   const confirmDisableApp = () => {
-    setConfig({ ...config, is_app_active: false });
+    setConfig((prev) => ({ ...prev, is_app_active: false }));
     setShowConfirm(false);
   };
 
@@ -74,20 +112,20 @@ export default function SettingsPage() {
       toast.error('يرجى تحديد التاريخ أولاً');
       return;
     }
-    
+
     setUpdatingBatch(true);
     try {
       const usersSnap = await getDocs(collection(db, 'users'));
       const batch = writeBatch(db);
       let count = 0;
-      
+
       const newExpiry = Timestamp.fromDate(new Date(batchDate));
 
       usersSnap.forEach((userDoc) => {
         const userData = userDoc.data();
         if (userData.is_trial === false) { // Only update official users
           batch.update(doc(db, 'users', userDoc.id), {
-            subscription_end_date: newExpiry
+            subscription_end_date: newExpiry,
           });
           count++;
         }
@@ -108,189 +146,202 @@ export default function SettingsPage() {
     setShowBatchConfirm(false);
   };
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  const update = (patch) => setConfig((prev) => ({ ...prev, ...patch }));
+  const isActive = config.is_app_active;
+
+  if (loading) return <SettingsSkeleton />;
 
   return (
-    <div>
-      <div className="mb-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="page-title flex items-center gap-3">
-            <Settings className="w-7 h-7 text-primary-600" />
-            الإعدادات العامة
-          </h1>
-          <Link to="/admins" className="btn-secondary inline-flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4" />
+    <div className="settings-page">
+      <PageHeader
+        icon={Settings}
+        title="الإعدادات العامة"
+        description="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
+        actions={
+          <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
             إدارة المدراء
-          </Link>
-        </div>
-        <p className="text-gray-500 mt-1">التحكم بإعدادات التطبيق، العمولات، والرسائل</p>
-      </div>
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Basic App Status */}
-        <div className="card space-y-6 h-fit">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Power className="w-5 h-5" />
-            حالة التطبيق الأساسية
-          </h3>
-          
-          <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
-            <div>
-              <p className="font-medium text-gray-900">تشغيل / إيقاف التطبيق</p>
-              <p className="text-sm text-gray-500 mt-1">
-                عند الإيقاف سيتم إغلاق التطبيق عند جميع المستخدمين
+      <div className="settings-grid">
+        {/* ===== حالة التطبيق ===== */}
+        <Card>
+          <CardHeader
+            icon={Power}
+            title="حالة التطبيق"
+            description="التحكم بتشغيل الخدمة والعمولة العامة الافتراضية."
+            action={
+              <Badge tone={isActive ? 'success' : 'danger'} dot>
+                {isActive ? 'يعمل' : 'متوقف'}
+              </Badge>
+            }
+          />
+
+          <div className="settings-row">
+            <div className="settings-row__body">
+              <p className="settings-row__title">تشغيل / إيقاف التطبيق</p>
+              <p className="settings-row__desc">
+                عند الإيقاف سيتم إغلاق التطبيق عند جميع المستخدمين.
               </p>
             </div>
-            <button
-              onClick={toggleAppStatus}
-              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-300 ${
-                config.is_app_active ? 'bg-emerald-500' : 'bg-red-500'
-              }`}
-            >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300 shadow-sm ${
-                  config.is_app_active ? 'translate-x-2' : 'translate-x-8'
-                }`}
-              />
-            </button>
+            <Switch
+              id="app-active-switch"
+              checked={isActive}
+              onChange={toggleAppStatus}
+            />
           </div>
 
-          {!config.is_app_active && (
-            <div>
-              <label className="label-field">رسالة الصيانة</label>
-              <textarea
-                value={config.maintenance_message}
-                onChange={(e) => setConfig({ ...config, maintenance_message: e.target.value })}
-                className="input-field resize-none"
-                rows={3}
-                placeholder="التطبيق متوقف مؤقتاً للصيانة..."
-              />
+          {!isActive && (
+            <div className="settings-field-block">
+              <Field label="رسالة الصيانة" hint="تظهر لجميع المستخدمين أثناء إيقاف التطبيق.">
+                <Textarea
+                  value={config.maintenance_message || ''}
+                  onChange={(e) => update({ maintenance_message: e.target.value })}
+                  rows={3}
+                  className="resize-none"
+                  placeholder="التطبيق متوقف مؤقتاً للصيانة..."
+                />
+              </Field>
             </div>
           )}
 
-          <div className="pt-4 border-t">
-            <label className="label-field flex items-center gap-2">
-              <Percent className="w-4 h-4" />
-              العمولة العامة الافتراضية (%)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={config.default_commission_rate}
-              onChange={(e) => setConfig({ ...config, default_commission_rate: parseFloat(e.target.value) || 0 })}
-              className="input-field max-w-xs"
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              سيتم تطبيق هذه النسبة على جميع المستخدمين ما لم تقم بتخصيص عمولة خاصة لحساب معين.
-            </p>
+          <div className="settings-field-block settings-divider">
+            <Field
+              label="العمولة العامة الافتراضية (%)"
+              hint="تُطبّق على جميع المستخدمين ما لم تُخصَّص عمولة خاصة لحساب معيّن."
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.1"
+                inputMode="decimal"
+                value={config.default_commission_rate}
+                onChange={(e) => update({ default_commission_rate: parseFloat(e.target.value) || 0 })}
+                className="max-w-[10rem]"
+              />
+            </Field>
           </div>
-        </div>
+        </Card>
 
-        {/* Global Warnings */}
-        <div className="card space-y-6 h-fit">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            نظام التحذيرات
-          </h3>
+        {/* ===== نظام التحذيرات ===== */}
+        <Card>
+          <CardHeader
+            icon={MessageSquare}
+            title="نظام التحذيرات"
+            description="الرسائل التي تُعرض للمستخدمين قبل انتهاء الاشتراك."
+          />
 
-          <div>
-            <label className="label-field">تفعيل التحذير قبل (أيام)</label>
-            <input
-              type="number"
-              min="1"
-              max="30"
-              value={config.warning_days_before_expiry}
-              onChange={(e) => setConfig({ ...config, warning_days_before_expiry: parseInt(e.target.value) || 5 })}
-              className="input-field max-w-xs"
-            />
-            <p className="text-xs text-gray-500 mt-1">يحدد عدد الأيام التي سيظهر فيها التحذير قبل إيقاف التطبيق.</p>
-          </div>
-
-          <div>
-            <label className="label-field">رسالة التحذير للرسميين (العامة)</label>
-            <textarea
-              value={config.global_official_warning}
-              onChange={(e) => setConfig({ ...config, global_official_warning: e.target.value })}
-              className="input-field resize-none"
-              rows={3}
-              placeholder="عزيزي المستخدم، اقترب موعد تصفية الحساب..."
-            />
+          <div className="settings-field-block">
+            <Field
+              label="تفعيل التحذير قبل (أيام)"
+              hint="عدد الأيام التي يظهر فيها التحذير قبل إيقاف التطبيق."
+            >
+              <Input
+                type="number"
+                min="1"
+                max="30"
+                inputMode="numeric"
+                value={config.warning_days_before_expiry}
+                onChange={(e) => update({ warning_days_before_expiry: parseInt(e.target.value, 10) || 5 })}
+                className="max-w-[10rem]"
+              />
+            </Field>
           </div>
 
-          <div>
-            <label className="label-field">رسالة التحذير للتجريبيين (العامة)</label>
-            <textarea
-              value={config.default_trial_warning}
-              onChange={(e) => setConfig({ ...config, default_trial_warning: e.target.value })}
-              className="input-field resize-none"
-              rows={3}
-              placeholder="أنت تستخدم النسخة التجريبية..."
-            />
+          <div className="settings-field-block">
+            <Field label="رسالة التحذير للرسميين (العامة)">
+              <Textarea
+                value={config.global_official_warning || ''}
+                onChange={(e) => update({ global_official_warning: e.target.value })}
+                rows={3}
+                className="resize-none"
+                placeholder="عزيزي المستخدم، اقترب موعد تصفية الحساب..."
+              />
+            </Field>
           </div>
-          
-          <div>
-             <label className="label-field">الأيام التجريبية الافتراضية للمسجلين الجدد</label>
-             <input
+
+          <div className="settings-field-block">
+            <Field label="رسالة التحذير للتجريبيين (العامة)">
+              <Textarea
+                value={config.default_trial_warning || ''}
+                onChange={(e) => update({ default_trial_warning: e.target.value })}
+                rows={3}
+                className="resize-none"
+                placeholder="أنت تستخدم النسخة التجريبية..."
+              />
+            </Field>
+          </div>
+
+          <div className="settings-field-block">
+            <Field
+              label="الأيام التجريبية الافتراضية للمسجلين الجدد"
+              hint="تُمنح تلقائياً لكل حساب تجريبي جديد."
+            >
+              <Input
                 type="number"
                 min="1"
                 max="365"
+                inputMode="numeric"
                 value={config.default_trial_days}
-                onChange={(e) => setConfig({ ...config, default_trial_days: parseInt(e.target.value) || 3 })}
-                className="input-field max-w-xs"
+                onChange={(e) => update({ default_trial_days: parseInt(e.target.value, 10) || 3 })}
+                className="max-w-[10rem]"
               />
+            </Field>
           </div>
-        </div>
-      </div>
-      
-      {/* Save Global Settings */}
-      <div className="flex justify-end mb-10">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2 px-8"
-        >
-          {saving ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <Save className="w-5 h-5" />
-          )}
-          حفظ التغييرات
-        </button>
+        </Card>
       </div>
 
-      {/* Batch Operations */}
-      <div className="card border-blue-200 bg-blue-50/30">
-        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-blue-600" />
-          إدارة تواريخ الانتهاء المجمعة
-        </h3>
-        <p className="text-sm text-gray-600 mb-4">
-          يمكنك من هنا توحيد تاريخ انتهاء الاشتراك (التصفية) لجميع **المستخدمين الرسميين** دفعة واحدة بضغطة زر.
+      {/* ===== شريط الحفظ ===== */}
+      <div className="settings-savebar">
+        <p className="settings-savebar__hint">
+          تُحفظ التغييرات في إعدادات التطبيق العامة وتُطبّق فوراً على المستخدمين.
         </p>
-        
-        <div className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-1 max-w-sm">
-            <label className="label-field">اختر تاريخ الانتهاء الموحد الجديد</label>
-            <input 
+        <Button variant="primary" size="lg" icon={Save} loading={saving} onClick={handleSave}>
+          حفظ التغييرات
+        </Button>
+      </div>
+
+      {/* ===== العمليات المجمعة ===== */}
+      <Card className="settings-batch">
+        <CardHeader
+          icon={Calendar}
+          title="إدارة تواريخ الانتهاء المجمّعة"
+          description="توحيد تاريخ انتهاء الاشتراك لجميع المستخدمين الرسميين دفعة واحدة."
+          action={
+            <Badge tone="warning">
+              <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+              عملية مؤثرة
+            </Badge>
+          }
+        />
+
+        <div className="settings-batch__form">
+          <Field label="تاريخ الانتهاء الموحّد الجديد" className="settings-batch__field">
+            <Input
               type="date"
               value={batchDate}
               onChange={(e) => setBatchDate(e.target.value)}
-              className="input-field bg-white"
             />
-          </div>
-          <button 
-            onClick={() => setShowBatchConfirm(true)}
+          </Field>
+          <Button
+            variant="primary"
+            icon={RefreshCw}
             disabled={!batchDate || updatingBatch}
-            className="btn-primary bg-blue-600 hover:bg-blue-700"
+            loading={updatingBatch}
+            onClick={() => setShowBatchConfirm(true)}
           >
-            <RefreshCw className="w-4 h-4 inline ml-2" />
             تطبيق على جميع الرسميين
-          </button>
+          </Button>
         </div>
-      </div>
 
-      {/* Confirms */}
+        <p className="settings-batch__note">
+          <Users className="w-4 h-4" aria-hidden="true" />
+          يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ الحسابات التجريبية.
+        </p>
+      </Card>
+
+      {/* ===== نوافذ التأكيد ===== */}
       <ConfirmDialog
         isOpen={showConfirm}
         onClose={() => setShowConfirm(false)}
