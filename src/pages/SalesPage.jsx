@@ -1,14 +1,16 @@
-// src/pages/SalesPage.jsx
-import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   DollarSign, TrendingUp, Filter, RefreshCw,
-  ChevronDown, ChevronUp, Receipt, Wallet, Inbox, AlertCircle
+  ChevronDown, ChevronUp, Receipt, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
-import StatsCard from '../components/StatsCard';
+import PageHeader from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import StatCard from '../components/ui/StatCard';
+import { PageSkeleton } from '../components/ui/Skeleton';
+import { formatNumber, formatDate } from '../lib/format';
+import { fetchNetworkSales } from '../lib/adminData';
 
 export default function SalesPage() {
   const [networkSales, setNetworkSales] = useState([]);
@@ -18,79 +20,25 @@ export default function SalesPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  useEffect(() => {
-    fetchSales();
-  }, []);
-
-  const fetchSales = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch global config
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
-      let globalCommission = 5;
-      if (configDoc.exists()) {
-        globalCommission = configDoc.data().default_commission_rate || 5;
-      }
-
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const allNetworkSales = [];
-
-      for (const userDoc of usersSnap.docs) {
-        const userData = userDoc.data();
-
-        // Fetch network metadata
-        let networkName = '';
-        let phoneNumber = '';
-        try {
-          const metaDoc = await getDoc(
-            doc(db, 'networks', userDoc.id, '_metadata', 'info')
-          );
-          if (metaDoc.exists()) {
-            networkName = metaDoc.data().name || '';
-            phoneNumber = metaDoc.data().phoneNumber || '';
-          }
-        } catch (e) {}
-
-        // Active rate
-        const activeRate = (userData.commission_rate != null && userData.commission_rate > 0)
-          ? userData.commission_rate
-          : globalCommission;
-
-        // Fetch sales
-        const salesSnap = await getDocs(
-          collection(db, 'networks', userDoc.id, 'sales')
-        );
-        const sales = [];
-        salesSnap.forEach((saleDoc) => {
-          sales.push({ id: saleDoc.id, ...saleDoc.data() });
-        });
-
-        if (sales.length > 0) {
-          allNetworkSales.push({
-            uid: userDoc.id,
-            networkName,
-            phoneNumber,
-            commissionRate: activeRate,
-            isCustomRate: userData.commission_rate != null && userData.commission_rate > 0,
-            sales,
-          });
-        }
-      }
-
-      setNetworkSales(allNetworkSales);
+      const data = await fetchNetworkSales();
+      setNetworkSales(data);
     } catch (error) {
       console.error('Error fetching sales:', error);
       toast.error('خطأ في تحميل بيانات المبيعات');
     }
     setLoading(false);
-  };
+  }, []);
 
-  const filterSales = (sales) => {
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
-      // Status filter
       if (statusFilter !== 'all' && sale.status !== statusFilter) return false;
-
-      // Date filter
       if (dateFrom || dateTo) {
         const saleDate = new Date(sale.createdAt);
         if (dateFrom && saleDate < new Date(dateFrom)) return false;
@@ -100,18 +48,16 @@ export default function SalesPage() {
           if (saleDate > toDate) return false;
         }
       }
-
       return true;
     });
-  };
+  }, [statusFilter, dateFrom, dateTo]);
 
-  const calcNetworkStats = (network) => {
+  const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales);
     const completed = filtered.filter((s) => s.status === 'COMPLETED');
     const totalFaceValue = completed.reduce((sum, s) => sum + (s.faceValue || 0), 0);
     const totalNetAmount = completed.reduce((sum, s) => sum + (s.netAmount || 0), 0);
     const adminEarnings = totalFaceValue * (network.commissionRate / 100);
-
     return {
       totalSales: filtered.length,
       completedCount: completed.length,
@@ -120,36 +66,21 @@ export default function SalesPage() {
       adminEarnings,
       filteredSales: filtered,
     };
-  };
+  }, [filterSales]);
 
-  // Grand totals
-  const grandTotals = networkSales.reduce(
-    (acc, network) => {
-      const stats = calcNetworkStats(network);
-      acc.totalSales += stats.totalFaceValue;
-      acc.totalNet += stats.totalNetAmount;
-      acc.totalEarnings += stats.adminEarnings;
-      acc.totalCount += stats.completedCount;
-      return acc;
-    },
-    { totalSales: 0, totalNet: 0, totalEarnings: 0, totalCount: 0 }
-  );
-
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat('ar-YE').format(Math.round(num || 0));
-  };
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '—';
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('ar-YE', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const grandTotals = useMemo(() => {
+    return networkSales.reduce(
+      (acc, network) => {
+        const stats = calcNetworkStats(network);
+        acc.totalSales += stats.totalFaceValue;
+        acc.totalNet += stats.totalNetAmount;
+        acc.totalEarnings += stats.adminEarnings;
+        acc.totalCount += stats.completedCount;
+        return acc;
+      },
+      { totalSales: 0, totalNet: 0, totalEarnings: 0, totalCount: 0 }
+    );
+  }, [networkSales, calcNetworkStats]);
 
   const statusLabel = {
     COMPLETED: { text: 'مكتمل', class: 'badge-success' },
@@ -165,78 +96,36 @@ export default function SalesPage() {
     setDateTo('');
   };
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="sales-page">
-      {/* Page Header */}
-      <div className="sales-header">
-        <div className="sales-header__main">
-          <span className="sales-header__icon icon-tile icon-tile--brand icon-tile--lg">
-            <DollarSign className="w-5 h-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h1 className="page-title">المبيعات والعمولات</h1>
-            <p className="sales-header__desc">سجل مبيعات جميع الشبكات وأرباح الإدارة</p>
-          </div>
-        </div>
-        <div className="sales-header__actions">
-          <button
-            onClick={fetchSales}
-            className="btn-secondary flex items-center gap-2"
-            type="button"
-          >
-            <RefreshCw className="w-4 h-4" />
+      <PageHeader
+        icon={DollarSign}
+        title="المبيعات والعمولات"
+        description="سجل مبيعات جميع الشبكات وأرباح الإدارة"
+        actions={
+          <Button variant="secondary" icon={RefreshCw} onClick={load}>
             تحديث
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
-      {/* Grand Totals */}
       <div className="sales-kpi">
-        <StatsCard
-          title="إجمالي المبيعات"
-          value={formatNumber(grandTotals.totalSales)}
-          icon={DollarSign}
-          color="blue"
-          subtitle="ريال يمني"
-        />
-        <StatsCard
-          title="إجمالي الصافي"
-          value={formatNumber(grandTotals.totalNet)}
-          icon={Receipt}
-          color="cyan"
-          subtitle="ريال يمني"
-        />
-        <StatsCard
-          title="أرباح الإدارة"
-          value={formatNumber(grandTotals.totalEarnings)}
-          icon={TrendingUp}
-          color="purple"
-          subtitle="ريال يمني"
-        />
-        <StatsCard
-          title="عمليات مكتملة"
-          value={formatNumber(grandTotals.totalCount)}
-          icon={Wallet}
-          color="green"
-          subtitle="عملية"
-        />
+        <StatCard title="إجمالي المبيعات" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
+        <StatCard title="إجمالي الصافي" value={formatNumber(grandTotals.totalNet)} icon={Receipt} tone="neutral" subtitle="ريال يمني" />
+        <StatCard title="أرباح الإدارة" value={formatNumber(grandTotals.totalEarnings)} icon={TrendingUp} tone="gold" subtitle="ريال يمني" />
+        <StatCard title="عمليات مكتملة" value={formatNumber(grandTotals.totalCount)} icon={Wallet} tone="success" subtitle="عملية" />
       </div>
 
-      {/* Filters */}
-      <div className="card sales-filters">
+      <Card className="sales-filters">
         <div className="sales-filters__head">
           <div className="sales-filters__title">
             <Filter className="w-4 h-4" aria-hidden="true" />
             <span>تصفية النتائج</span>
           </div>
           {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="sales-filters__reset"
-            >
+            <button type="button" onClick={resetFilters} className="sales-filters__reset">
               إعادة تعيين
             </button>
           )}
@@ -244,11 +133,7 @@ export default function SalesPage() {
         <div className="sales-filters__grid">
           <div className="sales-filters__field">
             <label className="label-field">حالة البيع</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
-            >
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-field">
               <option value="all">الكل</option>
               <option value="COMPLETED">مكتمل</option>
               <option value="ROLLED_BACK">مسترجع</option>
@@ -257,29 +142,18 @@ export default function SalesPage() {
           </div>
           <div className="sales-filters__field">
             <label className="label-field">من تاريخ</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="input-field"
-            />
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input-field" />
           </div>
           <div className="sales-filters__field">
             <label className="label-field">إلى تاريخ</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="input-field"
-            />
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-field" />
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Networks Sales */}
       <div className="sales-networks">
         {networkSales.length === 0 ? (
-          <div className="card sales-empty">
+          <Card className="sales-empty">
             <span className="sales-empty__icon icon-tile icon-tile--neutral icon-tile--lg">
               <Inbox className="w-6 h-6" aria-hidden="true" />
             </span>
@@ -287,7 +161,7 @@ export default function SalesPage() {
             <p className="sales-empty__desc">
               ستظهر هنا مبيعات الشبكات وأرباح الإدارة بمجرد تسجيل أول عملية.
             </p>
-          </div>
+          </Card>
         ) : (
           networkSales.map((network) => {
             const stats = calcNetworkStats(network);
@@ -299,12 +173,9 @@ export default function SalesPage() {
                 key={network.uid}
                 className={`card card--flush sales-network ${isExpanded ? 'is-expanded' : ''}`}
               >
-                {/* Network Header */}
                 <button
                   type="button"
-                  onClick={() =>
-                    setExpandedNetwork(isExpanded ? null : network.uid)
-                  }
+                  onClick={() => setExpandedNetwork(isExpanded ? null : network.uid)}
                   className="sales-network__toggle"
                   aria-expanded={isExpanded}
                 >
@@ -351,10 +222,8 @@ export default function SalesPage() {
                   </div>
                 </button>
 
-                {/* Expanded Sales Table */}
                 {isExpanded && (
                   <div className="sales-network__body">
-                    {/* Mobile stats */}
                     <div className="sales-network__mobile-stats">
                       <div className="sales-network__mobile-stat">
                         <span>المبيعات</span>
@@ -393,43 +262,23 @@ export default function SalesPage() {
                           <tbody className="divide-y divide-gray-50">
                             {stats.filteredSales.map((sale) => (
                               <tr key={sale.id} className="hover:bg-gray-50">
-                                <td
-                                  className="px-6 py-3 text-sm text-gray-600"
-                                  data-label="التاريخ"
-                                >
-                                  {formatDate(sale.createdAt)}
+                                <td className="px-6 py-3 text-sm text-gray-600" data-label="التاريخ">
+                                  {formatDate(sale.createdAt, { withTime: true })}
                                 </td>
-                                <td
-                                  className="px-6 py-3 text-sm"
-                                  dir="ltr"
-                                  data-label="الزبون"
-                                >
+                                <td className="px-6 py-3 text-sm" dir="ltr" data-label="الزبون">
                                   {sale.customerId || '—'}
                                 </td>
-                                <td
-                                  className="px-6 py-3 text-sm font-medium"
-                                  data-label="القيمة"
-                                >
+                                <td className="px-6 py-3 text-sm font-medium" data-label="القيمة">
                                   {formatNumber(sale.faceValue)}
                                 </td>
-                                <td
-                                  className="px-6 py-3 text-sm text-gray-600"
-                                  data-label="العمولة (صراف)"
-                                >
+                                <td className="px-6 py-3 text-sm text-gray-600" data-label="العمولة (صراف)">
                                   {formatNumber(sale.commission)}
                                 </td>
-                                <td
-                                  className="px-6 py-3 text-sm font-medium"
-                                  data-label="الصافي"
-                                >
+                                <td className="px-6 py-3 text-sm font-medium" data-label="الصافي">
                                   {formatNumber(sale.netAmount)}
                                 </td>
                                 <td className="px-6 py-3" data-label="الحالة">
-                                  <span
-                                    className={
-                                      statusLabel[sale.status]?.class || 'badge-info'
-                                    }
-                                  >
+                                  <span className={statusLabel[sale.status]?.class || 'badge-info'}>
                                     {statusLabel[sale.status]?.text || sale.status}
                                   </span>
                                 </td>
