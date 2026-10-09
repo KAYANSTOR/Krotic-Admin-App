@@ -103,6 +103,27 @@
 
 ---
 
+## 9. سجل العمليات (admin_audit_logs)
+
+كل إجراء إداري مؤثر يُسجَّل في مجموعة مستقلة للتدقيق:
+
+- **المسار:** `admin_audit_logs/{logId}`
+- **الحقول:** `action`, `targetType`, `targetId`, `targetLabel`, `details`, `actorUid`, `actorEmail`, `createdAt` (serverTimestamp), `createdAtMs` (Number)
+- **القواعد:** القراءة والإنشاء للمدراء فقط، والتعديل والحذف ممنوعان تماماً حتى لا يمكن العبث بالسجل.
+- **الإجراءات المسجّلة:** تفعيل/حظر مستخدم، تحويل إلى رسمي، تجديد، تعديل بيانات، إضافة دفعة، حفظ الإعدادات، إيقاف التطبيق، تحديث التواريخ المجمّع، إرسال/جدولة/حذف إشعار، تعيين كلمة مرور، إنشاء رابط إعادة تعيين، حذف جهاز، إنشاء/حذف مدير.
+
+---
+
+## 10. الإشعارات المجدولة
+
+عند تحديد وقت مستقبلي في صفحة الإشعارات، تُكتب طلبية في `notification_requests/{requestId}` بالحقول:
+
+`title`, `body`, `audienceType` (`global` | `user`), `targetUid` (عند التخصيص), `data`, `scheduledAt` (Epoch Milliseconds), `status: 'scheduled'`, `createdBy`, `createdAt`.
+
+المُجدوِل `dispatchScheduledNotifications` في `functions/index.js` يعمل كل 5 دقائق ويرسل الطلبات المستحقة، ثم يحدّث الحالة إلى `sent` أو `partial` أو `failed`.
+
+---
+
 ## ملاحظات هامة
 
 - يجب تفعيل **Email/Password** في Firebase Authentication.

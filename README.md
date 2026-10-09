@@ -17,6 +17,7 @@
 - `/sales` — المبيعات والعمولات.
 - `/notifications` — الإشعارات.
 - `/admins` — إدارة المدراء.
+- `/audit` — سجل العمليات الإدارية.
 
 الدليل: `src/App.jsx` و`public/manus-routes.json`.
 
@@ -40,6 +41,15 @@
 - ✅ حساب المستحق والمدفوع والمتبقي لكل شبكة، مع إضافة دفعة مرتبطة بشهر (`src/components/UserBillingModal.jsx`).
 - ✅ إرسال إشعار FCM للجميع أو لمستخدم محدد، مع تسجيل التاريخ في Firestore بعد الإرسال (`src/pages/NotificationsPage.jsx`, `api/send-fcm.js`).
 - ✅ حذف أي إشعار عام من السجل مع نافذة تأكيد وتحديث فوري للقائمة (`src/pages/NotificationsPage.jsx`).
+- ✅ قوالب إشعارات محفوظة محلياً، وجدولة إرسال عبر `notification_requests` مع مُجدوِل كل 5 دقائق (`src/lib/notificationTemplates.js`, `functions/index.js`).
+- ✅ سجل تدقيق لكل إجراء إداري مع بحث وتصفية وتصدير CSV (`src/lib/auditLog.js`, `src/pages/AuditPage.jsx`).
+- ✅ تنبيهات ذكية على لوحة المعلومات (اشتراكات منتهية/قاربة الانتهاء) مرتبطة بتصفية مباشرة في صفحة المستخدمين (`src/pages/DashboardPage.jsx`, `src/pages/UsersPage.jsx`).
+- ✅ مخطط مبيعات آخر 6 أشهر بـ SVG بدون أي مكتبة خارجية (`src/components/ui/BarChart.jsx`).
+- ✅ تصدير CSV بترميز UTF-8 مع BOM للمستخدمين والمبيعات والسجل (`src/lib/csv.js`).
+- ✅ فلاتر تاريخ سريعة وتذكّر آخر تصفية، ومؤشر «آخر تحديث» مع زر تحديث قسري يتجاوز الكاش (`src/components/ui/DataFreshness.jsx`).
+- ✅ عرض تدريجي للقوائم الطويلة (24 مستخدماً / 10 شبكات / 50 عملية) لتقليل حجم DOM (`src/pages/UsersPage.jsx`, `src/pages/SalesPage.jsx`).
+- ✅ إدارة أجهزة إشعارات العميل (عرض وحذف توكنات FCM) من نافذة بيانات الدخول (`src/components/UserDevicesPanel.jsx`).
+- ✅ تأكيد بالكتابة للعمليات المدمّرة واسعة الأثر (`src/components/ConfirmDialog.jsx`).
 - ✅ عرض معرّف دخول العميل وحالة حسابه في Firebase Authentication، وتعيين كلمة مرور جديدة له عند نسيانها (`src/components/UserAuthModal.jsx`, `api/manage-user-auth.js`).
 - ✅ إرسال إشعار دفع العمولة للمستخدم المستهدف وتسجيله في صندوق إشعاراته (`src/components/UserBillingModal.jsx`).
 - ✅ تصفية المبيعات حسب الحالة والتاريخ، وتجميعها لكل شبكة مع جدول قابل للتوسيع (`src/pages/SalesPage.jsx`).
@@ -197,7 +207,7 @@ node --check index.js
 ## 🌐 النشر
 
 - `vercel.json` يوجه كل المسارات غير `api/` إلى `/index.html`، ويضبط `api/send-fcm.js` بحد أقصى 30 ثانية وذاكرة 512 MB، و`api/manage-user-auth.js` بحد أقصى 15 ثانية وذاكرة 512 MB (`vercel.json`).
-- `firebase.json` يعلن `functions/` كمصدر Firebase Functions ويستخدم `firestore.rules` لقواعد Firestore (`firebase.json`).
+- `firebase.json` يعلن `functions/` كمصدر Firebase Functions، ويستخدم `firestore.rules` للقواعد و`firestore.indexes.json` للفهارس (`firebase.json`).
 - CI يعمل عند push وpull request إلى `main`، وبطلب يدوي، ويبني الواجهة ويفحص صياغة الوظيفة (`.github/workflows/ci.yml`).
 - لا يحتوي المستودع على رابط `vercel.app` أو `netlify.app` أو `firebaseapp.com` منشور يمكن اعتماده؛ رابط Demo أو live: **غير موثّق في المستودع**.
 - أمر نشر رسمي أو إعداد مشروع Vercel/Firebase محدد: **غير موثّق في المستودع**.
@@ -217,7 +227,16 @@ node --check index.js
 
 كلمة المرور الحالية **لا يمكن عرضها**: Firebase Authentication يخزّنها كتجزئة ولا يوفّر أي واجهة لقراءتها؛ لذلك يعرض الإجراء `get` معرّف الدخول وحالة الحساب فقط، ويتيح `set-password` تعيين كلمة مرور بديلة عند نسيان العميل لها.
 
-يوجد أيضاً trigger باسم `dispatchNotificationRequest` عند إنشاء `notification_requests/{requestId}` (`functions/index.js`). وجود هذه الوظيفة مثبت، أما استخدامها في النشر الحالي: «غير موثّق في المستودع».
+### الإشعارات المجدولة في الخادم
+
+`functions/index.js` يعرّف وظيفتين تستخدمان نفس روتين الإرسال (`dispatchRequest`):
+
+| الوظيفة | المُشغِّل | السلوك |
+|---|---|---|
+| `dispatchNotificationRequest` | إنشاء `notification_requests/{requestId}` | يرسل فوراً، ويؤجّل أي طلب يحمل `scheduledAt` مستقبلياً بحالة `scheduled` |
+| `dispatchScheduledNotifications` | مُجدوِل كل 5 دقائق | يلتقط الطلبات `status == 'scheduled'` و`scheduledAt <= now` ويرسلها |
+
+تتطلب الوظيفة المُجدوَلة فهرساً مركّباً على `(status, scheduledAt)`، وهو معرّف في `firestore.indexes.json` والمرتبط بـ`firebase.json`. ولتفعيل الجدولة فعلياً يجب نشر الوظائف: `firebase deploy --only functions`.
 
 ## 🔒 الأمان
 
