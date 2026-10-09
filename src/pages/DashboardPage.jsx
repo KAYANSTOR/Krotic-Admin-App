@@ -10,6 +10,7 @@ import StatCard from '../components/ui/StatCard';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
+import Section from '../components/ui/Section';
 import { formatNumber } from '../lib/format';
 import { fetchDashboardStats } from '../lib/adminData';
 
@@ -144,13 +145,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="dash-section" aria-label="إجراءات سريعة">
-            <header className="dash-section__head">
-              <div>
-                <span className="dash-section__eyebrow">تنقل سريع</span>
-                <h2 className="dash-section__title">إجراءات سريعة</h2>
-              </div>
-            </header>
+          <Section eyebrow="تنقل سريع" title="إجراءات سريعة" aria-label="إجراءات سريعة">
             <div className="dash-actions">
               <Link to="/users" className="dash-action">
                 <IconTile icon={UserPlus} tone="brand" />
@@ -178,9 +173,9 @@ export default function DashboardPage() {
                 <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
             </div>
-          </section>
+          </Section>
 
-          <section className="dash-section" aria-label="حالة النظام">
+          <Section title="حالة النظام" aria-label="حالة النظام">
             <article className="dash-status">
               <div className="dash-status__main">
                 <span
@@ -203,7 +198,7 @@ export default function DashboardPage() {
                 إدارة الحالة
               </Link>
             </article>
-          </section>
+          </Section>
         </>
       )}
 

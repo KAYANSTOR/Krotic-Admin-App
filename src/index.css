@@ -629,19 +629,6 @@
     font-size: .75rem; font-weight: 700; color: var(--ui-muted);
   }
 
-  /* أقسام */
-  .dash-section { margin-bottom: 2rem; }
-  .dash-section__head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 1rem; margin-bottom: 1rem;
-  }
-  .dash-section__eyebrow {
-    font-size: .75rem; font-weight: 800; color: var(--ui-muted);
-  }
-  .dash-section__title {
-    margin-top: .25rem; font-size: 1.125rem; font-weight: 800;
-  }
-
   /* إجراءات سريعة */
   .dash-actions {
     display: grid; gap: 1rem;

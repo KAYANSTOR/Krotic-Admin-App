@@ -8,6 +8,7 @@ import PageHeader from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
+import Section from '../components/ui/Section';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import { formatNumber, formatDate } from '../lib/format';
 import { fetchNetworkSales } from '../lib/adminData';
@@ -151,6 +152,11 @@ export default function SalesPage() {
         </div>
       </Card>
 
+      <Section
+        eyebrow="السجل"
+        title="شبكات المبيعات"
+        description={`${formatNumber(networkSales.length)} شبكة لديها مبيعات مسجّلة`}
+      >
       <div className="sales-networks">
         {networkSales.length === 0 ? (
           <Card className="sales-empty">
@@ -295,6 +301,7 @@ export default function SalesPage() {
           })
         )}
       </div>
+      </Section>
     </div>
   );
 }
