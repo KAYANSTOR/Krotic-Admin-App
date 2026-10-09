@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { fetchUsersWithBilling } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -17,6 +17,7 @@ import Section from '../components/ui/Section';
 import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
+import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
 
@@ -38,6 +39,7 @@ export default function UsersPage() {
 
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
 
   const fetchData = useCallback(async () => {
@@ -324,6 +326,9 @@ export default function UsersPage() {
                           <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
                             <Edit className="w-4 h-4" />
                           </button>
+                          <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                            <KeyRound className="w-4 h-4" />
+                          </button>
                           {user.is_trial && (
                             <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                               <CheckCircle className="w-4 h-4" />
@@ -396,6 +401,9 @@ export default function UsersPage() {
                     <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل">
                       <Edit className="w-4 h-4" />
                     </button>
+                    <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                      <KeyRound className="w-4 h-4" />
+                    </button>
                     {user.is_trial && (
                       <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                         <CheckCircle className="w-4 h-4" />
@@ -433,6 +441,14 @@ export default function UsersPage() {
           onClose={() => { setBillingUser(null); fetchData(); }}
           user={billingUser}
           globalCommission={defaultCommission}
+        />
+      )}
+
+      {authUser && (
+        <UserAuthModal
+          isOpen={!!authUser}
+          onClose={() => setAuthUser(null)}
+          user={authUser}
         />
       )}
 

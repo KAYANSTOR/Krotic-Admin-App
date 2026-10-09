@@ -39,6 +39,8 @@
 - ✅ تعديل تاريخ الاشتراك والعمولة الخاصة ورسالة التحذير الخاصة بالمستخدم (`src/pages/UsersPage.jsx`, `src/components/UserEditModal.jsx`).
 - ✅ حساب المستحق والمدفوع والمتبقي لكل شبكة، مع إضافة دفعة مرتبطة بشهر (`src/components/UserBillingModal.jsx`).
 - ✅ إرسال إشعار FCM للجميع أو لمستخدم محدد، مع تسجيل التاريخ في Firestore بعد الإرسال (`src/pages/NotificationsPage.jsx`, `api/send-fcm.js`).
+- ✅ حذف أي إشعار عام من السجل مع نافذة تأكيد وتحديث فوري للقائمة (`src/pages/NotificationsPage.jsx`).
+- ✅ عرض معرّف دخول العميل وحالة حسابه في Firebase Authentication، وتعيين كلمة مرور جديدة له عند نسيانها (`src/components/UserAuthModal.jsx`, `api/manage-user-auth.js`).
 - ✅ إرسال إشعار دفع العمولة للمستخدم المستهدف وتسجيله في صندوق إشعاراته (`src/components/UserBillingModal.jsx`).
 - ✅ تصفية المبيعات حسب الحالة والتاريخ، وتجميعها لكل شبكة مع جدول قابل للتوسيع (`src/pages/SalesPage.jsx`).
 - ✅ دعم حالات البيع `COMPLETED` و`ROLLED_BACK` و`SMS_PENDING` في واجهة المبيعات (`src/pages/SalesPage.jsx`).
@@ -61,6 +63,7 @@
 | المصادقة والبيانات | Firebase Web SDK: Auth وFirestore | `package.json`, `src/firebase.js` |
 | خدمات الخادم | Firebase Admin SDK | `package.json`, `api/send-fcm.js`, `functions/package.json` |
 | الإشعارات | Firebase Cloud Messaging (FCM) | `api/send-fcm.js`, `src/pages/NotificationsPage.jsx` |
+| بيانات دخول العملاء | Firebase Admin SDK (Authentication) | `api/manage-user-auth.js`, `src/components/UserAuthModal.jsx` |
 | الوظيفة السحابية | Firebase Functions v2 for Firestore | `functions/index.js`, `functions/package.json` |
 | واجهة الرموز | Lucide React | `package.json` وملفات الصفحات والمكونات |
 | التنبيهات | React Hot Toast | `package.json`, `src/App.jsx` |
@@ -76,7 +79,7 @@
 ├── vite.config.js               # Vite والمنفذ 3000
 ├── tailwind.config.js           # ألوان وتخطيط RTL
 ├── postcss.config.js
-├── vercel.json                  # rewrite وتهيئة api/send-fcm.js
+├── vercel.json                  # rewrite وتهيئة دوال api
 ├── firebase.json                # مصدر Functions وقواعد Firestore
 ├── firestore.rules              # قواعد الوصول إلى Firestore
 ├── .env.example                 # أسماء إعدادات Firebase للواجهة
@@ -171,7 +174,7 @@ node --check index.js
 
 | الاسم | الغرض المثبت | المصدر |
 |---|---|---|
-| `FIREBASE_SERVICE_ACCOUNT` | بيانات Service Account بصيغة JSON أو base64 لتهيئة Firebase Admin | `api/send-fcm.js` |
+| `FIREBASE_SERVICE_ACCOUNT` | بيانات Service Account بصيغة JSON أو base64 لتهيئة Firebase Admin | `api/send-fcm.js`, `api/manage-user-auth.js` |
 | `FCM_DEFAULT_TOPIC` | topic الافتراضي؛ القيمة الاحتياطية في الكود `krotak_all_users` | `api/send-fcm.js` |
 | `FCM_ANDROID_CHANNEL_ID` | Android notification channel؛ القيمة الاحتياطية في الكود `krotak_admin_v2` | `api/send-fcm.js` |
 
@@ -193,7 +196,7 @@ node --check index.js
 
 ## 🌐 النشر
 
-- `vercel.json` يوجه كل المسارات غير `api/` إلى `/index.html`، ويضبط `api/send-fcm.js` بحد أقصى 30 ثانية وذاكرة 512 MB (`vercel.json`).
+- `vercel.json` يوجه كل المسارات غير `api/` إلى `/index.html`، ويضبط `api/send-fcm.js` بحد أقصى 30 ثانية وذاكرة 512 MB، و`api/manage-user-auth.js` بحد أقصى 15 ثانية وذاكرة 512 MB (`vercel.json`).
 - `firebase.json` يعلن `functions/` كمصدر Firebase Functions ويستخدم `firestore.rules` لقواعد Firestore (`firebase.json`).
 - CI يعمل عند push وpull request إلى `main`، وبطلب يدوي، ويبني الواجهة ويفحص صياغة الوظيفة (`.github/workflows/ci.yml`).
 - لا يحتوي المستودع على رابط `vercel.app` أو `netlify.app` أو `firebaseapp.com` منشور يمكن اعتماده؛ رابط Demo أو live: **غير موثّق في المستودع**.
@@ -202,6 +205,17 @@ node --check index.js
 ### تدفق الإشعارات في الخادم
 
 `POST /api/send-fcm` يتحقق من Bearer Firebase ID token ومن مستند `Admins/{uid}`، ثم يرسل إلى topic أو إلى أجهزة `users/{uid}/devices` ويسجل التسليم في `notification_deliveries` (`api/send-fcm.js`).
+
+### تدفق بيانات دخول العملاء في الخادم
+
+`POST /api/manage-user-auth` يتحقق من Bearer Firebase ID token ومن مستند `Admins/{uid}`، ثم ينفذ إجراءً واحداً على حساب العميل في Firebase Authentication (`api/manage-user-auth.js`):
+
+| الإجراء | الحقول | الناتج |
+|---|---|---|
+| `get` | `uid` | معرّف الدخول (البريد)، الهاتف المرتبط، نوع الدخول، حالة الحساب، توثيق البريد، تاريخ الإنشاء، آخر تسجيل دخول |
+| `set-password` | `uid`, `password` | تعيين كلمة مرور جديدة للحساب (6 أحرف على الأقل) |
+
+كلمة المرور الحالية **لا يمكن عرضها**: Firebase Authentication يخزّنها كتجزئة ولا يوفّر أي واجهة لقراءتها؛ لذلك يعرض الإجراء `get` معرّف الدخول وحالة الحساب فقط، ويتيح `set-password` تعيين كلمة مرور بديلة عند نسيان العميل لها.
 
 يوجد أيضاً trigger باسم `dispatchNotificationRequest` عند إنشاء `notification_requests/{requestId}` (`functions/index.js`). وجود هذه الوظيفة مثبت، أما استخدامها في النشر الحالي: «غير موثّق في المستودع».
 

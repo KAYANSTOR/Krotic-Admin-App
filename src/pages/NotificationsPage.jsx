@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  collection, getDocs, addDoc, serverTimestamp
+  collection, getDocs, addDoc, doc, deleteDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
   Bell, Send, Users, User, Globe, History, RefreshCw,
-  AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck
+  AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -13,6 +13,7 @@ import { Card, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { fetchUsersForSelect } from '../lib/adminData';
 
 export default function NotificationsPage() {
@@ -25,6 +26,8 @@ export default function NotificationsPage() {
   const [recentNotifications, setRecentNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -153,6 +156,21 @@ export default function NotificationsPage() {
       toast.error('تعذر الاتصال بالخادم');
     }
     setSending(false);
+  };
+
+  const handleDeleteNotification = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
+      setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      toast.success('تم حذف الإشعار من السجل');
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      toast.error('تعذر حذف الإشعار. تحقق من الصلاحيات ثم أعد المحاولة.');
+    }
+    setDeleting(false);
   };
 
   const formatDate = (timestamp) => {
@@ -409,12 +427,31 @@ export default function NotificationsPage() {
                       </span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="notif-item__delete"
+                    onClick={() => setDeleteTarget(notif)}
+                    title="حذف الإشعار"
+                    aria-label={`حذف الإشعار: ${notif.title || ''}`}
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </Card>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteNotification}
+        title="حذف الإشعار"
+        message={`هل أنت متأكد من حذف الإشعار "${deleteTarget?.title || ''}" من السجل؟ لا يمكن التراجع عن هذا الإجراء.`}
+        confirmText={deleting ? 'جارٍ الحذف...' : 'نعم، احذف'}
+        variant="danger"
+      />
     </div>
   );
 }

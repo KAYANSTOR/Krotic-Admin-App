@@ -1360,3 +1360,101 @@
   }
   .admin-card__date { font-size: .75rem; color: var(--ui-muted); }
 }
+
+/* ===== بيانات دخول العميل (UserAuthModal) ===== */
+@layer components {
+  .auth-info {
+    display: flex; flex-direction: column; gap: .125rem;
+    border: 1px solid var(--ui-line); border-radius: 18px;
+    background: var(--ui-sunken); padding: .5rem;
+  }
+  .auth-info__row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: .625rem .75rem; border-radius: 13px;
+  }
+  .auth-info__row:nth-child(odd) { background: var(--ui-white); }
+  .auth-info__label {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .75rem; font-weight: 700; color: var(--ui-muted); flex-shrink: 0;
+  }
+  .auth-info__label svg { color: var(--ui-faint); }
+  .auth-info__value {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .8125rem; font-weight: 700; color: var(--ui-ink);
+    min-width: 0; text-align: end;
+  }
+
+  .mono-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8125rem; letter-spacing: .01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 16rem;
+  }
+
+  .copy-btn {
+    display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
+    border: 1px solid var(--ui-line); border-radius: 9px;
+    background: var(--ui-white); color: var(--ui-muted); cursor: pointer;
+    transition: color .16s var(--ui-ease), background-color .16s var(--ui-ease), border-color .16s var(--ui-ease);
+  }
+  .copy-btn:hover { color: var(--ui-brand-deep); border-color: var(--ui-brand-tint); background: var(--ui-brand-soft); }
+
+  .auth-note, .auth-warn {
+    display: flex; align-items: flex-start; gap: .5rem;
+    padding: .75rem .875rem; border-radius: 14px;
+    font-size: .8125rem; line-height: 1.7;
+  }
+  .auth-note { background: var(--ui-brand-soft); color: var(--ui-brand-deep); border: 1px solid rgba(217,119,87,.16); }
+  .auth-warn { background: var(--ui-warning-soft); color: var(--ui-warning-ink); border: 1px solid rgba(213,154,58,.2); }
+  .auth-note svg, .auth-warn svg { flex-shrink: 0; margin-top: .2rem; }
+
+  .auth-issued {
+    padding: .875rem 1rem; border-radius: 16px;
+    background: var(--ui-success-soft); border: 1px solid rgba(107,142,114,.22);
+    color: var(--ui-success-ink);
+  }
+  .auth-issued__title { display: flex; align-items: center; gap: .5rem; font-weight: 800; font-size: .875rem; }
+  .auth-issued__value {
+    display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+    margin-top: .625rem; padding: .5rem .75rem;
+    border-radius: 12px; background: var(--ui-white);
+    border: 1px dashed rgba(107,142,114,.4);
+  }
+  .auth-issued__hint { margin-top: .5rem; font-size: .75rem; line-height: 1.7; opacity: .9; }
+
+  .auth-error {
+    display: flex; align-items: center; gap: .875rem; flex-wrap: wrap;
+    padding: 1rem 1.125rem; border-radius: 16px;
+    background: var(--ui-danger-soft); border: 1px solid rgba(198,93,93,.2);
+    color: var(--ui-danger-ink);
+  }
+  .auth-error__icon {
+    display: grid; place-items: center; width: 36px; height: 36px;
+    border-radius: 12px; background: var(--ui-white); flex-shrink: 0;
+  }
+  .auth-error__body { flex: 1; min-width: 12rem; }
+  .auth-error__title { font-weight: 800; }
+  .auth-error__msg { margin-top: .2rem; font-size: .8125rem; line-height: 1.7; }
+
+  @media (max-width: 640px) {
+    .auth-info__row { flex-direction: column; align-items: flex-start; gap: .375rem; }
+    .auth-info__value { text-align: start; }
+    .mono-value { max-width: 100%; }
+  }
+}
+
+/* زر حذف الإشعار داخل السجل */
+@layer components {
+  .notif-item__delete {
+    display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+    border: 1px solid transparent; border-radius: 11px;
+    background: transparent; color: var(--ui-faint); cursor: pointer;
+    transition: color .16s var(--ui-ease), background-color .16s var(--ui-ease), border-color .16s var(--ui-ease);
+  }
+  .notif-item__delete:hover {
+    color: var(--ui-danger-ink); background: var(--ui-danger-soft); border-color: rgba(198,93,93,.2);
+  }
+  @media (max-width: 640px) {
+    .notif-item__delete { width: 40px; height: 40px; }
+  }
+}
