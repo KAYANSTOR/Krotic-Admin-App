@@ -16,31 +16,15 @@ import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import { Field, Input } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { SkeletonLine } from '../components/ui/Skeleton';
+import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 
 function AdminsSkeleton() {
   return (
     <div className="admins-page">
-      <div className="page-header">
-        <div className="page-header__main">
-          <SkeletonLine className="w-12 h-12 rounded-[16px]" />
-          <div className="space-y-2">
-            <SkeletonLine className="w-44 h-7" />
-            <SkeletonLine className="w-32" />
-          </div>
-        </div>
-      </div>
+      <SkeletonPageHeader />
       <div className="admins-grid">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="card space-y-4">
-            <div className="flex items-center justify-between">
-              <SkeletonLine className="w-12 h-12 rounded-[16px]" />
-              <SkeletonLine className="w-9 h-9 rounded-[12px]" />
-            </div>
-            <SkeletonLine className="w-1/2 h-6" />
-            <SkeletonLine className="w-3/4" />
-            <SkeletonLine className="w-2/3" />
-          </div>
+          <SkeletonCard key={i} lines={3} />
         ))}
       </div>
     </div>

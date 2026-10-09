@@ -22,6 +22,36 @@ export function SkeletonStatGrid() {
   );
 }
 
+/** Mirrors the shared PageHeader so loading screens keep the same rhythm. */
+export function SkeletonPageHeader() {
+  return (
+    <div className="page-header" aria-hidden="true">
+      <div className="page-header__main">
+        <Skeleton className="w-12 h-12 rounded-[16px]" />
+        <div className="space-y-2">
+          <SkeletonLine className="w-52 h-7" />
+          <SkeletonLine className="w-40" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder for a card with a title and a few lines of content. */
+export function SkeletonCard({ lines = 3, className }) {
+  return (
+    <div className={`card space-y-4 ${className || ''}`} aria-hidden="true">
+      <SkeletonLine className="w-1/3 h-6" />
+      {Array.from({ length: lines }).map((_, i) => (
+        <SkeletonLine
+          key={i}
+          className={i % 2 === 0 ? 'w-full h-14 rounded-[14px]' : 'w-2/3 h-14 rounded-[14px]'}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function SkeletonTable({ rows = 5 }) {
   return (
     <div className="divide-y divide-[#F1ECE7]">

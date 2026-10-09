@@ -5,14 +5,16 @@ import { db } from '../firebase';
 import { fetchUsersWithBilling } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
 import { Card } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import { SkeletonTable } from '../components/ui/Skeleton';
+import StatCard from '../components/ui/StatCard';
+import Section from '../components/ui/Section';
+import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -165,8 +167,18 @@ export default function UsersPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <PageHeader title="إدارة المستخدمين والفوترة" description="جارٍ التحميل..." />
+      <div className="users-page">
+        <SkeletonPageHeader />
+        <div className="grid-kpi">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="card stat-card">
+              <div className="stat-card__body space-y-2">
+                <SkeletonLine className="w-2/3" />
+                <SkeletonLine className="w-1/2 h-8" />
+              </div>
+            </div>
+          ))}
+        </div>
         <Card flush><SkeletonTable rows={6} /></Card>
       </div>
     );
@@ -198,25 +210,19 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="users-stats">
-        <div className="users-stat">
-          <span className="users-stat__label">إجمالي المستخدمين</span>
-          <strong className="users-stat__value">{formatNumber(stats.total)}</strong>
-        </div>
-        <div className="users-stat users-stat--warning">
-          <span className="users-stat__label">حسابات تجريبية</span>
-          <strong className="users-stat__value">{formatNumber(stats.trial)}</strong>
-        </div>
-        <div className="users-stat users-stat--danger">
-          <span className="users-stat__label">عليهم ديون</span>
-          <strong className="users-stat__value">{formatNumber(stats.debt)}</strong>
-        </div>
-        <div className="users-stat users-stat--neutral">
-          <span className="users-stat__label">محظورون</span>
-          <strong className="users-stat__value">{formatNumber(stats.blocked)}</strong>
-        </div>
+      <div className="grid-kpi">
+        <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.total)} icon={Users} tone="brand" iconStart />
+        <StatCard title="حسابات تجريبية" value={formatNumber(stats.trial)} icon={Activity} tone="warning" iconStart />
+        <StatCard title="عليهم ديون" value={formatNumber(stats.debt)} icon={DollarSign} tone="danger" iconStart />
+        <StatCard title="محظورون" value={formatNumber(stats.blocked)} icon={Ban} tone="neutral" iconStart />
       </div>
 
+      <Section
+        eyebrow="السجل"
+        title="قائمة المستخدمين"
+        description={`${formatNumber(filteredUsers.length)} من ${formatNumber(users.length)} مستخدم`}
+        className="users-list-section"
+      >
       <Card className="users-toolbar-card">
         <div className="users-toolbar">
           <div className="users-search">
@@ -409,6 +415,7 @@ export default function UsersPage() {
           </div>
         </>
       )}
+      </Section>
 
       {editingUser && (
         <UserEditModal

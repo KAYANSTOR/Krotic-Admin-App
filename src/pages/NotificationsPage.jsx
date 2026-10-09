@@ -8,11 +8,11 @@ import {
   AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LoadingSpinner from '../components/LoadingSpinner';
 import PageHeader from '../components/ui/PageHeader';
 import { Card, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { fetchUsersForSelect } from '../lib/adminData';
 
 export default function NotificationsPage() {
@@ -173,7 +173,17 @@ export default function NotificationsPage() {
 
   const canSend = title.trim().length > 0 && message.trim().length > 0 && (type === 'global' || !!selectedUser);
 
-  if (loading) return <LoadingSpinner size="lg" />;
+  if (loading) {
+    return (
+      <div className="notifications-page">
+        <SkeletonPageHeader />
+        <div className="notif-grid">
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={5} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="notifications-page">

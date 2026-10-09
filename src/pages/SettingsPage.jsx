@@ -16,7 +16,7 @@ import Badge from '../components/ui/Badge';
 import Switch from '../components/ui/Switch';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { SkeletonLine } from '../components/ui/Skeleton';
+import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 
 const DEFAULTS = {
   is_app_active: true,
@@ -31,28 +31,15 @@ const DEFAULTS = {
 function SettingsSkeleton() {
   return (
     <div className="settings-page">
-      <div className="page-header">
-        <div className="page-header__main">
-          <SkeletonLine className="w-12 h-12 rounded-[16px]" />
-          <div className="space-y-2">
-            <SkeletonLine className="w-48 h-7" />
-            <SkeletonLine className="w-64" />
-          </div>
-        </div>
-      </div>
+      <SkeletonPageHeader />
       <div className="settings-grid">
-        {[0, 1].map((i) => (
-          <div key={i} className="card space-y-5">
-            <SkeletonLine className="w-1/3 h-6" />
-            <SkeletonLine className="w-full h-14 rounded-[14px]" />
-            <SkeletonLine className="w-full h-14 rounded-[14px]" />
-            <SkeletonLine className="w-2/3 h-14 rounded-[14px]" />
-          </div>
-        ))}
+        <SkeletonCard lines={4} />
+        <SkeletonCard lines={4} />
       </div>
     </div>
   );
 }
+
 
 export default function SettingsPage() {
   const [config, setConfig] = useState(DEFAULTS);

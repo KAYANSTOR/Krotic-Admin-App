@@ -10,15 +10,16 @@ const TONES = {
 };
 
 export default function StatCard({ title, value, icon: Icon, tone = 'brand', subtitle, iconStart = false, className }) {
+  const resolvedTone = TONES[tone] ? tone : 'brand';
   return (
-    <div className={cn('card stat-card', iconStart && 'stat-card--icon-start', className)}>
+    <div className={cn('card stat-card', `stat-card--${resolvedTone}`, iconStart && 'stat-card--icon-start', className)}>
       <div className="stat-card__body">
         <p className="stat-card__label">{title}</p>
         <p className="stat-card__value">{value}</p>
         {subtitle && <p className="stat-card__hint">{subtitle}</p>}
       </div>
       {Icon && (
-        <span className={cn('icon-tile stat-card__icon', TONES[tone] || TONES.brand)}>
+        <span className={cn('icon-tile stat-card__icon', TONES[resolvedTone])}>
           <Icon className="w-5 h-5" aria-hidden="true" />
         </span>
       )}
