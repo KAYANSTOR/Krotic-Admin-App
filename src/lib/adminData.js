@@ -1,5 +1,6 @@
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { toDate } from './format';
 
 const CACHE_TTL = 15_000;
 const cache = new Map();
@@ -97,26 +98,82 @@ export async function fetchUsersWithBilling(options) {
   }, options);
 }
 
+const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const DAY_MS = 86_400_000;
+
+function monthKey(input) {
+  const date = toDate(input);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** آخر `count` أشهر حتى الشهر الحالي، مع تعبئة الأشهر الفارغة بأصفار. */
+function buildRecentMonths(buckets, count) {
+  const now = new Date();
+  const months = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const cursor = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = buckets.get(key) || { face: 0, earnings: 0, count: 0 };
+    months.push({
+      month: key,
+      label: MONTH_LABELS[cursor.getMonth()],
+      face: bucket.face,
+      earnings: bucket.earnings,
+      count: bucket.count,
+    });
+  }
+  return months;
+}
+
 export async function fetchDashboardStats(options) {
   return readCached('dashboard-stats', async () => {
     const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
     const globalCommission = config.default_commission_rate || 5;
-    const salesResults = await Promise.all(users.map(async (user) => {
-      const sales = await fetchSalesForUser(user.uid);
-      return sales.reduce((result, sale) => {
-        if (sale.status !== 'COMPLETED') return result;
+    const salesByUser = await Promise.all(users.map((user) => fetchSalesForUser(user.uid)));
+
+    const buckets = new Map();
+    const totals = { totalSales: 0, totalAdminEarnings: 0, totalTransactions: 0 };
+
+    users.forEach((user, index) => {
+      const rate = resolveCommissionRate(user, globalCommission) / 100;
+      (salesByUser[index] || []).forEach((sale) => {
+        if (sale.status !== 'COMPLETED') return;
         const faceValue = sale.faceValue || 0;
-        result.face += faceValue;
-        result.earnings += faceValue * (resolveCommissionRate(user, globalCommission) / 100);
-        result.count += 1;
-        return result;
-      }, { face: 0, earnings: 0, count: 0 });
-    }));
-    const totals = salesResults.reduce((result, saleResult) => ({
-      totalSales: result.totalSales + saleResult.face,
-      totalAdminEarnings: result.totalAdminEarnings + saleResult.earnings,
-      totalTransactions: result.totalTransactions + saleResult.count,
-    }), { totalSales: 0, totalAdminEarnings: 0, totalTransactions: 0 });
+        const earnings = faceValue * rate;
+        totals.totalSales += faceValue;
+        totals.totalAdminEarnings += earnings;
+        totals.totalTransactions += 1;
+
+        const key = monthKey(sale.createdAt);
+        if (!key) return;
+        const bucket = buckets.get(key) || { face: 0, earnings: 0, count: 0 };
+        bucket.face += faceValue;
+        bucket.earnings += earnings;
+        bucket.count += 1;
+        buckets.set(key, bucket);
+      });
+    });
+
+    // تنبيهات محسوبة من بيانات مقروءة فعلاً: لا طلبات إضافية على Firestore.
+    const now = Date.now();
+    const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5;
+    const warningWindow = warningDays * DAY_MS;
+    let expiredUsers = 0;
+    let expiringSoonUsers = 0;
+    let trialExpiringSoonUsers = 0;
+    users.forEach((user) => {
+      const endDate = toDate(user.subscription_end_date);
+      if (!endDate || Number.isNaN(endDate.getTime())) return;
+      const remaining = endDate.getTime() - now;
+      if (remaining < 0) {
+        expiredUsers += 1;
+      } else if (remaining <= warningWindow) {
+        expiringSoonUsers += 1;
+        if (user.is_trial === true) trialExpiringSoonUsers += 1;
+      }
+    });
+
     return {
       appStatus: config,
       stats: {
@@ -126,6 +183,13 @@ export async function fetchDashboardStats(options) {
         blockedUsers: users.filter((user) => user.is_active === false).length,
         ...totals,
       },
+      alerts: {
+        expiredUsers,
+        expiringSoonUsers,
+        trialExpiringSoonUsers,
+        warningDays,
+      },
+      monthlySales: buildRecentMonths(buckets, 6),
     };
   }, options);
 }

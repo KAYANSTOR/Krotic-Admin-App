@@ -20,7 +20,7 @@ import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { formatNumber, formatDate, isExpired } from '../lib/format';
+import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
@@ -35,10 +35,23 @@ function loadSavedFilter() {
   }
 }
 
+/** يسمح للتنبيهات الذكية بالربط مباشرة بتصفية محددة عبر ?filter= */
+function resolveInitialFilter() {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('filter');
+    if (fromUrl && FILTERS.some((item) => item.value === fromUrl)) return fromUrl;
+  } catch {
+    // تجاهل أي رابط غير صالح.
+  }
+  return loadSavedFilter();
+}
+
 const FILTERS = [
   { value: 'all', label: 'الكل' },
   { value: 'trial', label: 'تجريبي' },
   { value: 'official', label: 'رسمي' },
+  { value: 'expiring', label: 'ينتهي قريباً' },
+  { value: 'expired', label: 'منتهي' },
   { value: 'debt', label: 'عليهم ديون' },
   { value: 'blocked', label: 'محظور' },
 ];
@@ -49,7 +62,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState(loadSavedFilter);
+  const [filterType, setFilterType] = useState(resolveInitialFilter);
 
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
@@ -191,6 +204,13 @@ export default function UsersPage() {
     }
   };
 
+  const warningWindowMs = useMemo(() => {
+    const days = Number(globalConfig?.warning_days_before_expiry) > 0
+      ? Number(globalConfig.warning_days_before_expiry)
+      : 5;
+    return days * 86_400_000;
+  }, [globalConfig]);
+
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const matchesSearch =
@@ -202,9 +222,16 @@ export default function UsersPage() {
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
       if (filterType === 'debt') return matchesSearch && user.balance > 0;
+      if (filterType === 'expired') return matchesSearch && isExpired(user.subscription_end_date);
+      if (filterType === 'expiring') {
+        if (!matchesSearch || isExpired(user.subscription_end_date)) return false;
+        const endDate = toDate(user.subscription_end_date);
+        if (!endDate) return false;
+        return endDate.getTime() - Date.now() <= warningWindowMs;
+      }
       return matchesSearch;
     });
-  }, [users, searchTerm, filterType]);
+  }, [users, searchTerm, filterType, warningWindowMs]);
 
   // نُعيد نافذة العرض إلى حجمها الأول عند تغيير البحث أو التصفية.
   useEffect(() => {

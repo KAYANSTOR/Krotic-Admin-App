@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  Activity, AlertTriangle, ArrowUpLeft, Bell, Coins, CreditCard,
+  Activity, AlertTriangle, ArrowUpLeft, Bell, Clock, Coins, CreditCard,
   LayoutDashboard, RefreshCw, Settings, ShieldCheck, Sparkles,
   TrendingUp, UserCheck, UserPlus, Users, Wallet,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import BarChart from '../components/ui/BarChart';
 import { formatNumber } from '../lib/format';
 import { fetchDashboardStats, clearAdminDataCache } from '../lib/adminData';
 
@@ -22,15 +23,24 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [appStatus, setAppStatus] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [alerts, setAlerts] = useState(null);
+  const [monthlySales, setMonthlySales] = useState([]);
 
   const load = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError(null);
     if (force) clearAdminDataCache();
     try {
-      const { appStatus: status, stats: nextStats } = await fetchDashboardStats();
+      const {
+        appStatus: status,
+        stats: nextStats,
+        alerts: nextAlerts,
+        monthlySales: nextMonthlySales,
+      } = await fetchDashboardStats();
       setAppStatus(status);
       setStats(nextStats);
+      setAlerts(nextAlerts);
+      setMonthlySales(nextMonthlySales || []);
       setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -153,6 +163,66 @@ export default function DashboardPage() {
               </article>
             </div>
           </section>
+
+          <Section
+            eyebrow="الاتجاه"
+            title="المبيعات في آخر 6 أشهر"
+            description="قيمة المبيعات المكتملة شهرياً عبر جميع الشبكات."
+            aria-label="مخطط المبيعات"
+          >
+            <Card>
+              <BarChart
+                data={monthlySales.map((month) => ({
+                  label: month.label,
+                  value: Math.round(month.face),
+                  hint: `${month.label}: ${formatNumber(month.face)} ريال • ${formatNumber(month.count)} عملية`,
+                }))}
+                valueFormatter={formatNumber}
+              />
+            </Card>
+          </Section>
+
+          {alerts && (alerts.expiredUsers > 0 || alerts.expiringSoonUsers > 0) && (
+            <Section
+              eyebrow="تحتاج انتباهك"
+              title="تنبيهات ذكية"
+              description={`مبنية على تواريخ الاشتراك ونافذة التحذير (${alerts.warningDays} أيام).`}
+              aria-label="تنبيهات"
+            >
+              <div className="alert-grid">
+                {alerts.expiredUsers > 0 && (
+                  <Link to="/users?filter=expired" className="alert-card alert-card--danger">
+                    <span className="alert-card__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
+                    <span className="alert-card__body">
+                      <span className="alert-card__value">{formatNumber(alerts.expiredUsers)}</span>
+                      <span className="alert-card__label">اشتراك منتهي</span>
+                    </span>
+                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
+                  </Link>
+                )}
+                {alerts.expiringSoonUsers > 0 && (
+                  <Link to="/users?filter=expiring" className="alert-card alert-card--warning">
+                    <span className="alert-card__icon" aria-hidden="true"><Clock className="w-5 h-5" /></span>
+                    <span className="alert-card__body">
+                      <span className="alert-card__value">{formatNumber(alerts.expiringSoonUsers)}</span>
+                      <span className="alert-card__label">ينتهي خلال {alerts.warningDays} أيام</span>
+                    </span>
+                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
+                  </Link>
+                )}
+                {alerts.trialExpiringSoonUsers > 0 && (
+                  <Link to="/users?filter=expiring" className="alert-card alert-card--brand">
+                    <span className="alert-card__icon" aria-hidden="true"><Activity className="w-5 h-5" /></span>
+                    <span className="alert-card__body">
+                      <span className="alert-card__value">{formatNumber(alerts.trialExpiringSoonUsers)}</span>
+                      <span className="alert-card__label">تجريبي ينتهي قريباً</span>
+                    </span>
+                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            </Section>
+          )}
 
           <Section eyebrow="تنقل سريع" title="إجراءات سريعة" aria-label="إجراءات سريعة">
             <div className="dash-actions">
