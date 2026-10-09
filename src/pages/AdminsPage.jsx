@@ -5,7 +5,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  ShieldCheck, UserPlus, Trash2, RefreshCw, Eye, EyeOff,
+  ShieldCheck, UserPlus, Trash2, Eye, EyeOff,
   Mail, Phone, User, Users, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';

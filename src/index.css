@@ -1509,3 +1509,22 @@
   .list-footer__count { font-size: .8125rem; font-weight: 700; color: var(--ui-muted); }
   .sales-network__more { display: flex; justify-content: center; padding: .875rem 1rem 1.125rem; }
 }
+
+/* فلاتر التاريخ السريعة */
+@layer components {
+  .sales-filters__presets { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  .sales-preset {
+    min-height: 36px; padding: .4rem .875rem; border-radius: 999px;
+    border: 1px solid var(--ui-line); background: var(--ui-white);
+    color: var(--ui-ink-soft); font-size: .8125rem; font-weight: 700; cursor: pointer;
+    transition: color .16s var(--ui-ease), background-color .16s var(--ui-ease), border-color .16s var(--ui-ease);
+  }
+  .sales-preset:hover { border-color: var(--ui-brand-tint); color: var(--ui-brand-deep); }
+  .sales-preset.is-active {
+    background: var(--ui-brand-soft); border-color: var(--ui-brand-tint); color: var(--ui-brand-deep);
+    box-shadow: inset 0 0 0 1px rgba(217,119,87,.14);
+  }
+  @media (max-width: 640px) {
+    .sales-preset { min-height: 40px; }
+  }
+}

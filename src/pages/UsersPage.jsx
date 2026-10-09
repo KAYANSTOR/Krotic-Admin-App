@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { fetchUsersWithBilling, clearAdminDataCache } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -21,8 +21,18 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
+import { downloadCsv, csvStamp } from '../lib/csv';
 
 const PAGE_SIZE = 24;
+const FILTER_STORAGE_KEY = 'krotak:users-filter';
+
+function loadSavedFilter() {
+  try {
+    return window.localStorage.getItem(FILTER_STORAGE_KEY) || 'all';
+  } catch {
+    return 'all';
+  }
+}
 
 const FILTERS = [
   { value: 'all', label: 'الكل' },
@@ -38,7 +48,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all');
+  const [filterType, setFilterType] = useState(loadSavedFilter);
 
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
@@ -169,6 +179,15 @@ export default function UsersPage() {
     setVisibleCount(PAGE_SIZE);
   }, [searchTerm, filterType]);
 
+  // نتذكّر آخر تصفية استخدمها المدير.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, filterType);
+    } catch {
+      // التخزين المحلي قد يكون معطّلاً؛ التصفية تعمل بدون حفظ.
+    }
+  }, [filterType]);
+
   const visibleUsers = useMemo(
     () => filteredUsers.slice(0, visibleCount),
     [filteredUsers, visibleCount]
@@ -184,6 +203,24 @@ export default function UsersPage() {
   }, [users]);
 
   const defaultCommission = globalConfig?.default_commission_rate || 5;
+
+  const handleExportUsers = useCallback(() => {
+    if (!filteredUsers.length) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    downloadCsv(`users-${csvStamp()}`, filteredUsers, [
+      { label: 'اسم الشبكة', value: (u) => u.networkName || '' },
+      { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
+      { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
+      { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
+      { label: 'نسبة العمولة', value: (u) => (u.commission_rate > 0 ? u.commission_rate : defaultCommission) },
+      { label: 'الديون', value: (u) => Math.round(Number(u.balance) || 0) },
+      { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
+      { label: 'معرّف الحساب', value: (u) => u.uid },
+    ]);
+    toast.success('تم تصدير بيانات المستخدمين');
+  }, [filteredUsers, defaultCommission]);
 
   if (loading) {
     return (
@@ -240,6 +277,11 @@ export default function UsersPage() {
         title="قائمة المستخدمين"
         description={`${formatNumber(filteredUsers.length)} من ${formatNumber(users.length)} مستخدم`}
         className="users-list-section"
+        action={
+          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportUsers}>
+            تصدير CSV
+          </Button>
+        }
       >
       <Card className="users-toolbar-card">
         <div className="users-toolbar">

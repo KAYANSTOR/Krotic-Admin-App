@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  DollarSign, TrendingUp, Filter, RefreshCw,
+  DollarSign, TrendingUp, Filter, Download,
   ChevronDown, ChevronUp, Receipt, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -12,18 +12,49 @@ import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import { formatNumber, formatDate } from '../lib/format';
+import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, clearAdminDataCache } from '../lib/adminData';
 
 const NETWORK_PAGE_SIZE = 10;
+const FILTER_STORAGE_KEY = 'krotak:sales-filters';
+
+function toDateInput(date) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const DATE_PRESETS = [
+  { key: 'today', label: 'اليوم', range: () => { const t = new Date(); return [toDateInput(t), toDateInput(t)]; } },
+  { key: 'week', label: 'آخر 7 أيام', range: () => { const t = new Date(); const f = new Date(t); f.setDate(f.getDate() - 6); return [toDateInput(f), toDateInput(t)]; } },
+  { key: 'month', label: 'آخر 30 يوماً', range: () => { const t = new Date(); const f = new Date(t); f.setDate(f.getDate() - 29); return [toDateInput(f), toDateInput(t)]; } },
+  { key: 'thisMonth', label: 'هذا الشهر', range: () => { const t = new Date(); return [toDateInput(new Date(t.getFullYear(), t.getMonth(), 1)), toDateInput(t)]; } },
+];
+
+/** نُذكّر آخر فلتر استخدمه المدير حتى لا يعيد ضبطه في كل مرة. */
+function loadSavedFilters() {
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      statusFilter: typeof parsed?.statusFilter === 'string' ? parsed.statusFilter : 'COMPLETED',
+      dateFrom: typeof parsed?.dateFrom === 'string' ? parsed.dateFrom : '',
+      dateTo: typeof parsed?.dateTo === 'string' ? parsed.dateTo : '',
+    };
+  } catch {
+    return null;
+  }
+}
 const SALE_ROW_LIMIT = 50;
 
 export default function SalesPage() {
   const [networkSales, setNetworkSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedNetwork, setExpandedNetwork] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('COMPLETED');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const savedFilters = useMemo(loadSavedFilters, []);
+  const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'COMPLETED');
+  const [dateFrom, setDateFrom] = useState(savedFilters?.dateFrom || '');
+  const [dateTo, setDateTo] = useState(savedFilters?.dateTo || '');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
@@ -82,6 +113,32 @@ export default function SalesPage() {
     setVisibleNetworks(NETWORK_PAGE_SIZE);
   }, [statusFilter, dateFrom, dateTo]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FILTER_STORAGE_KEY,
+        JSON.stringify({ statusFilter, dateFrom, dateTo })
+      );
+    } catch {
+      // التخزين المحلي قد يكون معطّلاً؛ الفلاتر تعمل بدون حفظ.
+    }
+  }, [statusFilter, dateFrom, dateTo]);
+
+  const activePreset = useMemo(() => {
+    if (!dateFrom && !dateTo) return null;
+    const found = DATE_PRESETS.find((preset) => {
+      const [from, to] = preset.range();
+      return from === dateFrom && to === dateTo;
+    });
+    return found?.key || null;
+  }, [dateFrom, dateTo]);
+
+  const applyPreset = (preset) => {
+    const [from, to] = preset.range();
+    setDateFrom(from);
+    setDateTo(to);
+  };
+
   const visibleNetworkList = useMemo(
     () => networkSales.slice(0, visibleNetworks),
     [networkSales, visibleNetworks]
@@ -107,6 +164,28 @@ export default function SalesPage() {
     ROLLED_BACK: { text: 'مسترجع', class: 'badge-danger' },
     SMS_PENDING: { text: 'بانتظار SMS', class: 'badge-warning' },
   };
+
+  const handleExportSales = useCallback(() => {
+    const rows = networkSales.flatMap((network) => {
+      const stats = calcNetworkStats(network);
+      return stats.filteredSales.map((sale) => ({ network, sale }));
+    });
+    if (!rows.length) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    downloadCsv(`sales-${csvStamp()}`, rows, [
+      { label: 'الشبكة', value: (r) => r.network.networkName || r.network.uid },
+      { label: 'رقم الهاتف', value: (r) => r.network.phoneNumber || '' },
+      { label: 'التاريخ', value: (r) => formatDate(r.sale.createdAt, { withTime: true }) },
+      { label: 'الزبون', value: (r) => r.sale.customerId || '' },
+      { label: 'القيمة', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
+      { label: 'عمولة الصراف', value: (r) => Math.round(Number(r.sale.commission) || 0) },
+      { label: 'الصافي', value: (r) => Math.round(Number(r.sale.netAmount) || 0) },
+      { label: 'الحالة', value: (r) => r.sale.status || '' },
+    ]);
+    toast.success('تم تصدير بيانات المبيعات');
+  }, [networkSales, calcNetworkStats]);
 
   const hasActiveFilters = statusFilter !== 'COMPLETED' || dateFrom || dateTo;
 
@@ -148,6 +227,28 @@ export default function SalesPage() {
             </button>
           )}
         </div>
+        <div className="sales-filters__presets" role="group" aria-label="فلاتر تاريخ سريعة">
+          <button
+            type="button"
+            className={`sales-preset ${!dateFrom && !dateTo ? 'is-active' : ''}`}
+            aria-pressed={!dateFrom && !dateTo}
+            onClick={() => { setDateFrom(''); setDateTo(''); }}
+          >
+            الكل
+          </button>
+          {DATE_PRESETS.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              className={`sales-preset ${activePreset === preset.key ? 'is-active' : ''}`}
+              aria-pressed={activePreset === preset.key}
+              onClick={() => applyPreset(preset)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
         <div className="sales-filters__grid">
           <div className="sales-filters__field">
             <label className="label-field">حالة البيع</label>
@@ -173,6 +274,11 @@ export default function SalesPage() {
         eyebrow="السجل"
         title="شبكات المبيعات"
         description={`${formatNumber(networkSales.length)} شبكة لديها مبيعات مسجّلة`}
+        action={
+          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportSales}>
+            تصدير CSV
+          </Button>
+        }
       >
       <div className="sales-networks">
         {networkSales.length === 0 ? (
