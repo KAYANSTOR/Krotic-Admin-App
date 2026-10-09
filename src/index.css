@@ -1485,3 +1485,27 @@
   }
   .auth-issued__value--link .mono-value { max-width: 100%; }
 }
+
+/* مؤشر حداثة البيانات */
+@layer components {
+  .freshness { display: inline-flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+  .freshness__time {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .75rem; font-weight: 700; color: var(--ui-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .freshness__time svg { color: var(--ui-faint); }
+}
+
+/* تذييل القوائم الطويلة (عرض المزيد) */
+@layer components {
+  .list-footer {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: .75rem;
+    margin-top: 1rem; padding: .875rem 1rem;
+    border: 1px dashed var(--ui-line-strong); border-radius: 16px;
+    background: var(--ui-surface);
+  }
+  .list-footer__count { font-size: .8125rem; font-weight: 700; color: var(--ui-muted); }
+  .sales-network__more { display: flex; justify-content: center; padding: .875rem 1rem 1.125rem; }
+}

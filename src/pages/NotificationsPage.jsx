@@ -14,7 +14,8 @@ import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { fetchUsersForSelect } from '../lib/adminData';
+import DataFreshness from '../components/ui/DataFreshness';
+import { fetchUsersForSelect, clearAdminDataCache } from '../lib/adminData';
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -28,13 +29,15 @@ export default function NotificationsPage() {
   const [loadError, setLoadError] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async ({ force = false } = {}) => {
     setLoadError(false);
+    if (force) clearAdminDataCache();
     try {
       const [usersData, notificationResult] = await Promise.all([
         fetchUsersForSelect(),
@@ -45,6 +48,7 @@ export default function NotificationsPage() {
         .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data(), type: 'global' }))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setRecentNotifications(notifs.slice(0, 20));
+      setUpdatedAt(Date.now());
     } catch (error) {
       console.error('Error fetching data:', error);
       setLoadError(true);
@@ -211,15 +215,11 @@ export default function NotificationsPage() {
         description="إرسال إشعارات فورية عبر FCM إلى جميع الأجهزة أو إلى مستخدم محدد، مع سجل كامل للإشعارات العامة."
         meta={`${users.length} مستخدم متاح • ${recentNotifications.length} إشعار عام في السجل`}
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={RefreshCw}
-            onClick={fetchData}
-            disabled={sending}
-          >
-            تحديث
-          </Button>
+          <DataFreshness
+            updatedAt={updatedAt}
+            refreshing={loading}
+            onRefresh={() => fetchData({ force: true })}
+          />
         }
       />
 

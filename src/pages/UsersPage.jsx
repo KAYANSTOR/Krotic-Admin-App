@@ -2,10 +2,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { fetchUsersWithBilling } from '../lib/adminData';
+import { fetchUsersWithBilling, clearAdminDataCache } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -14,12 +14,15 @@ import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
+import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
+
+const PAGE_SIZE = 24;
 
 const FILTERS = [
   { value: 'all', label: 'الكل' },
@@ -40,15 +43,19 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError(null);
+    if (force) clearAdminDataCache();
     try {
       const { users: usersData, globalConfig: config } = await fetchUsersWithBilling();
       setGlobalConfig(config);
       setUsers(usersData);
+      setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
@@ -157,6 +164,17 @@ export default function UsersPage() {
     });
   }, [users, searchTerm, filterType]);
 
+  // نُعيد نافذة العرض إلى حجمها الأول عند تغيير البحث أو التصفية.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchTerm, filterType]);
+
+  const visibleUsers = useMemo(
+    () => filteredUsers.slice(0, visibleCount),
+    [filteredUsers, visibleCount]
+  );
+  const hasMore = filteredUsers.length > visibleUsers.length;
+
   const stats = useMemo(() => {
     const total = users.length;
     const trial = users.filter((u) => u.is_trial === true).length;
@@ -193,9 +211,7 @@ export default function UsersPage() {
         title="إدارة المستخدمين والفوترة"
         description={`${users.length} مستخدم مسجل`}
         actions={
-          <Button variant="secondary" icon={RefreshCw} onClick={fetchData}>
-            تحديث البيانات
-          </Button>
+          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchData({ force: true })} />
         }
       />
 
@@ -285,7 +301,7 @@ export default function UsersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {filteredUsers.map((user) => (
+                  {visibleUsers.map((user) => (
                     <tr key={user.uid} className="hover:bg-surface-sunken transition-colors">
                       <td className="px-6 py-4" data-label="الشبكة">
                         <div>
@@ -351,7 +367,7 @@ export default function UsersPage() {
           </Card>
 
           <div className="users-cards">
-            {filteredUsers.map((user) => {
+            {visibleUsers.map((user) => {
               const expired = isExpired(user.subscription_end_date);
               const hasDebt = user.balance > 0;
               return (
@@ -423,6 +439,23 @@ export default function UsersPage() {
           </div>
         </>
       )}
+
+      {filteredUsers.length > 0 && (
+        <div className="list-footer">
+          <p className="list-footer__count">
+            يُعرض {formatNumber(visibleUsers.length)} من {formatNumber(filteredUsers.length)} مستخدم
+          </p>
+          {hasMore && (
+            <Button
+              variant="secondary"
+              icon={ChevronDown}
+              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            >
+              عرض المزيد
+            </Button>
+          )}
+        </div>
+      )}
       </Section>
 
       {editingUser && (
@@ -438,7 +471,7 @@ export default function UsersPage() {
       {billingUser && (
         <UserBillingModal
           isOpen={!!billingUser}
-          onClose={() => { setBillingUser(null); fetchData(); }}
+          onClose={() => { setBillingUser(null); fetchData({ force: true }); }}
           user={billingUser}
           globalCommission={defaultCommission}
         />

@@ -11,8 +11,9 @@ import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import Section from '../components/ui/Section';
+import DataFreshness from '../components/ui/DataFreshness';
 import { formatNumber } from '../lib/format';
-import { fetchDashboardStats } from '../lib/adminData';
+import { fetchDashboardStats, clearAdminDataCache } from '../lib/adminData';
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
@@ -20,14 +21,17 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [appStatus, setAppStatus] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError(null);
+    if (force) clearAdminDataCache();
     try {
       const { appStatus: status, stats: nextStats } = await fetchDashboardStats();
       setAppStatus(status);
       setStats(nextStats);
+      setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
@@ -58,6 +62,11 @@ export default function DashboardPage() {
             نظرة سريعة على نشاط الشبكة والمؤشرات الرئيسية.
           </p>
         </div>
+        <DataFreshness
+          updatedAt={updatedAt}
+          refreshing={loading}
+          onRefresh={() => load({ force: true })}
+        />
       </section>
 
       {maintenance && (
