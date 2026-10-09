@@ -1631,3 +1631,13 @@
     font-size: .8125rem; color: var(--ui-muted);
   }
 }
+
+/* قوالب الإشعارات */
+@layer components {
+  .notif-templates { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .notif-templates select { flex: 1 1 12rem; }
+  @media (max-width: 640px) {
+    .notif-templates { flex-direction: column; }
+    .notif-templates .btn { width: 100%; }
+  }
+}

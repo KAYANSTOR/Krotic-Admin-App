@@ -16,6 +16,7 @@ export const AUDIT_ACTIONS = {
   PAYMENT_ADD: { label: 'إضافة دفعة', tone: 'success' },
   NOTIFICATION_SEND: { label: 'إرسال إشعار', tone: 'warning' },
   NOTIFICATION_DELETE: { label: 'حذف إشعار', tone: 'danger' },
+  NOTIFICATION_SCHEDULE: { label: 'جدولة إشعار', tone: 'brand' },
   SETTINGS_SAVE: { label: 'حفظ الإعدادات', tone: 'brand' },
   APP_STATUS_CHANGE: { label: 'تغيير حالة التطبيق', tone: 'danger' },
   SUBSCRIPTION_BATCH: { label: 'تحديث تواريخ مجمّع', tone: 'danger' },
