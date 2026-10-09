@@ -263,6 +263,9 @@
   /* ===== القشرة ===== */
   .app-shell { min-height:100vh; min-height:100dvh; overflow-x:hidden; background:var(--ui-paper); }
   .app-body { min-height:100vh; min-height:100dvh; }
+  .skip-link { position:fixed; inset-inline-start:1rem; top:-4rem; z-index:100; padding:.625rem 1rem; border-radius:12px; background:var(--ui-brand-deep); color:#fff; font-weight:700; text-decoration:none; box-shadow:var(--ui-shadow-soft); transition:top .15s var(--ui-ease); }
+  .skip-link:focus { top:.75rem; }
+  .app-main:focus { outline:none; }
   .app-main { min-height:calc(100vh - 73px); min-height:calc(100dvh - 73px); padding:1rem 1rem 7rem; }
   .app-main > div:not(.dashboard-page) { width:100%; max-width:1500px; margin-inline:auto; }
   @media (min-width:1024px) { .app-main { padding:2rem 2rem 2rem; } }

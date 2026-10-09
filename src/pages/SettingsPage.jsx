@@ -1,7 +1,7 @@
 // src/pages/SettingsPage.jsx
 import { useState, useEffect } from 'react';
 import {
-  doc, getDoc, setDoc, collection, getDocs, updateDoc, writeBatch, Timestamp,
+  doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp,
 } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { db } from '../firebase';

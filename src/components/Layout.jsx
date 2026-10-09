@@ -55,6 +55,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-shell">
+      <a href="#main-content" className="skip-link">تخطي إلى المحتوى</a>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="app-body lg:ms-72">
@@ -96,7 +97,7 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <main className="app-main">{children}</main>
+        <main className="app-main" id="main-content" tabIndex={-1}>{children}</main>
         <BottomNav />
       </div>
     </div>

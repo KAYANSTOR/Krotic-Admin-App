@@ -38,24 +38,31 @@ export function resolveCommissionRate(userData, globalRate) {
   return globalRate ?? 5;
 }
 
+// Per-user reads are shared across the dashboard, users and sales screens so the
+// same subcollection is not fetched once per page within the cache window.
 async function fetchNetworkMeta(uid) {
-  try {
-    const metaDoc = await getDoc(doc(db, 'networks', uid, '_metadata', 'info'));
-    if (metaDoc.exists()) {
-      const metadata = metaDoc.data();
-      return { networkName: metadata.name || '', phoneNumber: metadata.phoneNumber || '' };
+  return readCached(`network-meta:${uid}`, async () => {
+    try {
+      const metaDoc = await getDoc(doc(db, 'networks', uid, '_metadata', 'info'));
+      if (metaDoc.exists()) {
+        const metadata = metaDoc.data();
+        return { networkName: metadata.name || '', phoneNumber: metadata.phoneNumber || '' };
+      }
+    } catch {
+      // Network metadata is optional.
     }
-  } catch {
-    // Network metadata is optional.
-  }
-  return { networkName: '', phoneNumber: '' };
+    return { networkName: '', phoneNumber: '' };
+  });
 }
 
 async function fetchSalesForUser(uid) {
-  const snap = await getDocs(collection(db, 'networks', uid, 'sales'));
-  return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  return readCached(`sales:${uid}`, async () => {
+    const snap = await getDocs(collection(db, 'networks', uid, 'sales'));
+    return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  });
 }
 
+// Payments are written from this panel, so they are intentionally not cached.
 async function fetchPaymentsForUser(uid) {
   const snap = await getDocs(collection(db, 'networks', uid, 'payments'));
   return snap.docs.reduce((total, paymentDoc) => total + (paymentDoc.data().amount || 0), 0);
