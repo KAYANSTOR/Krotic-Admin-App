@@ -2,10 +2,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { fetchUsersWithBilling } from '../lib/adminData';
+import { fetchUsersWithBilling, clearAdminDataCache } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -14,16 +14,44 @@ import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
+import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
+import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { formatNumber, formatDate, isExpired } from '../lib/format';
+import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
+import { downloadCsv, csvStamp } from '../lib/csv';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+
+const PAGE_SIZE = 24;
+const FILTER_STORAGE_KEY = 'krotak:users-filter';
+
+function loadSavedFilter() {
+  try {
+    return window.localStorage.getItem(FILTER_STORAGE_KEY) || 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+/** يسمح للتنبيهات الذكية بالربط مباشرة بتصفية محددة عبر ?filter= */
+function resolveInitialFilter() {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('filter');
+    if (fromUrl && FILTERS.some((item) => item.value === fromUrl)) return fromUrl;
+  } catch {
+    // تجاهل أي رابط غير صالح.
+  }
+  return loadSavedFilter();
+}
 
 const FILTERS = [
   { value: 'all', label: 'الكل' },
   { value: 'trial', label: 'تجريبي' },
   { value: 'official', label: 'رسمي' },
+  { value: 'expiring', label: 'ينتهي قريباً' },
+  { value: 'expired', label: 'منتهي' },
   { value: 'debt', label: 'عليهم ديون' },
   { value: 'blocked', label: 'محظور' },
 ];
@@ -34,19 +62,24 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all');
+  const [filterType, setFilterType] = useState(resolveInitialFilter);
 
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError(null);
+    if (force) clearAdminDataCache();
     try {
       const { users: usersData, globalConfig: config } = await fetchUsersWithBilling();
       setGlobalConfig(config);
       setUsers(usersData);
+      setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
@@ -71,6 +104,12 @@ export default function UsersPage() {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
+          logAdminAction({
+            action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+          });
           toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
         } catch (err) {
           toast.error('حدث خطأ');
@@ -89,6 +128,12 @@ export default function UsersPage() {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
+          logAdminAction({
+            action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+          });
           toast.success('تم تحويل المستخدم إلى رسمي');
         } catch (err) {
           toast.error('حدث خطأ');
@@ -115,6 +160,13 @@ export default function UsersPage() {
           const newTimestamp = Timestamp.fromDate(lastDayOfNextMonth);
           await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
+          logAdminAction({
+            action: AUDIT_ACTIONS.USER_RENEW,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+            details: { subscription_end_date: newTimestamp.toDate().toISOString() },
+          });
           toast.success('تم التجديد بنجاح');
         } catch (err) {
           toast.error('حدث خطأ أثناء التجديد');
@@ -133,12 +185,31 @@ export default function UsersPage() {
       await updateDoc(doc(db, 'users', uid), firestoreUpdates);
       setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
       setEditingUser(null);
+      const edited = users.find((u) => u.uid === uid);
+      logAdminAction({
+        action: AUDIT_ACTIONS.USER_EDIT,
+        targetType: 'user',
+        targetId: uid,
+        targetLabel: edited?.networkName || edited?.phoneNumber || uid,
+        details: {
+          commission_rate: updates.commission_rate ?? null,
+          has_custom_warning: updates.has_custom_warning ?? null,
+          subscription_end_date: updates.subscription_end_date || null,
+        },
+      });
       toast.success('تم حفظ التعديلات بنجاح');
     } catch (err) {
       console.error(err);
       toast.error('حدث خطأ في حفظ التعديلات');
     }
   };
+
+  const warningWindowMs = useMemo(() => {
+    const days = Number(globalConfig?.warning_days_before_expiry) > 0
+      ? Number(globalConfig.warning_days_before_expiry)
+      : 5;
+    return days * 86_400_000;
+  }, [globalConfig]);
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -151,9 +222,36 @@ export default function UsersPage() {
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
       if (filterType === 'debt') return matchesSearch && user.balance > 0;
+      if (filterType === 'expired') return matchesSearch && isExpired(user.subscription_end_date);
+      if (filterType === 'expiring') {
+        if (!matchesSearch || isExpired(user.subscription_end_date)) return false;
+        const endDate = toDate(user.subscription_end_date);
+        if (!endDate) return false;
+        return endDate.getTime() - Date.now() <= warningWindowMs;
+      }
       return matchesSearch;
     });
-  }, [users, searchTerm, filterType]);
+  }, [users, searchTerm, filterType, warningWindowMs]);
+
+  // نُعيد نافذة العرض إلى حجمها الأول عند تغيير البحث أو التصفية.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchTerm, filterType]);
+
+  // نتذكّر آخر تصفية استخدمها المدير.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FILTER_STORAGE_KEY, filterType);
+    } catch {
+      // التخزين المحلي قد يكون معطّلاً؛ التصفية تعمل بدون حفظ.
+    }
+  }, [filterType]);
+
+  const visibleUsers = useMemo(
+    () => filteredUsers.slice(0, visibleCount),
+    [filteredUsers, visibleCount]
+  );
+  const hasMore = filteredUsers.length > visibleUsers.length;
 
   const stats = useMemo(() => {
     const total = users.length;
@@ -164,6 +262,24 @@ export default function UsersPage() {
   }, [users]);
 
   const defaultCommission = globalConfig?.default_commission_rate || 5;
+
+  const handleExportUsers = useCallback(() => {
+    if (!filteredUsers.length) {
+      toast.error('لا توجد بيانات للتصدير');
+      return;
+    }
+    downloadCsv(`users-${csvStamp()}`, filteredUsers, [
+      { label: 'اسم الشبكة', value: (u) => u.networkName || '' },
+      { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
+      { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
+      { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
+      { label: 'نسبة العمولة', value: (u) => (u.commission_rate > 0 ? u.commission_rate : defaultCommission) },
+      { label: 'الديون', value: (u) => Math.round(Number(u.balance) || 0) },
+      { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
+      { label: 'معرّف الحساب', value: (u) => u.uid },
+    ]);
+    toast.success('تم تصدير بيانات المستخدمين');
+  }, [filteredUsers, defaultCommission]);
 
   if (loading) {
     return (
@@ -191,9 +307,7 @@ export default function UsersPage() {
         title="إدارة المستخدمين والفوترة"
         description={`${users.length} مستخدم مسجل`}
         actions={
-          <Button variant="secondary" icon={RefreshCw} onClick={fetchData}>
-            تحديث البيانات
-          </Button>
+          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchData({ force: true })} />
         }
       />
 
@@ -222,6 +336,11 @@ export default function UsersPage() {
         title="قائمة المستخدمين"
         description={`${formatNumber(filteredUsers.length)} من ${formatNumber(users.length)} مستخدم`}
         className="users-list-section"
+        action={
+          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportUsers}>
+            تصدير CSV
+          </Button>
+        }
       >
       <Card className="users-toolbar-card">
         <div className="users-toolbar">
@@ -283,7 +402,7 @@ export default function UsersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {filteredUsers.map((user) => (
+                  {visibleUsers.map((user) => (
                     <tr key={user.uid} className="hover:bg-surface-sunken transition-colors">
                       <td className="px-6 py-4" data-label="الشبكة">
                         <div>
@@ -324,6 +443,9 @@ export default function UsersPage() {
                           <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
                             <Edit className="w-4 h-4" />
                           </button>
+                          <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                            <KeyRound className="w-4 h-4" />
+                          </button>
                           {user.is_trial && (
                             <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                               <CheckCircle className="w-4 h-4" />
@@ -346,7 +468,7 @@ export default function UsersPage() {
           </Card>
 
           <div className="users-cards">
-            {filteredUsers.map((user) => {
+            {visibleUsers.map((user) => {
               const expired = isExpired(user.subscription_end_date);
               const hasDebt = user.balance > 0;
               return (
@@ -396,6 +518,9 @@ export default function UsersPage() {
                     <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل">
                       <Edit className="w-4 h-4" />
                     </button>
+                    <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                      <KeyRound className="w-4 h-4" />
+                    </button>
                     {user.is_trial && (
                       <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
                         <CheckCircle className="w-4 h-4" />
@@ -415,6 +540,23 @@ export default function UsersPage() {
           </div>
         </>
       )}
+
+      {filteredUsers.length > 0 && (
+        <div className="list-footer">
+          <p className="list-footer__count">
+            يُعرض {formatNumber(visibleUsers.length)} من {formatNumber(filteredUsers.length)} مستخدم
+          </p>
+          {hasMore && (
+            <Button
+              variant="secondary"
+              icon={ChevronDown}
+              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            >
+              عرض المزيد
+            </Button>
+          )}
+        </div>
+      )}
       </Section>
 
       {editingUser && (
@@ -430,9 +572,17 @@ export default function UsersPage() {
       {billingUser && (
         <UserBillingModal
           isOpen={!!billingUser}
-          onClose={() => { setBillingUser(null); fetchData(); }}
+          onClose={() => { setBillingUser(null); fetchData({ force: true }); }}
           user={billingUser}
           globalCommission={defaultCommission}
+        />
+      )}
+
+      {authUser && (
+        <UserAuthModal
+          isOpen={!!authUser}
+          onClose={() => setAuthUser(null)}
+          user={authUser}
         />
       )}
 

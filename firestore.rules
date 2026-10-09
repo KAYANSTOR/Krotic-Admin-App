@@ -33,6 +33,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // سجل تدقيق إداري: إضافة وقراءة للمدراء فقط، ولا يمكن تعديله أو حذفه.
+    match /admin_audit_logs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
     match /notification_requests/{requestId} {
       allow create, read: if isAdmin();
       allow update: if false;

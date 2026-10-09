@@ -5,7 +5,7 @@ import {
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  ShieldCheck, UserPlus, Trash2, RefreshCw, Eye, EyeOff,
+  ShieldCheck, UserPlus, Trash2, Eye, EyeOff,
   Mail, Phone, User, Users, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -17,6 +17,8 @@ import EmptyState from '../components/ui/EmptyState';
 import { Field, Input } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
+import DataFreshness from '../components/ui/DataFreshness';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 function AdminsSkeleton() {
   return (
@@ -44,6 +46,7 @@ export default function AdminsPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const { createAdmin, currentUser } = useAuth();
 
   useEffect(() => {
@@ -58,6 +61,7 @@ export default function AdminsPage() {
       adminsSnap.forEach((d) => adminsData.push({ id: d.id, ...d.data() }));
       adminsData.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       setAdmins(adminsData);
+      setUpdatedAt(Date.now());
     } catch (error) {
       console.error('Error fetching admins:', error);
       toast.error('خطأ في تحميل بيانات المدراء');
@@ -74,6 +78,12 @@ export default function AdminsPage() {
     setCreating(true);
     try {
       await createAdmin(formData.email, formData.password, formData.name, formData.phone);
+      logAdminAction({
+        action: AUDIT_ACTIONS.ADMIN_CREATE,
+        targetType: 'admin',
+        targetId: formData.email,
+        targetLabel: formData.name || formData.email,
+      });
       toast.success('تم إنشاء حساب المدير بنجاح');
       setFormData({ name: '', email: '', phone: '', password: '' });
       setShowForm(false);
@@ -93,6 +103,12 @@ export default function AdminsPage() {
     if (!deleteTarget) return;
     try {
       await deleteDoc(doc(db, 'Admins', deleteTarget.id));
+      logAdminAction({
+        action: AUDIT_ACTIONS.ADMIN_DELETE,
+        targetType: 'admin',
+        targetId: deleteTarget.id,
+        targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
+      });
       toast.success('تم حذف المدير من القائمة');
       setDeleteTarget(null);
       fetchAdmins();
@@ -122,9 +138,7 @@ export default function AdminsPage() {
         meta={`${admins.length} مدير مسجل`}
         actions={
           <>
-            <Button variant="secondary" icon={RefreshCw} onClick={fetchAdmins}>
-              تحديث
-            </Button>
+            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={fetchAdmins} />
             <Button
               variant={showForm ? 'ghost' : 'primary'}
               icon={showForm ? X : UserPlus}

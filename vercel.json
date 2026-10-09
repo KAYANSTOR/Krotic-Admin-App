@@ -6,6 +6,10 @@
     "api/send-fcm.js": {
       "maxDuration": 30,
       "memory": 512
+    },
+    "api/manage-user-auth.js": {
+      "maxDuration": 15,
+      "memory": 512
     }
   }
 }

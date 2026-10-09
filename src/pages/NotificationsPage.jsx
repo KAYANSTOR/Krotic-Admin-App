@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  collection, getDocs, addDoc, serverTimestamp
+  collection, getDocs, addDoc, doc, deleteDoc, serverTimestamp
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
   Bell, Send, Users, User, Globe, History, RefreshCw,
-  AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck
+  AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -13,7 +13,11 @@ import { Card, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
-import { fetchUsersForSelect } from '../lib/adminData';
+import ConfirmDialog from '../components/ConfirmDialog';
+import DataFreshness from '../components/ui/DataFreshness';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/notificationTemplates';
+import { fetchUsersForSelect, clearAdminDataCache } from '../lib/adminData';
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -25,13 +29,20 @@ export default function NotificationsPage() {
   const [recentNotifications, setRecentNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [templates, setTemplates] = useState(() => loadTemplates());
+  const [templateId, setTemplateId] = useState('');
+  const [scheduledAt, setScheduledAt] = useState('');
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async ({ force = false } = {}) => {
     setLoadError(false);
+    if (force) clearAdminDataCache();
     try {
       const [usersData, notificationResult] = await Promise.all([
         fetchUsersForSelect(),
@@ -42,6 +53,7 @@ export default function NotificationsPage() {
         .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data(), type: 'global' }))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setRecentNotifications(notifs.slice(0, 20));
+      setUpdatedAt(Date.now());
     } catch (error) {
       console.error('Error fetching data:', error);
       setLoadError(true);
@@ -58,6 +70,47 @@ export default function NotificationsPage() {
     }
     if (type === 'user' && !selectedUser) {
       toast.error('يرجى اختيار المستخدم');
+      return;
+    }
+
+    // جدولة: تُكتب الطلبية في notification_requests ليلتقطها المُجدوِل في الخادم.
+    if (scheduledAt) {
+      const scheduledMs = new Date(scheduledAt).getTime();
+      if (!Number.isFinite(scheduledMs) || scheduledMs <= Date.now()) {
+        toast.error('اختر وقتاً مستقبلياً للجدولة');
+        return;
+      }
+      setSending(true);
+      try {
+        await addDoc(collection(db, 'notification_requests'), {
+          title: title.trim(),
+          body: message.trim(),
+          audienceType: type,
+          ...(type === 'user' ? { targetUid: selectedUser } : {}),
+          data: { route: '/account-notifications' },
+          scheduledAt: scheduledMs,
+          status: 'scheduled',
+          createdBy: auth.currentUser?.uid || null,
+          createdAt: serverTimestamp(),
+        });
+        logAdminAction({
+          action: AUDIT_ACTIONS.NOTIFICATION_SCHEDULE,
+          targetType: type === 'user' ? 'user' : 'broadcast',
+          targetId: type === 'user' ? selectedUser : 'all',
+          targetLabel: type === 'user'
+            ? (users.find((u) => u.uid === selectedUser)?.name || selectedUser)
+            : 'جميع المستخدمين',
+          details: { title: title.trim(), scheduled_at: new Date(scheduledMs).toISOString() },
+        });
+        toast.success('تمت جدولة الإشعار');
+        setTitle('');
+        setMessage('');
+        setScheduledAt('');
+      } catch (error) {
+        console.error('Error scheduling notification:', error);
+        toast.error('تعذر جدولة الإشعار');
+      }
+      setSending(false);
       return;
     }
 
@@ -137,6 +190,14 @@ export default function NotificationsPage() {
         console.warn('Notification history write failed', logError);
       }
 
+      logAdminAction({
+        action: AUDIT_ACTIONS.NOTIFICATION_SEND,
+        targetType: type === 'user' ? 'user' : 'broadcast',
+        targetId: type === 'user' ? selectedUser : 'all',
+        targetLabel: type === 'user' ? (users.find((u) => u.uid === selectedUser)?.name || selectedUser) : 'جميع المستخدمين',
+        details: { title: title.trim(), sent: data.sent ?? 1 },
+      });
+
       if (type === 'global') {
         toast.success('تم إرسال الإشعار لجميع الأجهزة بنجاح!');
       } else {
@@ -153,6 +214,54 @@ export default function NotificationsPage() {
       toast.error('تعذر الاتصال بالخادم');
     }
     setSending(false);
+  };
+
+  const handleApplyTemplate = (id) => {
+    setTemplateId(id);
+    const template = templates.find((item) => item.id === id);
+    if (!template) return;
+    setTitle(template.title);
+    setMessage(template.message);
+  };
+
+  const handleSaveTemplate = () => {
+    if (!title.trim() || !message.trim()) {
+      toast.error('اكتب العنوان والنص أولاً لحفظهما كقالب');
+      return;
+    }
+    setTemplates(saveTemplate(title, title, message));
+    toast.success('تم حفظ القالب على هذا الجهاز');
+  };
+
+  const handleDeleteTemplate = () => {
+    if (!templateId) {
+      toast.error('اختر قالباً لحذفه');
+      return;
+    }
+    setTemplates(deleteTemplate(templateId));
+    setTemplateId('');
+    toast.success('تم حذف القالب');
+  };
+
+  const handleDeleteNotification = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
+      setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      logAdminAction({
+        action: AUDIT_ACTIONS.NOTIFICATION_DELETE,
+        targetType: 'notification',
+        targetId: deleteTarget.id,
+        targetLabel: deleteTarget.title || '',
+      });
+      toast.success('تم حذف الإشعار من السجل');
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      toast.error('تعذر حذف الإشعار. تحقق من الصلاحيات ثم أعد المحاولة.');
+    }
+    setDeleting(false);
   };
 
   const formatDate = (timestamp) => {
@@ -193,15 +302,11 @@ export default function NotificationsPage() {
         description="إرسال إشعارات فورية عبر FCM إلى جميع الأجهزة أو إلى مستخدم محدد، مع سجل كامل للإشعارات العامة."
         meta={`${users.length} مستخدم متاح • ${recentNotifications.length} إشعار عام في السجل`}
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={RefreshCw}
-            onClick={fetchData}
-            disabled={sending}
-          >
-            تحديث
-          </Button>
+          <DataFreshness
+            updatedAt={updatedAt}
+            refreshing={loading}
+            onRefresh={() => fetchData({ force: true })}
+          />
         }
       />
 
@@ -318,6 +423,52 @@ export default function NotificationsPage() {
               <p className="field-hint">{message.length}/500 حرف</p>
             </div>
 
+            {/* القوالب */}
+            <div className="notif-field">
+              <label className="label-field" htmlFor="notif-template">قوالب جاهزة</label>
+              <div className="notif-templates">
+                <select
+                  id="notif-template"
+                  className="input-field"
+                  value={templateId}
+                  onChange={(e) => handleApplyTemplate(e.target.value)}
+                >
+                  <option value="">— اختر قالباً —</option>
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>{template.name}</option>
+                  ))}
+                </select>
+                <Button type="button" variant="secondary" size="sm" onClick={handleSaveTemplate}>
+                  حفظ كقالب
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeleteTemplate}
+                  disabled={!templateId}
+                >
+                  حذف القالب
+                </Button>
+              </div>
+              <p className="field-hint">تُحفظ القوالب على هذا الجهاز فقط لتسريع الإرسال المتكرر.</p>
+            </div>
+
+            {/* الجدولة */}
+            <div className="notif-field">
+              <label className="label-field" htmlFor="notif-schedule">جدولة الإرسال (اختياري)</label>
+              <input
+                id="notif-schedule"
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                className="input-field"
+              />
+              <p className="field-hint">
+                اتركه فارغاً للإرسال الفوري. عند التحديد يُحفظ الطلب ويُرسَل تلقائياً في الوقت المحدد.
+              </p>
+            </div>
+
             {/* معاينة الإشعار */}
             <div className="notif-field">
               <label className="label-field">معاينة الإشعار</label>
@@ -349,7 +500,9 @@ export default function NotificationsPage() {
               disabled={!canSend}
               icon={sending ? undefined : Send}
             >
-              {sending ? 'جارٍ الإرسال...' : 'إرسال الإشعار'}
+              {sending
+                ? (scheduledAt ? 'جارٍ الجدولة...' : 'جارٍ الإرسال...')
+                : (scheduledAt ? 'جدولة الإشعار' : 'إرسال الإشعار')}
             </Button>
 
             <p className="notif-note">
@@ -409,12 +562,31 @@ export default function NotificationsPage() {
                       </span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="notif-item__delete"
+                    onClick={() => setDeleteTarget(notif)}
+                    title="حذف الإشعار"
+                    aria-label={`حذف الإشعار: ${notif.title || ''}`}
+                  >
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </Card>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteNotification}
+        title="حذف الإشعار"
+        message={`هل أنت متأكد من حذف الإشعار "${deleteTarget?.title || ''}" من السجل؟ لا يمكن التراجع عن هذا الإجراء.`}
+        confirmText={deleting ? 'جارٍ الحذف...' : 'نعم، احذف'}
+        variant="danger"
+      />
     </div>
   );
 }

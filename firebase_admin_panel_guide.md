@@ -86,6 +86,44 @@
 
 ---
 
+## 8. بيانات دخول العملاء (نسيان كلمة المرور)
+
+كلمة المرور **لا تُخزَّن كنص** في أي مكان؛ Firebase Authentication يحفظها كتجزئة (hash) ولا يوفّر أي واجهة لقراءتها. لذلك لا يمكن لأي لوحة إدارة أن تعرض كلمة مرور العميل الحالية، والمتاح هو:
+
+1. **عرض معرّف الدخول وحالة الحساب** من Firebase Authentication (البريد، الهاتف المرتبط، نوع الدخول، حالة التعطيل، توثيق البريد، تاريخ الإنشاء، آخر تسجيل دخول).
+2. **تعيين كلمة مرور جديدة** للعميل عند نسيانه لها، ثم إبلاغه بها.
+
+يتم ذلك من الواجهة عبر `src/components/UserAuthModal.jsx` (زر «بيانات الدخول» في صفحة المستخدمين)، ومن الخادم عبر الدالة `POST /api/manage-user-auth` (`api/manage-user-auth.js`) التي:
+
+- تتحقق من Bearer Firebase ID token.
+- تتحقق من وجود مستند `Admins/{uid}` للمتصل.
+- تنفّذ `getAuth().getUser(uid)` للعرض، أو `getAuth().updateUser(uid, { password })` للتعيين.
+
+**المتطلب:** ضبط متغير البيئة `FIREBASE_SERVICE_ACCOUNT` (نفس متطلب `api/send-fcm.js`). إذا لم يُضبط، تُرجع الدالة `503` بالرمز `server_not_configured` وتعرض الواجهة رسالة عربية واضحة.
+
+---
+
+## 9. سجل العمليات (admin_audit_logs)
+
+كل إجراء إداري مؤثر يُسجَّل في مجموعة مستقلة للتدقيق:
+
+- **المسار:** `admin_audit_logs/{logId}`
+- **الحقول:** `action`, `targetType`, `targetId`, `targetLabel`, `details`, `actorUid`, `actorEmail`, `createdAt` (serverTimestamp), `createdAtMs` (Number)
+- **القواعد:** القراءة والإنشاء للمدراء فقط، والتعديل والحذف ممنوعان تماماً حتى لا يمكن العبث بالسجل.
+- **الإجراءات المسجّلة:** تفعيل/حظر مستخدم، تحويل إلى رسمي، تجديد، تعديل بيانات، إضافة دفعة، حفظ الإعدادات، إيقاف التطبيق، تحديث التواريخ المجمّع، إرسال/جدولة/حذف إشعار، تعيين كلمة مرور، إنشاء رابط إعادة تعيين، حذف جهاز، إنشاء/حذف مدير.
+
+---
+
+## 10. الإشعارات المجدولة
+
+عند تحديد وقت مستقبلي في صفحة الإشعارات، تُكتب طلبية في `notification_requests/{requestId}` بالحقول:
+
+`title`, `body`, `audienceType` (`global` | `user`), `targetUid` (عند التخصيص), `data`, `scheduledAt` (Epoch Milliseconds), `status: 'scheduled'`, `createdBy`, `createdAt`.
+
+المُجدوِل `dispatchScheduledNotifications` في `functions/index.js` يعمل كل 5 دقائق ويرسل الطلبات المستحقة، ثم يحدّث الحالة إلى `sent` أو `partial` أو `failed`.
+
+---
+
 ## ملاحظات هامة
 
 - يجب تفعيل **Email/Password** في Firebase Authentication.

@@ -14,6 +14,7 @@ const PAGE_TITLES = {
   '/sales': 'المبيعات والعمولات',
   '/notifications': 'الإشعارات',
   '/admins': 'إدارة المدراء',
+  '/audit': 'سجل العمليات',
 };
 
 export default function Layout({ children }) {

@@ -8,6 +8,7 @@ import Button from './ui/Button';
 import { Field, Input } from './ui/Field';
 import LoadingSpinner from './LoadingSpinner';
 import { formatNumber } from '../lib/format';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 export default function UserBillingModal({ isOpen, onClose, user, globalCommission }) {
   const [sales, setSales] = useState([]);
@@ -126,6 +127,14 @@ export default function UserBillingModal({ isOpen, onClose, user, globalCommissi
       });
 
       await notifyClientPayment(paidValue, monthKey);
+
+      logAdminAction({
+        action: AUDIT_ACTIONS.PAYMENT_ADD,
+        targetType: 'user',
+        targetId: user.uid,
+        targetLabel: user.networkName || user.phoneNumber || user.uid,
+        details: { amount: paidValue, month: monthKey },
+      });
 
       toast.success('تمت إضافة الدفعة وإشعار العميل بنجاح');
       setAmount('');
