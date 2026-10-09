@@ -10,6 +10,7 @@ import Badge from './ui/Badge';
 import { Field, Input } from './ui/Field';
 import { SkeletonLine } from './ui/Skeleton';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { formatDate } from '../lib/format';
 
 const ENDPOINT = '/api/manage-user-auth';
@@ -128,6 +129,12 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
 
     setInfo(result.data.user);
     setIssuedPassword(password);
+    logAdminAction({
+      action: AUDIT_ACTIONS.USER_PASSWORD_SET,
+      targetType: 'user',
+      targetId: user.uid,
+      targetLabel: user.networkName || user.phoneNumber || user.uid,
+    });
     setPassword('');
     setConfirm('');
     setShowPassword(false);
@@ -145,6 +152,12 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
     }
 
     setResetLink(result.data.link);
+    logAdminAction({
+      action: AUDIT_ACTIONS.USER_RESET_LINK,
+      targetType: 'user',
+      targetId: user.uid,
+      targetLabel: user.networkName || user.phoneNumber || user.uid,
+    });
     toast.success('تم إنشاء رابط إعادة التعيين');
   };
 

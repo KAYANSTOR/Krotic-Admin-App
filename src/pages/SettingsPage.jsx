@@ -17,6 +17,7 @@ import Switch from '../components/ui/Switch';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 const DEFAULTS = {
   is_app_active: true,
@@ -73,6 +74,18 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await setDoc(doc(db, 'app_settings', 'global_config'), config, { merge: true });
+      logAdminAction({
+        action: AUDIT_ACTIONS.SETTINGS_SAVE,
+        targetType: 'settings',
+        targetId: 'global_config',
+        targetLabel: 'الإعدادات العامة',
+        details: {
+          default_commission_rate: config.default_commission_rate,
+          default_trial_days: config.default_trial_days,
+          warning_days_before_expiry: config.warning_days_before_expiry,
+          is_app_active: config.is_app_active,
+        },
+      });
       toast.success('تم حفظ الإعدادات بنجاح');
     } catch (error) {
       console.error('Error saving config:', error);
@@ -92,6 +105,13 @@ export default function SettingsPage() {
   const confirmDisableApp = () => {
     setConfig((prev) => ({ ...prev, is_app_active: false }));
     setShowConfirm(false);
+    logAdminAction({
+      action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
+      targetType: 'settings',
+      targetId: 'global_config',
+      targetLabel: 'حالة التطبيق',
+      details: { is_app_active: false },
+    });
   };
 
   const handleBatchUpdateExpiry = async () => {
@@ -120,6 +140,13 @@ export default function SettingsPage() {
 
       if (count > 0) {
         await batch.commit();
+        logAdminAction({
+          action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
+          targetType: 'settings',
+          targetId: 'global_config',
+          targetLabel: 'تواريخ الانتهاء المجمّعة',
+          details: { affected_users: count, new_date: batchDate },
+        });
         toast.success(`تم تحديث تاريخ الانتهاء لـ ${count} حساب رسمي بنجاح`);
       } else {
         toast.error('لا يوجد حسابات رسمية لتحديثها');

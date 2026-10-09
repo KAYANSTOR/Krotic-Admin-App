@@ -15,6 +15,7 @@ import Button from '../components/ui/Button';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DataFreshness from '../components/ui/DataFreshness';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { fetchUsersForSelect, clearAdminDataCache } from '../lib/adminData';
 
 export default function NotificationsPage() {
@@ -144,6 +145,14 @@ export default function NotificationsPage() {
         console.warn('Notification history write failed', logError);
       }
 
+      logAdminAction({
+        action: AUDIT_ACTIONS.NOTIFICATION_SEND,
+        targetType: type === 'user' ? 'user' : 'broadcast',
+        targetId: type === 'user' ? selectedUser : 'all',
+        targetLabel: type === 'user' ? (users.find((u) => u.uid === selectedUser)?.name || selectedUser) : 'جميع المستخدمين',
+        details: { title: title.trim(), sent: data.sent ?? 1 },
+      });
+
       if (type === 'global') {
         toast.success('تم إرسال الإشعار لجميع الأجهزة بنجاح!');
       } else {
@@ -168,6 +177,12 @@ export default function NotificationsPage() {
     try {
       await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
       setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      logAdminAction({
+        action: AUDIT_ACTIONS.NOTIFICATION_DELETE,
+        targetType: 'notification',
+        targetId: deleteTarget.id,
+        targetLabel: deleteTarget.title || '',
+      });
       toast.success('تم حذف الإشعار من السجل');
       setDeleteTarget(null);
     } catch (error) {

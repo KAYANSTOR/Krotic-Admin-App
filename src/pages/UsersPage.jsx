@@ -22,6 +22,7 @@ import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 const PAGE_SIZE = 24;
 const FILTER_STORAGE_KEY = 'krotak:users-filter';
@@ -90,6 +91,12 @@ export default function UsersPage() {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
+          logAdminAction({
+            action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+          });
           toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
         } catch (err) {
           toast.error('حدث خطأ');
@@ -108,6 +115,12 @@ export default function UsersPage() {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
+          logAdminAction({
+            action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+          });
           toast.success('تم تحويل المستخدم إلى رسمي');
         } catch (err) {
           toast.error('حدث خطأ');
@@ -134,6 +147,13 @@ export default function UsersPage() {
           const newTimestamp = Timestamp.fromDate(lastDayOfNextMonth);
           await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
+          logAdminAction({
+            action: AUDIT_ACTIONS.USER_RENEW,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: user.networkName || user.phoneNumber || user.uid,
+            details: { subscription_end_date: newTimestamp.toDate().toISOString() },
+          });
           toast.success('تم التجديد بنجاح');
         } catch (err) {
           toast.error('حدث خطأ أثناء التجديد');
@@ -152,6 +172,18 @@ export default function UsersPage() {
       await updateDoc(doc(db, 'users', uid), firestoreUpdates);
       setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
       setEditingUser(null);
+      const edited = users.find((u) => u.uid === uid);
+      logAdminAction({
+        action: AUDIT_ACTIONS.USER_EDIT,
+        targetType: 'user',
+        targetId: uid,
+        targetLabel: edited?.networkName || edited?.phoneNumber || uid,
+        details: {
+          commission_rate: updates.commission_rate ?? null,
+          has_custom_warning: updates.has_custom_warning ?? null,
+          subscription_end_date: updates.subscription_end_date || null,
+        },
+      });
       toast.success('تم حفظ التعديلات بنجاح');
     } catch (err) {
       console.error(err);

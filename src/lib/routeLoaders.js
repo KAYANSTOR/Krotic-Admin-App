@@ -5,6 +5,7 @@ const routeLoaders = {
   '/sales': () => import('../pages/SalesPage'),
   '/notifications': () => import('../pages/NotificationsPage'),
   '/admins': () => import('../pages/AdminsPage'),
+  '/audit': () => import('../pages/AuditPage'),
 };
 
 const loadedRoutes = new Map();

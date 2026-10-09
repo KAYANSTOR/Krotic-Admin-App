@@ -1528,3 +1528,11 @@
     .sales-preset { min-height: 40px; }
   }
 }
+
+/* صفحة سجل العمليات */
+@layer components {
+  .audit-page { display: flex; flex-direction: column; }
+  .audit-toolbar-card { margin-bottom: 1rem; }
+  .audit-filter { display: flex; flex-direction: column; min-width: 12rem; }
+  .audit-filter .input-field { min-height: 46px; }
+}
