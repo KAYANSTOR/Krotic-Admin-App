@@ -1458,3 +1458,30 @@
     .notif-item__delete { width: 40px; height: 40px; }
   }
 }
+
+/* إعادة تعيين كلمة المرور من اللوحة */
+@layer components {
+  .auth-info__row--primary { background: var(--ui-brand-soft) !important; }
+  .mono-value--strong { font-weight: 700; color: var(--ui-ink); font-size: .875rem; }
+
+  .auth-reset {
+    padding: 1rem;
+    border: 1px solid var(--ui-line); border-radius: 16px;
+    background: var(--ui-sunken);
+  }
+  .auth-reset__head { display: flex; align-items: flex-start; gap: .625rem; }
+  .auth-reset__icon {
+    display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0;
+    border-radius: 10px; background: var(--ui-brand-soft); color: var(--ui-brand-deep);
+  }
+  .auth-reset__title { font-size: .875rem; font-weight: 800; color: var(--ui-ink); }
+  .auth-reset__desc { margin-top: .2rem; font-size: .75rem; line-height: 1.7; color: var(--ui-muted); }
+  .auth-reset__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  .auth-reset__hint { margin-top: .625rem; font-size: .6875rem; line-height: 1.7; color: var(--ui-muted); }
+
+  .auth-issued__value--link {
+    margin-top: .75rem; border-style: solid; border-color: var(--ui-line);
+    background: var(--ui-white);
+  }
+  .auth-issued__value--link .mono-value { max-width: 100%; }
+}

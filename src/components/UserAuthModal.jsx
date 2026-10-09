@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   KeyRound, RefreshCw, Copy, Check, Eye, EyeOff, ShieldAlert, Mail, Phone,
-  Clock, CalendarDays, Fingerprint, BadgeCheck, AlertTriangle,
+  Clock, CalendarDays, Fingerprint, BadgeCheck, AlertTriangle, Link2, Send,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from './ui/Modal';
@@ -72,6 +72,8 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
   const [saving, setSaving] = useState(false);
   const [issuedPassword, setIssuedPassword] = useState(null);
   const [copied, setCopied] = useState('');
+  const [resetLink, setResetLink] = useState(null);
+  const [creatingLink, setCreatingLink] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -93,6 +95,7 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
     setConfirm('');
     setShowPassword(false);
     setIssuedPassword(null);
+    setResetLink(null);
     setCopied('');
     load();
   }, [isOpen, user?.uid, load]);
@@ -131,6 +134,26 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
     toast.success('تم تعيين كلمة مرور جديدة بنجاح');
   };
 
+  const handleCreateResetLink = async () => {
+    setCreatingLink(true);
+    const result = await callAdminApi(ENDPOINT, { action: 'reset-link', uid: user.uid });
+    setCreatingLink(false);
+
+    if (!result.ok) {
+      toast.error(adminApiError(result.error));
+      return;
+    }
+
+    setResetLink(result.data.link);
+    toast.success('تم إنشاء رابط إعادة التعيين');
+  };
+
+  const loginPhone = user.phoneNumber || user.phone || '';
+  const whatsappNumber = loginPhone.replace(/[^0-9]/g, '');
+  const whatsappHref = resetLink && whatsappNumber
+    ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`رابط إعادة تعيين كلمة المرور الخاصة بك:
+${resetLink}`)}`
+    : null;
   const networkName = user.networkName || user.uid;
   const providerLabels = (info?.providers || []).map((p) => PROVIDER_LABELS[p] || p);
 
@@ -181,21 +204,25 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
       ) : (
         <div className="space-y-5">
           <dl className="auth-info">
-            <div className="auth-info__row">
-              <dt className="auth-info__label"><Mail className="w-4 h-4" aria-hidden="true" />معرّف الدخول (البريد)</dt>
+            <div className="auth-info__row auth-info__row--primary">
+              <dt className="auth-info__label"><Phone className="w-4 h-4" aria-hidden="true" />رقم الدخول (يكتبه العميل)</dt>
               <dd className="auth-info__value">
-                <span className="mono-value" dir="ltr">{info.email || 'غير متوفر'}</span>
+                <span className="mono-value mono-value--strong" dir="ltr">{loginPhone || '—'}</span>
                 <CopyButton
-                  value={info.email} label="نسخ البريد الإلكتروني"
-                  copiedKey="email" copied={copied} onCopied={setCopied}
+                  value={loginPhone} label="نسخ رقم الدخول"
+                  copiedKey="phone" copied={copied} onCopied={setCopied}
                 />
               </dd>
             </div>
 
             <div className="auth-info__row">
-              <dt className="auth-info__label"><Phone className="w-4 h-4" aria-hidden="true" />رقم الهاتف المرتبط</dt>
+              <dt className="auth-info__label"><Mail className="w-4 h-4" aria-hidden="true" />معرّف داخلي في Firebase</dt>
               <dd className="auth-info__value">
-                <span className="mono-value" dir="ltr">{info.phoneNumber || '—'}</span>
+                <span className="mono-value" dir="ltr">{info.email || 'غير متوفر'}</span>
+                <CopyButton
+                  value={info.email} label="نسخ المعرّف الداخلي"
+                  copiedKey="email" copied={copied} onCopied={setCopied}
+                />
               </dd>
             </div>
 
@@ -235,8 +262,12 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
 
           <p className="auth-note">
             <ShieldAlert className="w-4 h-4" aria-hidden="true" />
-            لا يمكن عرض كلمة المرور الحالية: Firebase يخزّنها كتجزئة مشفّرة ولا يسمح بقراءتها.
-            إذا نسيها العميل، عيّن كلمة مرور جديدة من الأسفل وأبلغه بها.
+            <span>
+              <strong>كلمة المرور فقط قابلة للتعديل.</strong> بريد الدخول ورقم الهاتف لا يمكن
+              تغييرهما من هنا لأن التطبيق يشتقّ بريد الدخول من رقم هاتف العميل، وأي تغيير له
+              سيمنع العميل من الدخول. ولا يمكن عرض كلمة المرور الحالية لأن Firebase يخزّنها
+              كتجزئة مشفّرة؛ يمكن تعيين كلمة مرور جديدة أو إنشاء رابط يعدّل به العميل كلمة مروره.
+            </span>
           </p>
 
           {info.providers?.length && !info.providers.includes('password') ? (
@@ -302,6 +333,64 @@ export default function UserAuthModal({ isOpen, onClose, user }) {
               />
             </Field>
           </form>
+
+          <div className="auth-reset">
+            <div className="auth-reset__head">
+              <span className="auth-reset__icon" aria-hidden="true">
+                <Link2 className="w-4 h-4" />
+              </span>
+              <div>
+                <p className="auth-reset__title">إعادة التعيين بواسطة العميل</p>
+                <p className="auth-reset__desc">
+                  أنشئ رابطاً مؤقتاً وأرسله للعميل، فيفتحه ويضع كلمة مرور جديدة بنفسه دون أن
+                  تعرفها أنت.
+                </p>
+              </div>
+            </div>
+
+            {resetLink ? (
+              <>
+                <div className="auth-issued__value auth-issued__value--link">
+                  <span className="mono-value" dir="ltr" title={resetLink}>{resetLink}</span>
+                  <CopyButton
+                    value={resetLink} label="نسخ رابط إعادة التعيين"
+                    copiedKey="reset" copied={copied} onCopied={setCopied}
+                  />
+                </div>
+                <div className="auth-reset__actions">
+                  {whatsappHref && (
+                    <Button
+                      as="a"
+                      href={whatsappHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      variant="success"
+                      size="sm"
+                      icon={Send}
+                    >
+                      إرسال عبر واتساب
+                    </Button>
+                  )}
+                  <Button variant="secondary" size="sm" icon={RefreshCw} onClick={handleCreateResetLink} loading={creatingLink}>
+                    إنشاء رابط جديد
+                  </Button>
+                </div>
+                <p className="auth-reset__hint">
+                  الرابط صالح لمدة ساعة وينتهي بعد استخدامه. أرسله عبر قناة آمنة، ولا تعرضه هنا
+                  مرة أخرى بعد إغلاق النافذة.
+                </p>
+              </>
+            ) : (
+              <Button
+                variant="secondary"
+                icon={Link2}
+                loading={creatingLink}
+                onClick={handleCreateResetLink}
+              >
+                إنشاء رابط إعادة تعيين كلمة المرور
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </Modal>

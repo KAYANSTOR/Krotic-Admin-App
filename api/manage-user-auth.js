@@ -3,8 +3,12 @@
 // POST /api/manage-user-auth — بيانات دخول عميل التطبيق
 // ------------------------------------------------------------
 // يتيح للمدير الموثّق:
-//   { action: 'get', uid }           → عرض معرّف الدخول وحالة الحساب
-//   { action: 'set-password', uid, password } → تعيين كلمة مرور جديدة
+//   { action: 'get', uid }              → عرض معرّف الدخول وحالة الحساب
+//   { action: 'set-password', uid, password } → تعيين كلمة مرور جديدة للمدير
+//   { action: 'reset-link', uid }       → إنشاء رابط يعيد العميل كلمة مروره بنفسه
+//
+// لا يمكن تعديل بريد الدخول أو رقم الهاتف إطلاقاً: التطبيق يشتقّ بريد الدخول
+// من رقم هاتف العميل، فأي تغيير له يكسر دخوله. المتاح هو كلمة المرور فقط.
 //
 // كلمة المرور الحالية لا يمكن عرضها إطلاقاً: Firebase Authentication
 // يخزّنها كتجزئة (hash) ولا يوفّر واجهة لقراءتها، لا هنا ولا في أي
@@ -157,6 +161,25 @@ export default async function handler(req, res) {
       }
       console.error('manage-user-auth: set-password failed', error);
       return res.status(500).json({ success: false, error: 'update_failed' });
+    }
+  }
+
+  if (action === 'reset-link') {
+    try {
+      const record = await getAuth().getUser(uid);
+      if (!record.email) {
+        return res.status(400).json({ success: false, error: 'no_login_email' });
+      }
+
+      // رابط فقط، دون إرسال أي بريد: يسلّمه المدير للعميل (واتساب/SMS).
+      const link = await getAuth().generatePasswordResetLink(record.email);
+      return res.status(200).json({ success: true, link, email: record.email });
+    } catch (error) {
+      if (error?.code === 'auth/user-not-found') {
+        return res.status(404).json({ success: false, error: 'user_not_found' });
+      }
+      console.error('manage-user-auth: reset-link failed', error);
+      return res.status(500).json({ success: false, error: 'reset_link_failed' });
     }
   }
 

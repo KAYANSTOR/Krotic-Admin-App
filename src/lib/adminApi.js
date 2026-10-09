@@ -19,6 +19,10 @@ export const ADMIN_API_ERRORS = {
   password_rejected: 'كلمة المرور مرفوضة من Firebase. جرّب كلمة مرور أقوى.',
   lookup_failed: 'تعذر جلب بيانات الدخول من الخادم.',
   update_failed: 'تعذر تحديث بيانات الدخول.',
+  no_login_email:
+    'لا يوجد معرّف بريد لهذا الحساب في Firebase Authentication، لذلك لا يمكن إنشاء رابط إعادة تعيين.',
+  reset_link_failed:
+    'تعذر إنشاء رابط إعادة التعيين. تأكد من تفعيل Email/Password ومن ضبط رابط إعادة التعيين في Firebase Console.',
   unknown_action: 'إجراء غير معروف.',
   method_not_allowed: 'طريقة الطلب غير مدعومة.',
   network_error: 'تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.',
