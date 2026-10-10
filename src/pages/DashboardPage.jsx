@@ -9,6 +9,7 @@ import {
 import StatCard from '../components/ui/StatCard';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
+import { Card } from '../components/ui/Card';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
