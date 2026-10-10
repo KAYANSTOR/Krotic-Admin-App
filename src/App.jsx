@@ -29,7 +29,13 @@ function AppRoutes() {
     return () => cancelIdleCallback(handle);
   }, [currentUser, loading]);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" dir="rtl">
+        <LoadingSpinner size="lg" text="جاري التحقق من الجلسة..." />
+      </div>
+    );
+  }
 
   return (
     <Suspense
