@@ -785,6 +785,11 @@
 .users-error__body { flex: 1; min-width: 200px; }
 .users-error__title { font-weight: 800; }
 .users-error__msg { margin-top: .25rem; font-size: .875rem; }
+.users-error--warning { border-color: var(--ui-warning-soft); background: var(--ui-warning-soft); color: var(--ui-warning-ink); }
+.users-error__details, .dash-error__details { margin-top: .5rem; font-size: .8125rem; width: 100%; }
+.users-error__details summary, .dash-error__details summary { cursor: pointer; font-weight: 700; }
+.users-error__details ul, .dash-error__details ul { margin: .5rem 0 0; padding-inline-start: 1.25rem; list-style: disc; }
+.users-error__details li, .dash-error__details li { margin-top: .25rem; overflow-wrap: anywhere; font-size: .75rem; }
 
 /* شبكة الإحصائيات */
 .users-stats {

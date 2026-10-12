@@ -172,14 +172,23 @@ export function createAdminDataCache({
         && requestVersions.get(scopedKey) === requestVersion;
       if (stillCurrent) {
         const cachedAt = Date.now();
-        memory.set(scopedKey, { value, createdAt: cachedAt });
         const fromCache = taggedResult ? taggedResult.metadata.fromCache : null;
+        // A degraded (partial) result must not be served from cache, otherwise a
+        // transient backend gap would keep the dashboard empty until the TTL
+        // expires. It is still published to subscribers so the UI can render it.
+        const cacheable = taggedResult ? taggedResult.metadata.cacheable !== false : true;
+        if (cacheable) {
+          memory.set(scopedKey, { value, createdAt: cachedAt });
+          writeLocal(scopeUid, key, value);
+        } else {
+          memory.delete(scopedKey);
+        }
         metadata.set(scopedKey, {
           fromCache,
           cachedAt,
           lastSyncedAt: fromCache === false ? cachedAt : null,
+          ...(cacheable ? {} : { partial: true }),
         });
-        writeLocal(scopeUid, key, value);
         notify(scopedKey, value);
       }
       return value;

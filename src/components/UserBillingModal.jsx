@@ -1,16 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
-import { DollarSign, CreditCard, RefreshCw } from 'lucide-react';
+import { DollarSign, CreditCard, RefreshCw, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
+import { Field, Input } from './ui/Field';
 import FinancialVerificationNotice from './ui/FinancialVerificationNotice';
 import LoadingSpinner from './LoadingSpinner';
 import { formatNumber, toDate } from '../lib/format';
-import { monthKeyFromDate } from '../lib/billingHelpers';
+import { monthKeyFromDate, getCurrentMonthKey } from '../lib/billingHelpers';
 import {
   fetchUserBillingHistory,
   subscribeAdminDataCache,
 } from '../lib/adminData';
+import { recordPayment, adminApiError } from '../lib/adminApi';
+import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+
+function newIdempotencyKey(uid) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${uid.slice(0, 20)}-${random}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 128);
+}
 
 export default function UserBillingModal({ isOpen, onClose, user }) {
   const userUid = user?.uid;
@@ -22,6 +30,11 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
 
   const [refreshingHistory, setRefreshingHistory] = useState(false);
   const refreshRequestId = useRef(0);
+
+  const [payAmount, setPayAmount] = useState('');
+  const [payMonth, setPayMonth] = useState(() => getCurrentMonthKey());
+  const [payKey, setPayKey] = useState('');
+  const [savingPayment, setSavingPayment] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !userUid) {
@@ -44,6 +57,9 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
     setSales([]);
     setPayments([]);
     setLoadedForUid(null);
+    setPayAmount('');
+    setPayMonth(getCurrentMonthKey());
+    setPayKey(newIdempotencyKey(userUid));
     fetchUserBillingHistory(userUid)
       .then((history) => {
         if (!active) return;
@@ -68,6 +84,43 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
       refreshRequestId.current += 1;
     };
   }, [isOpen, userUid]);
+
+  const handleRecordPayment = async (event) => {
+    event.preventDefault();
+    if (!userUid) return;
+    const amount = Number(payAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('أدخل مبلغاً صحيحاً أكبر من صفر');
+      return;
+    }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(payMonth)) {
+      toast.error('صيغة الشهر يجب أن تكون YYYY-MM');
+      return;
+    }
+    setSavingPayment(true);
+    const result = await recordPayment({
+      uid: userUid,
+      amount,
+      month: payMonth,
+      idempotencyKey: payKey || newIdempotencyKey(userUid),
+    });
+    setSavingPayment(false);
+    if (!result.ok) {
+      toast.error(adminApiError(result.error));
+      return;
+    }
+    logAdminAction({
+      action: AUDIT_ACTIONS.PAYMENT_ADD,
+      targetType: 'user',
+      targetId: userUid,
+      targetLabel: user?.networkName || userUid,
+      details: { amount, month: payMonth, ack: Boolean(result.data?.ack) },
+    });
+    toast.success(result.data?.ack ? 'الدفعة مسجلة سابقاً (لم تُكرَّر)' : 'تم تسجيل الدفعة على الخادم');
+    setPayAmount('');
+    setPayKey(newIdempotencyKey(userUid));
+    refreshBillingHistory();
+  };
 
   const refreshBillingHistory = async () => {
     if (!userUid) return;
@@ -161,8 +214,33 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
           <div className="bg-[var(--ui-sunken)] p-5 rounded-2xl border border-[var(--ui-line)]">
             <h4 className="font-bold flex items-center gap-2 mb-1"><CreditCard className="w-5 h-5" /> تسجيل/تسوية دفعة</h4>
             <p className="text-xs text-ink-secondary mb-4">
-              تم إيقاف الكتابة المباشرة مؤقتاً. لا يمكن اعتماد دفعة أو تغيير حالة الحساب من المتصفح قبل توفير مسار خادمي idempotent وسياسة تسوية معتمدة.
+              تُسجَّل الدفعة عبر الخادم الآمن (idempotent)؛ إعادة المحاولة بنفس مفتاح العملية لا تُنشئ دفعة مكرّرة.
             </p>
+            <form onSubmit={handleRecordPayment} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              <Field label="المبلغ (ريال يمني)">
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <Field label="الشهر (YYYY-MM)">
+                <Input
+                  type="text"
+                  dir="ltr"
+                  value={payMonth}
+                  onChange={(e) => setPayMonth(e.target.value)}
+                  placeholder={getCurrentMonthKey()}
+                />
+              </Field>
+              <Button type="submit" variant="primary" icon={Plus} loading={savingPayment}>
+                تسجيل الدفعة
+              </Button>
+            </form>
           </div>
 
           <div>

@@ -55,6 +55,32 @@ async function mapUsersWithLimit(users, label, mapper) {
   });
 }
 
+/**
+ * Maps a fan-out but never rejects: a single failed child (e.g. a missing
+ * composite index for one network) degrades that item instead of throwing away
+ * the whole page. The returned errors are surfaced so the UI can warn honestly.
+ */
+async function mapUsersSoft(users, label, mapper) {
+  const errors = [];
+  const values = await mapWithConcurrency(users, FAN_OUT_CONCURRENCY, async (user, index) => {
+    try {
+      return await mapper(user, index);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errors.push(`${label} failed for user ${user.uid}: ${detail}`);
+      return undefined;
+    }
+  });
+  return { values, errors };
+}
+
+function partialResult(value, errors) {
+  return withAdminDataCacheMetadata(
+    { ...value, partial: true, errors },
+    { fromCache: false, cacheable: false },
+  );
+}
+
 export async function fetchGlobalConfig(options) {
   return readCached('global-config', async () => {
     const snap = await getDoc(doc(db, 'app_settings', 'global_config'));
@@ -215,8 +241,19 @@ export async function fetchUsersWithBilling(options) {
   return readCached('users-with-billing', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
     const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
-    const enrichedUsers = await mapUsersWithLimit(users, 'Billing data', (user) => enrichUserForBilling(user, childOptions));
-    return { users: enrichedUsers, globalConfig: config };
+    const { values: enrichedUsers, errors } = await mapUsersSoft(users, 'Billing data', (user) => enrichUserForBilling(user, childOptions));
+    // Keep every user row; a failed network shows zeroed aggregates but is still
+    // listed, and the error is reported so the UI can flag incomplete data.
+    const completeUsers = enrichedUsers.map((enriched, index) => enriched ?? {
+      ...users[index],
+      networkName: '',
+      phoneNumber: '',
+      reportedSalesValue: 0,
+      reportedTransactions: 0,
+      recordedPayments: 0,
+    });
+    const value = { users: completeUsers, globalConfig: config };
+    return errors.length ? partialResult(value, errors) : value;
   }, options);
 }
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -234,7 +271,8 @@ export async function fetchDashboardStats(options) {
   return readCached('dashboard-stats', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
     const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
-    const aggregates = await mapUsersWithLimit(users, 'Dashboard aggregate', (user) => fetchAggregate(user.uid, childOptions));
+    const { values: rawAggregates, errors } = await mapUsersSoft(users, 'Dashboard aggregate', (user) => fetchAggregate(user.uid, childOptions));
+    const aggregates = rawAggregates.map((aggregate) => aggregate ?? { monthly: {}, monthlyAvailable: true });
     const totals = { totalSales: 0, totalTransactions: 0 }; const buckets = {};
     aggregates.forEach((aggregate) => {
       totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0;
@@ -242,19 +280,21 @@ export async function fetchDashboardStats(options) {
     });
     const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5; const now = Date.now(); let expiredUsers = 0; let expiringSoonUsers = 0; let trialExpiringSoonUsers = 0;
     users.forEach((user) => { const end = toDate(user.subscription_end_date); if (!end || Number.isNaN(end.getTime())) return; const remaining = end.getTime() - now; if (remaining < 0) expiredUsers += 1; else if (remaining <= warningDays * DAY_MS) { expiringSoonUsers += 1; if (user.is_trial === true) trialExpiringSoonUsers += 1; } });
-    return { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6), monthlyDataWarning: aggregates.some((aggregate) => aggregate.monthlyAvailable === false) };
+    const value = { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6), monthlyDataWarning: errors.length > 0 || aggregates.some((aggregate) => aggregate.monthlyAvailable === false) };
+    return errors.length ? partialResult(value, errors) : value;
   }, options);
 }
 export async function fetchNetworkSales(options) {
   return readCached('network-sales', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
     const users = await fetchAllUsers(childOptions);
-    const networks = await mapUsersWithLimit(users, 'Network sales', async (user) => {
+    const { values: rawNetworks, errors } = await mapUsersSoft(users, 'Network sales', async (user) => {
       const [meta, aggregate, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchAggregate(user.uid, childOptions), fetchSalesForUser(user.uid, true, childOptions)]);
       if (!sales.length && !aggregate.totalTransactions) return null;
       return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, aggregate };
     });
-    return networks.filter(Boolean);
+    const value = rawNetworks.filter(Boolean);
+    return errors.length ? partialResult(value, errors) : value;
   }, options);
 }
 export async function fetchUsersForSelect(options) {

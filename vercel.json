@@ -2,9 +2,16 @@
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "crons": [
+    { "path": "/api/dispatch-notifications", "schedule": "0 6 * * *" }
+  ],
   "functions": {
     "api/send-fcm.js": {
       "maxDuration": 30,
+      "memory": 512
+    },
+    "api/dispatch-notifications.js": {
+      "maxDuration": 60,
       "memory": 512
     },
     "api/manage-user-auth.js": {

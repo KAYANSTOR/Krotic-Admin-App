@@ -74,6 +74,7 @@ export default function UsersPage() {
   const [authUser, setAuthUser] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
+  const [partialErrors, setPartialErrors] = useState([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const latestRequestId = useRef(0);
@@ -83,10 +84,11 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const { users: usersData, globalConfig: config } = await fetchUsersWithBilling({ force });
+      const { users: usersData, globalConfig: config, errors: nextErrors } = await fetchUsersWithBilling({ force });
       if (requestId !== latestRequestId.current) return;
       setGlobalConfig(config);
       setUsers(usersData);
+      setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('users-with-billing'));
     } catch (err) {
@@ -102,6 +104,7 @@ export default function UsersPage() {
   useEffect(() => subscribeAdminDataCache('users-with-billing', (data, state) => {
     setGlobalConfig(data.globalConfig);
     setUsers(data.users);
+    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
     setUpdatedAt(Date.now());
     setCacheState(state);
     setError(null);
@@ -352,6 +355,27 @@ export default function UsersPage() {
           <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
             إعادة المحاولة
           </Button>
+        </div>
+      )}
+
+      {partialErrors.length > 0 && (
+        <div className="users-error users-error--warning" role="status" aria-live="polite">
+          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">بعض بيانات الفوترة غير مكتملة</p>
+            <p className="users-error__msg">
+              تم عرض كل المستخدمين، لكن تعذّر تجميع مبيعات/دفعات {partialErrors.length} شبكة.
+              تحقّق من فهرس Firestore المركّب على المبيعات (status + faceValue).
+            </p>
+            <details className="users-error__details">
+              <summary>عرض التفاصيل</summary>
+              <ul>
+                {partialErrors.map((message, index) => (
+                  <li key={index} dir="ltr">{message}</li>
+                ))}
+              </ul>
+            </details>
+          </div>
         </div>
       )}
 

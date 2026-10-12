@@ -18,6 +18,7 @@ import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/notificationTemplates';
 import { fetchUsersForSelect } from '../lib/adminData';
+import { triggerScheduledDispatch } from '../lib/adminApi';
 
 const NOTIFICATION_PAGE_SIZE = 20;
 
@@ -74,6 +75,12 @@ export default function NotificationsPage() {
   useEffect(() => {
     fetchData();
     return () => { latestRequestId.current += 1; };
+  }, []);
+
+  // إرسال أي إشعار مجدول استحقّ موعده (بديل مجاني لمُجدوِل Cloud Functions).
+  // يعمل في الخلفية دون حجب الواجهة، ولا يظهر أي خطأ إن فشل.
+  useEffect(() => {
+    triggerScheduledDispatch();
   }, []);
 
   const fetchData = async ({ force = false } = {}) => {

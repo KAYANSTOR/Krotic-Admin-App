@@ -38,6 +38,26 @@ test('does not serve one UID from another UID scope', async () => {
   assert.ok(storage.keys().includes(buildAdminDataStorageKey('admin-b', 'dashboard')));
 });
 
+test('does not cache a degraded result but still publishes it to subscribers', async () => {
+  const storage = fakeStorage();
+  const cache = createAdminDataCache({ getUid: () => 'admin-a', getStorage: () => storage });
+  let loaderCalls = 0;
+  const loader = async () => {
+    loaderCalls += 1;
+    return withAdminDataCacheMetadata({ users: [], errors: ['missing index'] }, { fromCache: false, cacheable: false });
+  };
+  const seen = [];
+  cache.subscribe('users-with-billing', (value) => seen.push(value));
+
+  const first = await cache.readCached('users-with-billing', loader);
+  assert.deepEqual(first.errors, ['missing index']);
+  assert.equal(seen.length, 1);
+  // A degraded value is not persisted, so the next read re-runs the loader.
+  await cache.readCached('users-with-billing', loader);
+  assert.equal(loaderCalls, 2);
+  assert.equal(cache.getState('users-with-billing').partial, true);
+});
+
 test('clear removes only the application custom namespace', async () => {
   const storage = fakeStorage({ 'krotak:filter': 'all' });
   const cache = createAdminDataCache({ getUid: () => 'admin-a', getStorage: () => storage });

@@ -58,6 +58,7 @@ export default function SalesPage() {
   const [dateTo, setDateTo] = useState(savedFilters?.dateTo || '');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
+  const [partialErrors, setPartialErrors] = useState([]);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
   const latestRequestId = useRef(0);
@@ -69,6 +70,7 @@ export default function SalesPage() {
       const data = await fetchNetworkSales({ force });
       if (requestId !== latestRequestId.current) return;
       setNetworkSales(data);
+      setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('network-sales'));
     } catch (error) {
@@ -82,6 +84,7 @@ export default function SalesPage() {
 
   useEffect(() => subscribeAdminDataCache('network-sales', (data, state) => {
     setNetworkSales(data);
+    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
     setUpdatedAt(Date.now());
     setCacheState(state);
     setLoading(false);
@@ -219,6 +222,27 @@ export default function SalesPage() {
       <p className="mb-4 text-sm text-ink-secondary" role="note">
         الملخص والتصدير يعتمدان على أحدث 50 سجلاً محمّلاً لكل شبكة؛ لا يتضمنان عمولة أو صافي APK ولا يمثلان كشف تسوية.
       </p>
+
+      {partialErrors.length > 0 && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">بعض الشبكات غير محمّلة</p>
+            <p className="users-error__msg">
+              تعذّر تجميع مبيعات {partialErrors.length} شبكة. غالباً السبب فهرس Firestore المركّب الناقص على
+              المبيعات (status + faceValue)؛ باقي الشبكات معروضة أدناه.
+            </p>
+            <details className="users-error__details">
+              <summary>عرض التفاصيل</summary>
+              <ul>
+                {partialErrors.map((message, index) => (
+                  <li key={index} dir="ltr">{message}</li>
+                ))}
+              </ul>
+            </details>
+          </div>
+        </div>
+      )}
 
       <div className="grid-kpi">
         <StatCard title="قيمة السجلات المبلّغ عنها (غير متحققة)" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني • أحدث 50/شبكة" />

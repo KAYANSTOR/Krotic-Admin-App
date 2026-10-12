@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "sales",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "faceValue", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notification_requests",
       "queryScope": "COLLECTION",
       "fields": [

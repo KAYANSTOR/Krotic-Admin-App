@@ -29,10 +29,58 @@ export const ADMIN_API_ERRORS = {
   request_failed: 'فشل تنفيذ الطلب على الخادم.',
   endpoint_unavailable:
     'دالة الخادم غير متاحة في هذه البيئة. تعمل دوال api/ على استضافة Vercel فقط.',
+  uid_invalid: 'معرّف المستخدم غير صالح.',
+  amount_invalid: 'المبلغ غير صالح.',
+  month_invalid: 'الشهر غير صالح (الصيغة المطلوبة YYYY-MM).',
+  idempotency_key_invalid: 'مفتاح العملية غير صالح.',
+  payment_conflict: 'توجد دفعة أخرى بنفس مفتاح العملية وبمحتوى مختلف. أعد تحميل السجل.',
+  record_failed: 'تعذر تسجيل الدفعة على الخادم.',
 };
+
+/** يسجّل دفعة/تسوية عبر الخادم الآمن idempotent. */
+export async function recordPayment({ uid, amount, month, idempotencyKey, note }) {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) return { ok: false, error: 'missing_token' };
+  try {
+    const response = await fetch('/api/record-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ uid, amount, month, idempotencyKey, note }),
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) return { ok: false, error: 'endpoint_unavailable' };
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) return { ok: false, error: data.error || 'request_failed', data };
+    return { ok: true, data };
+  } catch (error) {
+    console.error('recordPayment failed', error);
+    return { ok: false, error: 'network_error' };
+  }
+}
 
 export function adminApiError(code, fallback) {
   return ADMIN_API_ERRORS[code] || fallback || 'حدث خطأ غير متوقع.';
+}
+
+/**
+ * يشغّل إرسال الإشعارات المجدولة المستحقة عند فتح اللوحة (best-effort).
+ * البديل المجاني للمُجدوِل في Cloud Functions (يحتاج Blaze)، ويكمل Cron اليومي
+ * على باقة Vercel Hobby المحدودة بمرة واحدة يومياً. لا يرمي استثناء أبداً.
+ */
+export async function triggerScheduledDispatch() {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return null;
+    const response = await fetch('/api/dispatch-notifications', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) return null;
+    return await response.json().catch(() => null);
+  } catch {
+    return null;
+  }
 }
 
 /**

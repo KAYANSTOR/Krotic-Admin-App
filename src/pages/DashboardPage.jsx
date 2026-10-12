@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState(null);
   const [monthlySales, setMonthlySales] = useState([]);
   const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
+  const [partialErrors, setPartialErrors] = useState([]);
   const latestRequestId = useRef(0);
 
   const load = useCallback(async ({ force = false } = {}) => {
@@ -42,6 +43,7 @@ export default function DashboardPage() {
         alerts: nextAlerts,
         monthlySales: nextMonthlySales,
         monthlyDataWarning: nextMonthlyDataWarning,
+        errors: nextErrors,
       } = await fetchDashboardStats({ force });
       if (requestId !== latestRequestId.current) return;
       setAppStatus(status);
@@ -49,6 +51,7 @@ export default function DashboardPage() {
       setAlerts(nextAlerts);
       setMonthlySales(nextMonthlySales || []);
       setMonthlyDataWarning(Boolean(nextMonthlyDataWarning));
+      setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('dashboard-stats'));
     } catch (err) {
@@ -66,6 +69,7 @@ export default function DashboardPage() {
     setAlerts(data.alerts);
     setMonthlySales(data.monthlySales || []);
     setMonthlyDataWarning(Boolean(data.monthlyDataWarning));
+    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
     setUpdatedAt(Date.now());
     setCacheState(state);
     setError(null);
@@ -126,6 +130,16 @@ export default function DashboardPage() {
           <div className="dash-error__body">
             <p className="dash-error__title">تفصيل الأشهر غير مكتمل</p>
             <p className="dash-error__msg">الإجماليات الكلية متاحة، لكن تعذر تحميل بيانات الأشهر لبعض الشبكات. تحقّق من اتصال Firestore وفهرس المبيعات المركّب.</p>
+            {partialErrors.length > 0 && (
+              <details className="dash-error__details">
+                <summary>عرض تفاصيل الفشل ({partialErrors.length})</summary>
+                <ul>
+                  {partialErrors.map((message, index) => (
+                    <li key={index} dir="ltr">{message}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         </div>
       )}
