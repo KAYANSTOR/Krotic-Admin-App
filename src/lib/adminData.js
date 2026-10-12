@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, getDocs, limit, orderBy, query,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocs, limit, orderBy, query, sum, Timestamp, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toDate } from './format';
@@ -96,17 +96,44 @@ function buildMonthlyBuckets(sales, rate) {
   });
   return buckets;
 }
+function sixMonthsAgo() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - 5, 1);
+}
+async function fetchAggregateFromFirestore(uid, user, globalCommission) {
+  const rate = resolveCommissionRate(user, globalCommission) / 100;
+  const salesRef = collection(db, 'networks', uid, 'sales');
+  const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
+  const paymentsRef = collection(db, 'networks', uid, 'payments');
+  const [salesAggregate, paymentsAggregate, recentSalesSnapshot] = await Promise.all([
+    getAggregateFromServer(completedQuery, {
+      totalFaceValue: sum('faceValue'),
+      totalTransactions: count(),
+    }),
+    getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
+    getDocs(query(
+      completedQuery,
+      where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo())),
+      orderBy('createdAt', 'asc'),
+    )),
+  ]);
+  const totalFaceValue = Number(salesAggregate.data().totalFaceValue) || 0;
+  const totalTransactions = Number(salesAggregate.data().totalTransactions) || 0;
+  const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
+  const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  return {
+    totalFaceValue,
+    totalAdminEarnings: totalFaceValue * rate,
+    totalTransactions,
+    totalPaid,
+    monthly: buildMonthlyBuckets(recentSales, rate),
+    source: 'aggregation',
+  };
+}
 async function fetchAggregate(uid, user, globalCommission) {
   const snap = await getDoc(doc(db, 'admin_aggregates', uid));
   if (snap.exists()) return { ...snap.data(), source: 'aggregate' };
-  const [sales, totalPaid] = await Promise.all([fetchSalesForUser(uid), fetchPaymentsForUser(uid)]);
-  const rate = resolveCommissionRate(user, globalCommission) / 100;
-  const completed = sales.filter((sale) => sale.status === 'COMPLETED');
-  return {
-    totalFaceValue: completed.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0),
-    totalAdminEarnings: completed.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0) * rate, 0),
-    totalTransactions: completed.length, totalPaid, monthly: buildMonthlyBuckets(completed, rate), source: 'legacy',
-  };
+  return fetchAggregateFromFirestore(uid, user, globalCommission);
 }
 async function enrichUserForBilling(user, globalCommission) {
   const [meta, aggregate] = await Promise.all([fetchNetworkMeta(user.uid), fetchAggregate(user.uid, user, globalCommission)]);
