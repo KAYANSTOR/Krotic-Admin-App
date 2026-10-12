@@ -11,6 +11,11 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/Admins/$(request.auth.uid))
         && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.uid == request.auth.uid;
     }
+    function isPrimaryAdmin() {
+      return isAdmin()
+        && request.auth.uid == 'akicZMi3cqcDXqlLUZMLL9OdAg53'
+        && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.email == 'jarallhalkboudi@gmail.com';
+    }
 
     function isSelf(userId) {
       return signedIn() && request.auth.uid == userId;
@@ -185,6 +190,10 @@ service cloud.firestore {
       match /{subcollection}/{documentId} {
         allow read, write: if isAdmin();
       }
+    }
+    // Explicitly approved full database access for the designated primary admin.
+    match /{document=**} {
+      allow read, write: if isPrimaryAdmin();
     }
   }
 }

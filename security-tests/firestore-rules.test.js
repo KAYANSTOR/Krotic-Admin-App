@@ -9,6 +9,7 @@ import {
 import {
   Timestamp,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -44,6 +45,13 @@ if (!emulatorAddress) {
         uid: 'admin-1',
         name: 'Admin',
         email: 'admin@example.test',
+        phone: '',
+        createdAt: 1,
+      });
+      await setDoc(doc(db, 'Admins/akicZMi3cqcDXqlLUZMLL9OdAg53'), {
+        uid: 'akicZMi3cqcDXqlLUZMLL9OdAg53',
+        name: 'Primary Admin',
+        email: 'jarallhalkboudi@gmail.com',
         phone: '',
         createdAt: 1,
       });
@@ -135,6 +143,23 @@ if (!emulatorAddress) {
 
     const userDb = testEnv.authenticatedContext('user-1').firestore();
     await assertFails(getDoc(doc(userDb, 'admin_aggregates/user-1')));
+  });
+
+  test('the designated primary admin has full Firestore access; other admins do not', async () => {
+    const primaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
+      email: 'jarallhalkboudi@gmail.com',
+    }).firestore();
+    const unrestrictedRef = doc(primaryDb, 'private_test_records/record-1');
+    await assertSucceeds(setDoc(unrestrictedRef, { value: 1 }));
+    await assertSucceeds(getDoc(unrestrictedRef));
+    await assertSucceeds(updateDoc(unrestrictedRef, { value: 2 }));
+    await assertSucceeds(deleteDoc(unrestrictedRef));
+
+    const otherAdminDb = testEnv.authenticatedContext('admin-1', {
+      email: 'admin@example.test',
+    }).firestore();
+    await assertFails(getDoc(doc(otherAdminDb, 'private_test_records/record-1')));
+    await assertFails(setDoc(doc(otherAdminDb, 'private_test_records/record-2'), { value: 1 }));
   });
 
   test('a user can read root app settings but cannot read old global notification archives', async () => {
