@@ -11,9 +11,9 @@ import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { PageSkeleton } from '../components/ui/Skeleton';
+import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
-import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import BarChart from '../components/ui/BarChart';
 import { formatNumber } from '../lib/format';
 import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
@@ -81,6 +81,9 @@ export default function DashboardPage() {
     return () => { latestRequestId.current += 1; };
   }, [load]);
 
+  // السحب للأسفل على الجوال يعيد جلب بيانات اللوحة (force).
+  useAppRefresh(() => load({ force: true }));
+
   if (loading) return <PageSkeleton />;
 
   const maintenance = appStatus && !appStatus.is_app_active;
@@ -108,7 +111,6 @@ export default function DashboardPage() {
         />
       </section>
 
-      <FinancialVerificationNotice className="mb-6" />
 
       {maintenance && (
         <div className="dash-alert" role="status" aria-live="polite">

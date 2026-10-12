@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
-import { Download, Menu, LogOut } from 'lucide-react';
+import PullToRefresh from './PullToRefresh';
+import { Download, Menu, LogOut, WifiOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLocation, useNavigate } from 'react-router-dom';
+import useOnlineStatus from '../lib/useOnlineStatus';
+import { emitAppRefresh } from '../lib/useAppRefresh';
 
 /** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
 const PAGE_TITLES = {
@@ -23,8 +26,16 @@ export default function Layout({ children }) {
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const online = useOnlineStatus();
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
+
+  // أعلِن عند عودة الاتصال، وأعد النبض لكل صفحة عبر حدث التحديث العام.
+  useEffect(() => {
+    const handleOnline = () => emitAppRefresh();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event) => {
@@ -98,7 +109,18 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <main className="app-main" id="main-content" tabIndex={-1}>{children}</main>
+        {!online && (
+          <div className="offline-banner" role="status" aria-live="assertive">
+            <WifiOff className="w-4 h-4" aria-hidden="true" />
+            <span>لا يوجد اتصال بالإنترنت — تُعرض آخر بيانات متاحة. سيُحدَّث تلقائياً عند عودة الاتصال.</span>
+          </div>
+        )}
+
+        <main className="app-main" id="main-content" tabIndex={-1}>
+          <PullToRefresh onRefresh={async () => { emitAppRefresh(); await new Promise((r) => setTimeout(r, 700)); }}>
+            {children}
+          </PullToRefresh>
+        </main>
         <BottomNav />
       </div>
     </div>

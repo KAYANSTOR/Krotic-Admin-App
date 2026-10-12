@@ -20,7 +20,6 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
-import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
@@ -29,6 +28,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 24;
 const FILTER_STORAGE_KEY = 'krotak:users-filter';
@@ -115,6 +115,9 @@ export default function UsersPage() {
     fetchData();
     return () => { latestRequestId.current += 1; };
   }, [fetchData]);
+
+  // السحب للأسفل على الجوال يعيد جلب بيانات المستخدمين (force).
+  useAppRefresh(() => fetchData({ force: true }));
 
   const handleToggleActive = (user) => {
     const newStatus = !user.is_active;
@@ -386,7 +389,6 @@ export default function UsersPage() {
         <StatCard title="محظورون" value={formatNumber(stats.blocked)} icon={Ban} tone="neutral" iconStart />
       </div>
 
-      <FinancialVerificationNotice className="mb-6" />
 
       <Section
         eyebrow="السجل"

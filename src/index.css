@@ -1646,3 +1646,151 @@
     .notif-templates .btn { width: 100%; }
   }
 }
+
+/* ===== المرحلة الثالثة: تحسين تجربة الجوال ===== */
+@layer components {
+  /* شريط عدم الاتصال */
+  .offline-banner {
+    display: flex; align-items: center; gap: .625rem;
+    padding: .7rem 1rem;
+    background: var(--ui-warning-soft); color: var(--ui-warning-ink);
+    border-bottom: 1px solid rgba(213,154,58,.25);
+    font-size: .8125rem; font-weight: 700;
+    position: sticky; top: 0; z-index: 25;
+  }
+  .offline-banner svg { flex-shrink: 0; }
+  .offline-banner span { line-height: 1.5; }
+
+  /* تحديث بالسحب للأسفل */
+  .ptr { position: relative; }
+  .ptr__indicator {
+    position: absolute; inset-inline: 0; top: 0;
+    display: flex; justify-content: center;
+    height: 0; opacity: 0;
+    transition: opacity .18s var(--ui-ease);
+    pointer-events: none;
+  }
+  .ptr__indicator.is-visible { height: 56px; opacity: 1; }
+  .ptr__spinner {
+    display: grid; place-items: center;
+    width: 34px; height: 34px; margin-top: 8px;
+    border-radius: 999px;
+    background: var(--ui-surface); color: var(--ui-brand-deep);
+    border: 1px solid rgba(217,119,87,.25);
+    box-shadow: var(--ui-shadow-card);
+    transform: rotate(180deg); transition: transform .18s var(--ui-ease);
+  }
+  .ptr__indicator.is-armed .ptr__spinner { transform: rotate(0deg); }
+  .ptr__indicator.is-refreshing .ptr__spinner { animation: ptr-spin .8s linear infinite; }
+  .ptr__content { transition: transform .18s var(--ui-ease); will-change: transform; }
+  @keyframes ptr-spin { to { transform: rotate(360deg); } }
+}
+
+@layer components {
+  /* اللوحة السفلية (Bottom Sheet) — للجوال فقط */
+  .sheet-backdrop {
+    position: fixed; inset: 0; z-index: 55;
+    background: rgba(28,25,23,.5); backdrop-filter: blur(2px);
+    animation: ui-fade .2s var(--ui-ease);
+  }
+  .sheet {
+    position: fixed; inset-inline: 0; bottom: 0; z-index: 56;
+    display: flex; flex-direction: column;
+    background: var(--ui-surface);
+    border-top-left-radius: 22px; border-top-right-radius: 22px;
+    box-shadow: var(--ui-shadow-elevated);
+    padding-bottom: max(.75rem, env(safe-area-inset-bottom));
+    transform: translateY(105%);
+    transition: transform .26s var(--ui-ease);
+    will-change: transform;
+  }
+  .sheet.is-open { transform: translateY(0); }
+  .sheet__grabber {
+    width: 40px; height: 4px; border-radius: 999px;
+    background: var(--ui-line-strong);
+    margin: .625rem auto .25rem;
+  }
+  .sheet__head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .5rem 1.25rem .25rem;
+  }
+  .sheet__title { font-weight: 800; color: var(--ui-ink); }
+  .sheet__close {
+    display: grid; place-items: center; width: 44px; height: 44px;
+    border: 0; background: transparent; border-radius: 12px;
+    color: var(--ui-muted); cursor: pointer;
+  }
+  .sheet__close:hover { background: var(--ui-sunken); }
+  .sheet__list { display: flex; flex-direction: column; gap: .25rem; padding: .5rem .75rem 1rem; }
+  .sheet__link {
+    display: flex; align-items: center; gap: .875rem;
+    min-height: 56px; padding: .75rem 1rem;
+    border-radius: 14px;
+    color: var(--ui-ink-soft); font-weight: 700; text-decoration: none;
+    transition: background-color .16s var(--ui-ease), color .16s var(--ui-ease);
+  }
+  .sheet__link:hover { background: var(--ui-sunken); }
+  .sheet__link.is-active { background: var(--ui-brand-soft); color: var(--ui-brand-deep); }
+  .sheet__link-icon {
+    display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0;
+    border-radius: 12px; background: var(--ui-sunken); color: var(--ui-brand-deep);
+  }
+  .sheet__link.is-active .sheet__link-icon { background: var(--ui-white); }
+  @media (min-width: 1024px) { .sheet, .sheet-backdrop { display: none; } }
+}
+
+/* مقبض السحب داخل النوافذ (يظهر فقط حين تكون لوحة سفلية) */
+.modal__grabber { display: none; }
+
+@media (max-width: 640px) {
+  /* النافذة تصبح لوحة سفلية على الجوال */
+  .modal-root { align-items: flex-end; padding: 0; }
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    max-height: 90dvh;
+    border-radius: 24px 24px 0 0;
+    border-bottom: 0;
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+    animation: sheet-up .28s var(--ui-ease);
+  }
+  .modal.is-dragging { transition: none; }
+  .modal__grabber {
+    display: block;
+    width: 40px; height: 4px; border-radius: 999px;
+    background: var(--ui-line-strong);
+    margin: 10px auto 2px;
+    touch-action: none; cursor: grab;
+    flex-shrink: 0;
+  }
+  .modal__header { padding-top: 12px; }
+  .modal__footer {
+    position: sticky; bottom: 0;
+    background: var(--ui-surface);
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  /* منع تكبير iOS عند التركيز على الحقول */
+  .input-field,
+  select.input-field,
+  textarea.input-field { font-size: 16px; }
+  /* أهداف لمس مريحة */
+  .btn-sm { min-height: 40px; }
+  .btn-xs { min-height: 38px; padding: .4rem .7rem; }
+  .users-filter { padding: .55rem .9rem; }
+  /* شريط أدوات المستخدمين: أزرار الفلاتر قابلة للسحب أفقياً */
+  .users-filters {
+    flex-wrap: nowrap; overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .users-filters::-webkit-scrollbar { display: none; }
+  .users-filter { scroll-snap-align: start; }
+  /* تنفّس أسفل الصفحة فوق شريط التنقل */
+  .app-main { padding-bottom: 8.5rem; }
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}

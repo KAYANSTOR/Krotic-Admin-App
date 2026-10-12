@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import { Field, Input } from './ui/Field';
-import FinancialVerificationNotice from './ui/FinancialVerificationNotice';
 import LoadingSpinner from './LoadingSpinner';
 import { formatNumber, toDate } from '../lib/format';
 import { monthKeyFromDate, getCurrentMonthKey } from '../lib/billingHelpers';
@@ -198,7 +197,6 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
         </div>
       ) : (
         <div className="space-y-6">
-          <FinancialVerificationNotice />
           {historyError && <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm text-danger-ink" role="alert">{historyError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="summary-block summary-block--gold">

@@ -10,8 +10,8 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
-import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import { PageSkeleton } from '../components/ui/Skeleton';
+import useAppRefresh from '../lib/useAppRefresh';
 import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
@@ -94,6 +94,9 @@ export default function SalesPage() {
     load();
     return () => { latestRequestId.current += 1; };
   }, [load]);
+
+  // السحب للأسفل على الجوال يعيد جلب بيانات المبيعات (force).
+  useAppRefresh(() => load({ force: true }));
 
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
@@ -218,7 +221,6 @@ export default function SalesPage() {
         }
       />
 
-      <FinancialVerificationNotice className="mb-6" />
       <p className="mb-4 text-sm text-ink-secondary" role="note">
         الملخص والتصدير يعتمدان على أحدث 50 سجلاً محمّلاً لكل شبكة؛ لا يتضمنان عمولة أو صافي APK ولا يمثلان كشف تسوية.
       </p>
