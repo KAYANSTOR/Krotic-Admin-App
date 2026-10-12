@@ -41,16 +41,6 @@ export function AuthProvider({ children }) {
     return signOut(auth);
   }
 
-  async function createFirstAdmin(email, password, name, phone) {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const uid = userCredential.user.uid;
-    const admin = { uid, name, email, phone, createdAt: Date.now() };
-    await setDoc(doc(db, 'Admins', uid), admin);
-    setCurrentUser(userCredential.user);
-    setAdminData(admin);
-    return userCredential;
-  }
-
   async function createAdmin(email, password, name, phone) {
     const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const uid = userCredential.user.uid;
@@ -88,6 +78,6 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  const value = { currentUser, adminData, loading, login, logout, createFirstAdmin, createAdmin, verifyAdmin };
+  const value = { currentUser, adminData, loading, login, logout, createAdmin, verifyAdmin };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
