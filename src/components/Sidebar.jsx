@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X,
 } from 'lucide-react';
-import { loadRoute } from '../lib/routeLoaders';
+import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
 /** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي. */
 const navGroups = [
@@ -29,7 +29,7 @@ const navGroups = [
 ];
 
 function preloadRoute(path) {
-  loadRoute(path).catch((error) => console.debug('Route preloading skipped:', error));
+  requestRoutePreload(path).catch((error) => console.debug('Route preloading skipped:', error));
 }
 
 export default function Sidebar({ isOpen, onClose }) {

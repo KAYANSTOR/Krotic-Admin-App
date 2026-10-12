@@ -184,16 +184,19 @@ service cloud.firestore {
 
       match /payments/{paymentId} {
         allow read: if isAdmin() || isSelf(userId);
-        allow write: if isAdmin();
+        // Payment settlements must be created/updated by trusted server code only.
+        allow write: if false;
       }
 
       match /{subcollection}/{documentId} {
-        allow read, write: if isAdmin();
+        allow read, write: if isAdmin() && subcollection != 'payments';
       }
     }
-    // Explicitly approved full database access for the designated primary admin.
-    match /{document=**} {
-      allow read, write: if isPrimaryAdmin();
+    // Broad access for the designated primary admin, except server-only payments.
+    match /{topLevelCollection}/{document=**} {
+      // Keep the primary admin's broad access, but do not let the recursive
+      // grant bypass the server-only payment rule under /networks.
+      allow read, write: if isPrimaryAdmin() && topLevelCollection != 'networks';
     }
   }
 }

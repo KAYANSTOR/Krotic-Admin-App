@@ -4,6 +4,7 @@ import {
   doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp,
 } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { db } from '../firebase';
 import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
@@ -18,11 +19,13 @@ import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
+import { invalidateAdminDataCache, invalidateAdminGlobalConfigData } from '../lib/adminData';
 
 const DEFAULTS = {
   is_app_active: true,
   maintenance_message: '',
-  default_trial_days: 3,
+  default_trial_days: 30,
   default_trial_warning: '',
   default_commission_rate: 5,
   global_official_warning: '',
@@ -61,7 +64,12 @@ export default function SettingsPage() {
     try {
       const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
       if (configDoc.exists()) {
-        setConfig((prev) => ({ ...prev, ...configDoc.data() }));
+        const loaded = configDoc.data();
+        setConfig((prev) => ({
+          ...prev,
+          ...loaded,
+          default_commission_rate: loaded.default_commission_rate ?? 5,
+        }));
       }
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -74,6 +82,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await setDoc(doc(db, 'app_settings', 'global_config'), config, { merge: true });
+      invalidateAdminGlobalConfigData();
       logAdminAction({
         action: AUDIT_ACTIONS.SETTINGS_SAVE,
         targetType: 'settings',
@@ -121,43 +130,81 @@ export default function SettingsPage() {
     }
 
     setUpdatingBatch(true);
+    let succeededCount = 0;
+    let requestedCount = 0;
+    let failedBatchIndex = null;
+    let updateError = null;
     try {
       const usersSnap = await getDocs(collection(db, 'users'));
-      const batch = writeBatch(db);
-      let count = 0;
-
       const newExpiry = Timestamp.fromDate(new Date(batchDate));
+      const officialUsers = usersSnap.docs.filter((userDoc) => userDoc.data().is_trial === false);
+      const userBatches = chunkArray(officialUsers, FIRESTORE_BATCH_LIMIT);
+      requestedCount = officialUsers.length;
 
-      usersSnap.forEach((userDoc) => {
-        const userData = userDoc.data();
-        if (userData.is_trial === false) { // Only update official users
+      // Each commit writes an absolute value, so retrying after a partial failure is idempotent.
+      for (let batchIndex = 0; batchIndex < userBatches.length; batchIndex += 1) {
+        const userBatch = userBatches[batchIndex];
+        const batch = writeBatch(db);
+        userBatch.forEach((userDoc) => {
           batch.update(doc(db, 'users', userDoc.id), {
             subscription_end_date: newExpiry,
           });
-          count++;
-        }
-      });
+        });
 
-      if (count > 0) {
-        await batch.commit();
-        logAdminAction({
+        try {
+          await batch.commit();
+          // Count only writes whose commit completed; a failed batch contributes zero.
+          succeededCount += userBatch.length;
+        } catch (error) {
+          failedBatchIndex = batchIndex;
+          updateError = error;
+          console.error(`Error committing expiry batch ${batchIndex + 1}:`, error);
+          break;
+        }
+      }
+
+      if (succeededCount > 0) {
+        invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
+      }
+
+      if (requestedCount > 0) {
+        await logAdminAction({
           action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
           targetType: 'settings',
           targetId: 'global_config',
           targetLabel: 'تواريخ الانتهاء المجمّعة',
-          details: { affected_users: count, new_date: batchDate },
+          details: {
+            affected_users: succeededCount,
+            requested_users: requestedCount,
+            new_date: batchDate,
+            failed_batch: failedBatchIndex == null ? null : failedBatchIndex + 1,
+            partial_failure: Boolean(updateError),
+          },
         });
-        toast.success(`تم تحديث تاريخ الانتهاء لـ ${count} حساب رسمي بنجاح`);
+
+        if (updateError) {
+          if (succeededCount > 0) {
+            toast.error(`تم تحديث ${succeededCount} من ${requestedCount} حساب رسمي، وتعذر إكمال الدفعات اللاحقة. أعد المحاولة لإكمال التحديث`);
+          } else {
+            toast.error('تعذر تحديث الحسابات الرسمية؛ لم يتم الالتزام بأي تغيير. أعد المحاولة');
+          }
+        } else {
+          toast.success(`تم تحديث تاريخ الانتهاء لـ ${succeededCount} حساب رسمي بنجاح`);
+          setBatchDate('');
+        }
       } else {
         toast.error('لا يوجد حسابات رسمية لتحديثها');
+        setBatchDate('');
       }
-      setBatchDate('');
     } catch (error) {
       console.error('Error batch updating:', error);
-      toast.error('حدث خطأ أثناء تحديث التواريخ');
+      updateError = error;
+      toast.error(`حدث خطأ أثناء تحديث التواريخ؛ تم تحديث ${succeededCount} حساب فعلياً`);
+    } finally {
+      // Keep batchDate after a partial failure so the administrator can retry safely.
+      setUpdatingBatch(false);
+      setShowBatchConfirm(false);
     }
-    setUpdatingBatch(false);
-    setShowBatchConfirm(false);
   };
 
   const update = (patch) => setConfig((prev) => ({ ...prev, ...patch }));
@@ -223,15 +270,15 @@ export default function SettingsPage() {
           <div className="settings-field-block settings-divider">
             <Field
               label="العمولة العامة الافتراضية (%)"
-              hint="تُطبّق على جميع المستخدمين ما لم تُخصَّص عمولة خاصة لحساب معيّن."
+              hint="5% افتراضياً وقابلة للتعديل من لوحة الإدارة. لا يعيد تغييرها تسعير سجلات تاريخية تلقائياً."
             >
               <Input
                 type="number"
                 min="0"
                 step="0.1"
                 inputMode="decimal"
-                value={config.default_commission_rate}
-                onChange={(e) => update({ default_commission_rate: parseFloat(e.target.value) || 0 })}
+                value={config.default_commission_rate ?? ''}
+                onChange={(e) => update({ default_commission_rate: e.target.value === '' ? null : Number(e.target.value) })}
                 className="max-w-[10rem]"
               />
             </Field>

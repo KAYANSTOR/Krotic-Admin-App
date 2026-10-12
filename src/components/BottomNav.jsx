@@ -6,7 +6,7 @@ import {
   Settings,
   Users,
 } from 'lucide-react';
-import { loadRoute } from '../lib/routeLoaders';
+import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
 /** تسميات قصيرة لتظهر كل العناصر دفعة واحدة بدون تمرير أفقي. */
 const navItems = [
@@ -18,7 +18,7 @@ const navItems = [
 ];
 
 function preloadRoute(path) {
-  loadRoute(path).catch((error) => console.debug('Route preloading skipped:', error));
+  requestRoutePreload(path).catch((error) => console.debug('Route preloading skipped:', error));
 }
 
 export default function BottomNav() {

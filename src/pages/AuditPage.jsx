@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { collection, getDocs, query, orderBy, limit, startAfter } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ScrollText, Search, Download, Inbox, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -14,7 +14,6 @@ import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
 
-const FETCH_LIMIT = 200;
 const PAGE_SIZE = 30;
 const FILTER_STORAGE_KEY = 'krotak:audit-filter';
 
@@ -54,6 +53,26 @@ function loadSavedFilter() {
   }
 }
 
+export function mapAuditDocs(docs) {
+  return docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+}
+
+// Merge by id while preserving the server's orderBy order, including timestamp ties.
+export function mergeAuditLogs(existing, incoming) {
+  const merged = [...existing];
+  const indexById = new Map(merged.map((entry, index) => [entry.id, index]));
+  incoming.forEach((entry) => {
+    const existingIndex = indexById.get(entry.id);
+    if (existingIndex === undefined) {
+      indexById.set(entry.id, merged.length);
+      merged.push(entry);
+    } else {
+      merged[existingIndex] = entry;
+    }
+  });
+  return merged;
+}
+
 export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,31 +80,65 @@ export default function AuditPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [actionFilter, setActionFilter] = useState(loadSavedFilter);
   const [searchTerm, setSearchTerm] = useState('');
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const requestInFlight = useRef(false);
 
   const load = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setLoading(true);
     setError(null);
     try {
       const snapshot = await getDocs(
-        query(collection(db, 'admin_audit_logs'), orderBy('createdAtMs', 'desc'), limit(FETCH_LIMIT))
+        query(collection(db, 'admin_audit_logs'), orderBy('createdAtMs', 'desc'), limit(PAGE_SIZE))
       );
-      setLogs(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+      const page = mapAuditDocs(snapshot.docs);
+      setLogs(mergeAuditLogs([], page));
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
       setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching audit log:', err);
       setError('تعذر تحميل سجل العمليات. تحقق من قواعد Firestore ثم أعد المحاولة.');
+      setHasMore(false);
+    } finally {
+      requestInFlight.current = false;
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (requestInFlight.current || !hasMore || !lastDoc) return;
+    requestInFlight.current = true;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(db, 'admin_audit_logs'),
+          orderBy('createdAtMs', 'desc'),
+          startAfter(lastDoc),
+          limit(PAGE_SIZE)
+        )
+      );
+      const page = mapAuditDocs(snapshot.docs);
+      setLogs((current) => mergeAuditLogs(current, page));
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || lastDoc);
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+    } catch (err) {
+      console.error('Error fetching next audit page:', err);
+      setError('تعذر تحميل الصفحة التالية من السجل. أعد المحاولة.');
+    } finally {
+      requestInFlight.current = false;
+      setLoadingMore(false);
+    }
+  }, [hasMore, lastDoc]);
 
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [actionFilter, searchTerm]);
 
   useEffect(() => {
     try {
@@ -106,19 +159,13 @@ export default function AuditPage() {
     });
   }, [logs, actionFilter, searchTerm]);
 
-  const visibleLogs = useMemo(
-    () => filteredLogs.slice(0, visibleCount),
-    [filteredLogs, visibleCount]
-  );
-  const hasMore = filteredLogs.length > visibleLogs.length;
-
   const handleExport = useCallback(() => {
     if (!filteredLogs.length) {
       toast.error('لا توجد بيانات للتصدير');
       return;
     }
     downloadCsv(`audit-log-${csvStamp()}`, filteredLogs, [
-      { label: 'الوقت', value: (row) => formatDate(row.createdAtMs, { withTime: true }) },
+      { label: 'الوقت', value: (row) => formatDate(row.createdAtMs || row.createdAt, { withTime: true }) },
       { label: 'المدير', value: (row) => row.actorEmail || row.actorUid || '' },
       { label: 'الإجراء', value: (row) => auditActionLabel(row.action) },
       { label: 'الهدف', value: (row) => row.targetLabel || row.targetId || '' },
@@ -162,7 +209,7 @@ export default function AuditPage() {
       <Section
         eyebrow="التدقيق"
         title="العمليات الإدارية"
-        description={`أحدث ${FETCH_LIMIT} عملية مسجّلة`}
+        description="يعرض الصفحات المحمّلة فقط؛ استخدم «عرض المزيد» لجلب الصفحة التالية."
         action={
           <Button variant="secondary" size="sm" icon={Download} onClick={handleExport}>
             تصدير CSV
@@ -225,7 +272,7 @@ export default function AuditPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {visibleLogs.map((entry) => (
+                  {filteredLogs.map((entry) => (
                     <tr key={entry.id} className="hover:bg-surface-sunken transition-colors">
                       <td className="px-6 py-3 text-sm text-ink-soft" data-label="الوقت">
                         {formatDate(entry.createdAtMs || entry.createdAt, { withTime: true })}
@@ -250,16 +297,19 @@ export default function AuditPage() {
           </Card>
         )}
 
-        {filteredLogs.length > 0 && (
+        {logs.length > 0 && (
           <div className="list-footer">
             <p className="list-footer__count">
-              يُعرض {visibleLogs.length} من {filteredLogs.length} عملية
+              يُعرض {filteredLogs.length} من السجلات المطابقة ضمن {logs.length} سجل محمّل
             </p>
-            {hasMore && (
-              <Button variant="secondary" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
-                عرض المزيد
-              </Button>
-            )}
+            <Button
+              variant="secondary"
+              loading={loadingMore}
+              disabled={loadingMore || !hasMore || !lastDoc}
+              onClick={loadMore}
+            >
+              {loadingMore ? 'جارٍ تحميل الصفحة...' : hasMore ? 'عرض المزيد' : 'تم تحميل كل السجل'}
+            </Button>
           </div>
         )}
       </Section>

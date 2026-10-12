@@ -1,51 +1,59 @@
 import {
-  collection, count, doc, getAggregateFromServer, getDoc, getDocs, limit, orderBy, query, sum, Timestamp, where,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocs, getDocsFromServer, limit, orderBy, query, startAt, sum, Timestamp, where,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { toDate } from './format';
+import { mapWithConcurrency } from './mapWithConcurrency';
+import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
 
-const CACHE_TTL = 60_000;
-const LOCAL_CACHE_TTL = 15 * 60_000;
-const LOCAL_CACHE_PREFIX = 'krotak:admin-data:';
-const cache = new Map();
-const inFlight = new Map();
+const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
+const FAN_OUT_CONCURRENCY = 5;
 
-function readLocal(key) {
-  try {
-    const raw = window.localStorage.getItem(`${LOCAL_CACHE_PREFIX}${key}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.value == null || Date.now() - parsed.createdAt > LOCAL_CACHE_TTL) return null;
-    return parsed.value;
-  } catch { return null; }
+async function readCached(key, loader, options = {}) {
+  return adminDataCache.readCached(key, loader, options);
 }
-function writeLocal(key, value) {
-  try { window.localStorage.setItem(`${LOCAL_CACHE_PREFIX}${key}`, JSON.stringify({ createdAt: Date.now(), value })); } catch { /* optional */ }
+
+export function clearAdminDataCache(options) {
+  // This only removes the custom krotak:admin-data:* namespace. Firestore's
+  // native IndexedDB persistence is intentionally left intact.
+  adminDataCache.clear(options);
 }
-async function readCached(key, loader, { force = false } = {}) {
-  const cached = cache.get(key);
-  if (!force && cached && Date.now() - cached.createdAt < CACHE_TTL) return cached.value;
-  if (!force && inFlight.has(key)) return inFlight.get(key);
-  if (!force && !cached) {
-    const localValue = readLocal(key);
-    if (localValue != null) {
-      cache.set(key, { value: localValue, createdAt: Date.now() - CACHE_TTL - 1 });
-      void readCached(key, loader, { force: true }).catch(() => {
-        // Keep serving the last known local snapshot when offline.
-      });
-      return localValue;
+
+export function invalidateAdminDataCache(keys, uid) {
+  adminDataCache.invalidate(keys, uid);
+}
+
+export function invalidateAdminUserData(uid) {
+  invalidateAdminDataCache([
+    'all-users', 'users-with-billing', 'dashboard-stats', 'network-sales',
+    'users-for-select', `aggregate:${uid}`, `network-meta:${uid}`,
+  ]);
+}
+
+export function invalidateAdminGlobalConfigData() {
+  invalidateAdminDataCache([
+    'global-config', 'users-with-billing', 'dashboard-stats', 'network-sales',
+  ]);
+}
+
+export function getAdminDataCacheState(key, uid = auth.currentUser?.uid) {
+  return adminDataCache.getState(key, uid);
+}
+
+export function subscribeAdminDataCache(key, listener, uid = auth.currentUser?.uid) {
+  return adminDataCache.subscribe(key, listener, uid);
+}
+
+async function mapUsersWithLimit(users, label, mapper) {
+  return mapWithConcurrency(users, FAN_OUT_CONCURRENCY, async (user, index) => {
+    try {
+      return await mapper(user, index);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`${label} failed for user ${user.uid}: ${detail}`, { cause: error });
     }
-  }
-  const request = Promise.resolve().then(loader).then((value) => {
-    cache.set(key, { value, createdAt: Date.now() });
-    writeLocal(key, value);
-    inFlight.delete(key);
-    return value;
-  }).catch((error) => { inFlight.delete(key); throw error; });
-  inFlight.set(key, request);
-  return request;
+  });
 }
-export function clearAdminDataCache() { cache.clear(); inFlight.clear(); }
 
 export async function fetchGlobalConfig(options) {
   return readCached('global-config', async () => {
@@ -53,28 +61,72 @@ export async function fetchGlobalConfig(options) {
     return snap.exists() ? snap.data() : { default_commission_rate: 5, is_app_active: true };
   }, options);
 }
-export function resolveCommissionRate(userData, globalRate) {
-  return userData?.commission_rate != null && userData.commission_rate > 0 ? userData.commission_rate : (globalRate ?? 5);
+
+function nestedReadOptions(options, loaderContext) {
+  return { ...(options || {}), force: Boolean(options?.force || loaderContext?.force) };
 }
-async function fetchNetworkMeta(uid) {
+
+async function fetchNetworkMeta(uid, options) {
   return readCached(`network-meta:${uid}`, async () => {
     try {
       const snap = await getDoc(doc(db, 'networks', uid, '_metadata', 'info'));
       if (snap.exists()) { const data = snap.data(); return { networkName: data.name || '', phoneNumber: data.phoneNumber || '' }; }
     } catch { /* optional */ }
     return { networkName: '', phoneNumber: '' };
-  });
+  }, options);
 }
-async function fetchSalesForUser(uid, recentOnly = false) {
+async function fetchSalesForUser(uid, recentOnly = false, options) {
   return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async () => {
     const ref = collection(db, 'networks', uid, 'sales');
     const snap = await getDocs(recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref);
     return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
-  });
+  }, options);
 }
-async function fetchPaymentsForUser(uid) {
-  const snap = await getDocs(collection(db, 'networks', uid, 'payments'));
-  return snap.docs.reduce((sum, paymentDoc) => sum + (Number(paymentDoc.data().amount) || 0), 0);
+function mergeByDocumentId(previous = [], incoming = []) {
+  const records = new Map(previous.map((record) => [record.id, record]));
+  incoming.forEach((record) => records.set(record.id, record));
+  return [...records.values()];
+}
+function latestTimestampCursor(records, field) {
+  let millis = null;
+  records.forEach((record) => {
+    const date = toDate(record[field]);
+    const value = date?.getTime();
+    if (Number.isFinite(value) && (millis === null || value > millis)) millis = value;
+  });
+  return millis === null ? null : { millis };
+}
+export async function fetchUserBillingHistory(uid, options) {
+  return readCached(`billing-history:${uid}`, async ({ cachedValue, force } = {}) => {
+    const salesRef = collection(db, 'networks', uid, 'sales');
+    const paymentsRef = collection(db, 'networks', uid, 'payments');
+    const salesCursor = Number(cachedValue?.salesCursor?.millis);
+    const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
+    const incrementalSales = !force && Array.isArray(cachedValue?.sales) && Number.isFinite(salesCursor);
+    const incrementalPayments = !force && Array.isArray(cachedValue?.payments) && Number.isFinite(paymentsCursor);
+    const salesConstraints = [where('status', '==', 'COMPLETED'), orderBy('createdAt', 'asc')];
+    const paymentConstraints = [orderBy('timestamp', 'asc')];
+    if (incrementalSales) salesConstraints.push(startAt(Timestamp.fromMillis(salesCursor)));
+    if (incrementalPayments) paymentConstraints.push(startAt(Timestamp.fromMillis(paymentsCursor)));
+    const readQuery = (firestoreQuery) => (force
+      ? getDocsFromServer(firestoreQuery)
+      : getDocs(firestoreQuery));
+    const [salesSnapshot, paymentsSnapshot] = await Promise.all([
+      readQuery(query(salesRef, ...salesConstraints)),
+      readQuery(query(paymentsRef, ...paymentConstraints)),
+    ]);
+    const incomingSales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+    const incomingPayments = paymentsSnapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() }));
+    const sales = mergeByDocumentId(incrementalSales ? cachedValue.sales : [], incomingSales);
+    const payments = mergeByDocumentId(incrementalPayments ? cachedValue.payments : [], incomingPayments);
+    const history = {
+      sales,
+      payments,
+      salesCursor: latestTimestampCursor(sales, 'createdAt'),
+      paymentsCursor: latestTimestampCursor(payments, 'timestamp'),
+    };
+    return force ? withAdminDataCacheMetadata(history, { fromCache: false }) : history;
+  }, options);
 }
 export async function fetchAllUsers(options) {
   return readCached('all-users', async () => {
@@ -86,13 +138,13 @@ function monthKey(input) {
   const date = toDate(input);
   return date && !Number.isNaN(date.getTime()) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : null;
 }
-function buildMonthlyBuckets(sales, rate) {
+function buildMonthlyBuckets(sales) {
   const buckets = {};
   sales.forEach((sale) => {
     const key = monthKey(sale.createdAt); if (!key) return;
-    const bucket = buckets[key] || { face: 0, earnings: 0, count: 0 };
+    const bucket = buckets[key] || { face: 0, count: 0 };
     const face = Number(sale.faceValue) || 0;
-    bucket.face += face; bucket.earnings += face * rate; bucket.count += 1; buckets[key] = bucket;
+    bucket.face += face; bucket.count += 1; buckets[key] = bucket;
   });
   return buckets;
 }
@@ -100,8 +152,7 @@ function sixMonthsAgo() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() - 5, 1);
 }
-async function fetchAggregateFromFirestore(uid, user, globalCommission) {
-  const rate = resolveCommissionRate(user, globalCommission) / 100;
+async function fetchAggregateFromFirestore(uid) {
   const salesRef = collection(db, 'networks', uid, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
   const paymentsRef = collection(db, 'networks', uid, 'payments');
@@ -116,6 +167,7 @@ async function fetchAggregateFromFirestore(uid, user, globalCommission) {
   const totalTransactions = Number(salesAggregate.data().totalTransactions) || 0;
   const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
   let monthly = {};
+  let monthlyAvailable = true;
   try {
     const recentSalesSnapshot = await getDocs(query(
       completedQuery,
@@ -123,34 +175,48 @@ async function fetchAggregateFromFirestore(uid, user, globalCommission) {
       orderBy('createdAt', 'asc'),
     ));
     const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
-    monthly = buildMonthlyBuckets(recentSales, rate);
+    monthly = buildMonthlyBuckets(recentSales);
   } catch (error) {
-    // The dashboard totals remain usable while a newly deployed composite index settles.
+    // Keep all-time totals usable, but explicitly mark the monthly chart incomplete.
+    monthlyAvailable = false;
     console.warn(`تعذر تحميل مبيعات الأشهر الأخيرة للشبكة ${uid}:`, error);
   }
   return {
     totalFaceValue,
-    totalAdminEarnings: totalFaceValue * rate,
     totalTransactions,
     totalPaid,
     monthly,
+    monthlyAvailable,
     source: 'aggregation',
   };
 }
-async function fetchAggregate(uid, user, globalCommission) {
-  const snap = await getDoc(doc(db, 'admin_aggregates', uid));
-  if (snap.exists()) return { ...snap.data(), source: 'aggregate' };
-  return fetchAggregateFromFirestore(uid, user, globalCommission);
+async function fetchAggregate(uid, options) {
+  return readCached(`aggregate:${uid}`, async () => {
+    const snap = await getDoc(doc(db, 'admin_aggregates', uid));
+    const aggregate = snap.exists()
+      ? { ...snap.data(), monthlyAvailable: Object.hasOwn(snap.data(), 'monthly'), source: 'aggregate' }
+      : await fetchAggregateFromFirestore(uid);
+    const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {}).map(([month, bucket]) => [
+      month,
+      { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
+    ]));
+    const { totalAdminEarnings: _unverifiedEarnings, ...reportedAggregate } = aggregate;
+    return {
+      ...reportedAggregate,
+      monthly,
+    };
+  }, options);
 }
-async function enrichUserForBilling(user, globalCommission) {
-  const [meta, aggregate] = await Promise.all([fetchNetworkMeta(user.uid), fetchAggregate(user.uid, user, globalCommission)]);
-  return { ...user, ...meta, balance: (Number(aggregate.totalAdminEarnings) || 0) - (Number(aggregate.totalPaid) || 0), totalSales: Number(aggregate.totalFaceValue) || 0, totalTransactions: Number(aggregate.totalTransactions) || 0, totalPaid: Number(aggregate.totalPaid) || 0 };
+async function enrichUserForBilling(user, options) {
+  const [meta, aggregate] = await Promise.all([fetchNetworkMeta(user.uid, options), fetchAggregate(user.uid, options)]);
+  return { ...user, ...meta, reportedSalesValue: Number(aggregate.totalFaceValue) || 0, reportedTransactions: Number(aggregate.totalTransactions) || 0, recordedPayments: Number(aggregate.totalPaid) || 0 };
 }
 export async function fetchUsersWithBilling(options) {
-  return readCached('users-with-billing', async () => {
-    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
-    const globalCommission = config.default_commission_rate || 5;
-    return { users: await Promise.all(users.map((user) => enrichUserForBilling(user, globalCommission))), globalConfig: config, globalCommission };
+  return readCached('users-with-billing', async (loaderContext) => {
+    const childOptions = nestedReadOptions(options, loaderContext);
+    const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
+    const enrichedUsers = await mapUsersWithLimit(users, 'Billing data', (user) => enrichUserForBilling(user, childOptions));
+    return { users: enrichedUsers, globalConfig: config };
   }, options);
 }
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -160,38 +226,40 @@ function recentMonths(buckets, count) {
   for (let offset = count - 1; offset >= 0; offset -= 1) {
     const cursor = new Date(now.getFullYear(), now.getMonth() - offset, 1);
     const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
-    months.push({ month: key, label: MONTH_LABELS[cursor.getMonth()], ...(buckets[key] || { face: 0, earnings: 0, count: 0 }) });
+    months.push({ month: key, label: MONTH_LABELS[cursor.getMonth()], ...(buckets[key] || { face: 0, count: 0 }) });
   }
   return months;
 }
 export async function fetchDashboardStats(options) {
-  return readCached('dashboard-stats', async () => {
-    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]);
-    const rate = config.default_commission_rate || 5;
-    const aggregates = await Promise.all(users.map((user) => fetchAggregate(user.uid, user, rate)));
-    const totals = { totalSales: 0, totalAdminEarnings: 0, totalTransactions: 0 }; const buckets = {};
+  return readCached('dashboard-stats', async (loaderContext) => {
+    const childOptions = nestedReadOptions(options, loaderContext);
+    const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
+    const aggregates = await mapUsersWithLimit(users, 'Dashboard aggregate', (user) => fetchAggregate(user.uid, childOptions));
+    const totals = { totalSales: 0, totalTransactions: 0 }; const buckets = {};
     aggregates.forEach((aggregate) => {
-      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalAdminEarnings += Number(aggregate.totalAdminEarnings) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0;
-      Object.entries(aggregate.monthly || {}).forEach(([key, value]) => { const b = buckets[key] || { face: 0, earnings: 0, count: 0 }; b.face += Number(value.face) || 0; b.earnings += Number(value.earnings) || 0; b.count += Number(value.count) || 0; buckets[key] = b; });
+      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0;
+      Object.entries(aggregate.monthly || {}).forEach(([key, value]) => { const b = buckets[key] || { face: 0, count: 0 }; b.face += Number(value.face) || 0; b.count += Number(value.count) || 0; buckets[key] = b; });
     });
     const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5; const now = Date.now(); let expiredUsers = 0; let expiringSoonUsers = 0; let trialExpiringSoonUsers = 0;
     users.forEach((user) => { const end = toDate(user.subscription_end_date); if (!end || Number.isNaN(end.getTime())) return; const remaining = end.getTime() - now; if (remaining < 0) expiredUsers += 1; else if (remaining <= warningDays * DAY_MS) { expiringSoonUsers += 1; if (user.is_trial === true) trialExpiringSoonUsers += 1; } });
-    return { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6) };
+    return { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6), monthlyDataWarning: aggregates.some((aggregate) => aggregate.monthlyAvailable === false) };
   }, options);
 }
 export async function fetchNetworkSales(options) {
-  return readCached('network-sales', async () => {
-    const [config, users] = await Promise.all([fetchGlobalConfig(options), fetchAllUsers(options)]); const globalCommission = config.default_commission_rate || 5;
-    const networks = await Promise.all(users.map(async (user) => {
-      const [meta, aggregate, sales] = await Promise.all([fetchNetworkMeta(user.uid), fetchAggregate(user.uid, user, globalCommission), fetchSalesForUser(user.uid, true)]);
+  return readCached('network-sales', async (loaderContext) => {
+    const childOptions = nestedReadOptions(options, loaderContext);
+    const users = await fetchAllUsers(childOptions);
+    const networks = await mapUsersWithLimit(users, 'Network sales', async (user) => {
+      const [meta, aggregate, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchAggregate(user.uid, childOptions), fetchSalesForUser(user.uid, true, childOptions)]);
       if (!sales.length && !aggregate.totalTransactions) return null;
-      return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, commissionRate: resolveCommissionRate(user, globalCommission), isCustomRate: user.commission_rate != null && user.commission_rate > 0, sales, aggregate };
-    }));
+      return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, aggregate };
+    });
     return networks.filter(Boolean);
   }, options);
 }
 export async function fetchUsersForSelect(options) {
-  return readCached('users-for-select', async () => {
-    const users = await fetchAllUsers(options); return Promise.all(users.map(async (user) => { const meta = await fetchNetworkMeta(user.uid); return { uid: user.uid, name: meta.networkName || user.uid }; }));
+  return readCached('users-for-select', async (loaderContext) => {
+    const childOptions = nestedReadOptions(options, loaderContext);
+    const users = await fetchAllUsers(childOptions); return mapUsersWithLimit(users, 'User selector', async (user) => { const meta = await fetchNetworkMeta(user.uid, childOptions); return { uid: user.uid, name: meta.networkName || user.uid }; });
   }, options);
 }

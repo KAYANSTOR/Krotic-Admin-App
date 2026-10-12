@@ -1,8 +1,13 @@
 // src/pages/UsersPage.jsx
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { fetchUsersWithBilling, clearAdminDataCache } from '../lib/adminData';
+import {
+  fetchUsersWithBilling,
+  getAdminDataCacheState,
+  invalidateAdminUserData,
+  subscribeAdminDataCache,
+} from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download,
@@ -15,6 +20,7 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
@@ -52,7 +58,6 @@ const FILTERS = [
   { value: 'official', label: 'رسمي' },
   { value: 'expiring', label: 'ينتهي قريباً' },
   { value: 'expired', label: 'منتهي' },
-  { value: 'debt', label: 'عليهم ديون' },
   { value: 'blocked', label: 'محظور' },
 ];
 
@@ -68,28 +73,44 @@ export default function UsersPage() {
   const [billingUser, setBillingUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [cacheState, setCacheState] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
+  const latestRequestId = useRef(0);
 
   const fetchData = useCallback(async ({ force = false } = {}) => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     setError(null);
-    if (force) clearAdminDataCache();
     try {
-      const { users: usersData, globalConfig: config } = await fetchUsersWithBilling();
+      const { users: usersData, globalConfig: config } = await fetchUsersWithBilling({ force });
+      if (requestId !== latestRequestId.current) return;
       setGlobalConfig(config);
       setUsers(usersData);
       setUpdatedAt(Date.now());
+      setCacheState(getAdminDataCacheState('users-with-billing'));
     } catch (err) {
+      if (requestId !== latestRequestId.current) return;
       console.error('Error fetching data:', err);
       setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
       toast.error('خطأ في تحميل بيانات المستخدمين');
+    } finally {
+      if (requestId === latestRequestId.current) setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  useEffect(() => subscribeAdminDataCache('users-with-billing', (data, state) => {
+    setGlobalConfig(data.globalConfig);
+    setUsers(data.users);
+    setUpdatedAt(Date.now());
+    setCacheState(state);
+    setError(null);
+    setLoading(false);
+  }), []);
 
   useEffect(() => {
     fetchData();
+    return () => { latestRequestId.current += 1; };
   }, [fetchData]);
 
   const handleToggleActive = (user) => {
@@ -103,6 +124,7 @@ export default function UsersPage() {
       action: async () => {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
+          invalidateAdminUserData(user.uid);
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
           logAdminAction({
             action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
@@ -127,6 +149,7 @@ export default function UsersPage() {
       action: async () => {
         try {
           await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
+          invalidateAdminUserData(user.uid);
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
           logAdminAction({
             action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
@@ -159,6 +182,7 @@ export default function UsersPage() {
         try {
           const newTimestamp = Timestamp.fromDate(lastDayOfNextMonth);
           await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
+          invalidateAdminUserData(user.uid);
           setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
           logAdminAction({
             action: AUDIT_ACTIONS.USER_RENEW,
@@ -183,6 +207,7 @@ export default function UsersPage() {
         firestoreUpdates.subscription_end_date = Timestamp.fromDate(new Date(updates.subscription_end_date));
       }
       await updateDoc(doc(db, 'users', uid), firestoreUpdates);
+      invalidateAdminUserData(uid);
       setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
       setEditingUser(null);
       const edited = users.find((u) => u.uid === uid);
@@ -221,7 +246,6 @@ export default function UsersPage() {
       if (filterType === 'trial') return matchesSearch && user.is_trial === true;
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
-      if (filterType === 'debt') return matchesSearch && user.balance > 0;
       if (filterType === 'expired') return matchesSearch && isExpired(user.subscription_end_date);
       if (filterType === 'expiring') {
         if (!matchesSearch || isExpired(user.subscription_end_date)) return false;
@@ -256,12 +280,20 @@ export default function UsersPage() {
   const stats = useMemo(() => {
     const total = users.length;
     const trial = users.filter((u) => u.is_trial === true).length;
-    const debt = users.filter((u) => u.balance > 0).length;
+    const active = users.filter((u) => u.is_active !== false).length;
     const blocked = users.filter((u) => u.is_active === false).length;
-    return { total, trial, debt, blocked };
+    return { total, trial, active, blocked };
   }, [users]);
 
-  const defaultCommission = globalConfig?.default_commission_rate || 5;
+  const configuredGlobalCommission = Number(globalConfig?.default_commission_rate);
+  const defaultCommission = globalConfig?.default_commission_rate != null
+    && globalConfig.default_commission_rate !== ''
+    && Number.isFinite(configuredGlobalCommission)
+    ? configuredGlobalCommission
+    : 5;
+  const hasCustomCommission = (user) => user.commission_rate != null
+    && user.commission_rate !== ''
+    && Number.isFinite(Number(user.commission_rate));
 
   const handleExportUsers = useCallback(() => {
     if (!filteredUsers.length) {
@@ -273,8 +305,7 @@ export default function UsersPage() {
       { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
       { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
       { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
-      { label: 'نسبة العمولة', value: (u) => (u.commission_rate > 0 ? u.commission_rate : defaultCommission) },
-      { label: 'الديون', value: (u) => Math.round(Number(u.balance) || 0) },
+      { label: 'نسبة الإعداد الحالية (لا تثبت عمولة تاريخية)', value: (u) => (hasCustomCommission(u) ? u.commission_rate : defaultCommission) },
       { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
       { label: 'معرّف الحساب', value: (u) => u.uid },
     ]);
@@ -307,7 +338,7 @@ export default function UsersPage() {
         title="إدارة المستخدمين والفوترة"
         description={`${users.length} مستخدم مسجل`}
         actions={
-          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchData({ force: true })} />
+          <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
         }
       />
 
@@ -327,9 +358,11 @@ export default function UsersPage() {
       <div className="grid-kpi">
         <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.total)} icon={Users} tone="brand" iconStart />
         <StatCard title="حسابات تجريبية" value={formatNumber(stats.trial)} icon={Activity} tone="warning" iconStart />
-        <StatCard title="عليهم ديون" value={formatNumber(stats.debt)} icon={DollarSign} tone="danger" iconStart />
+        <StatCard title="حسابات نشطة" value={formatNumber(stats.active)} icon={UserCheck} tone="success" iconStart />
         <StatCard title="محظورون" value={formatNumber(stats.blocked)} icon={Ban} tone="neutral" iconStart />
       </div>
+
+      <FinancialVerificationNotice className="mb-6" />
 
       <Section
         eyebrow="السجل"
@@ -395,8 +428,7 @@ export default function UsersPage() {
                   <tr className="table-header">
                     <th className="text-right px-6 py-4">الشبكة</th>
                     <th className="text-right px-6 py-4">النوع</th>
-                    <th className="text-right px-6 py-4">العمولة</th>
-                    <th className="text-right px-6 py-4">الديون (ريال يمني)</th>
+                    <th className="text-right px-6 py-4">النسبة المضبوطة حالياً</th>
                     <th className="text-right px-6 py-4">تاريخ التصفية</th>
                     <th className="text-right px-6 py-4">الإجراءات السريعة</th>
                   </tr>
@@ -417,14 +449,9 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-ink-soft" data-label="العمولة">
-                        {user.commission_rate != null && user.commission_rate > 0
+                        {hasCustomCommission(user)
                           ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
-                          : `${defaultCommission}% (عامة)`}
-                      </td>
-                      <td className="px-6 py-4" data-label="الديون">
-                        <span className={`font-bold ${user.balance > 0 ? 'text-danger-ink' : 'text-ink'}`}>
-                          {formatNumber(user.balance)}
-                        </span>
+                          : defaultCommission != null ? `${defaultCommission}% (عامة)` : 'غير محددة'}
                       </td>
                       <td className="px-6 py-4" data-label="تاريخ التصفية">
                         <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-danger-ink font-semibold' : 'text-ink-soft'}`}>
@@ -470,7 +497,6 @@ export default function UsersPage() {
           <div className="users-cards">
             {visibleUsers.map((user) => {
               const expired = isExpired(user.subscription_end_date);
-              const hasDebt = user.balance > 0;
               return (
                 <article key={user.uid} className="user-card">
                   <header className="user-card__head">
@@ -486,17 +512,11 @@ export default function UsersPage() {
 
                   <dl className="user-card__meta">
                     <div className="user-card__meta-item">
-                      <dt>العمولة</dt>
+                      <dt>النسبة المضبوطة حالياً</dt>
                       <dd>
-                        {user.commission_rate != null && user.commission_rate > 0
+                        {hasCustomCommission(user)
                           ? <span className="text-primary-600 font-bold">{user.commission_rate}% (خاصة)</span>
-                          : <span>{defaultCommission}% (عامة)</span>}
-                      </dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>الديون</dt>
-                      <dd className={hasDebt ? 'text-danger-ink font-bold' : 'font-bold'}>
-                        {formatNumber(user.balance)}
+                          : <span>{defaultCommission != null ? `${defaultCommission}% (عامة)` : 'غير محددة'}</span>}
                       </dd>
                     </div>
                     <div className="user-card__meta-item">
@@ -565,16 +585,14 @@ export default function UsersPage() {
           onClose={() => setEditingUser(null)}
           user={editingUser}
           onSave={handleSaveEdit}
-          globalCommission={defaultCommission}
         />
       )}
 
       {billingUser && (
         <UserBillingModal
           isOpen={!!billingUser}
-          onClose={() => { setBillingUser(null); fetchData({ force: true }); }}
+          onClose={() => setBillingUser(null)}
           user={billingUser}
-          globalCommission={defaultCommission}
         />
       )}
 

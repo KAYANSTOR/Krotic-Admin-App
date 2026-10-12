@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   collection, getDocs, doc, deleteDoc,
 } from 'firebase/firestore';
@@ -48,25 +48,31 @@ export default function AdminsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
   const { createAdmin, currentUser } = useAuth();
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     fetchAdmins();
+    return () => { latestRequestId.current += 1; };
   }, []);
 
   const fetchAdmins = async () => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     try {
       const adminsSnap = await getDocs(collection(db, 'Admins'));
+      if (requestId !== latestRequestId.current) return;
       const adminsData = [];
       adminsSnap.forEach((d) => adminsData.push({ id: d.id, ...d.data() }));
       adminsData.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       setAdmins(adminsData);
       setUpdatedAt(Date.now());
     } catch (error) {
+      if (requestId !== latestRequestId.current) return;
       console.error('Error fetching admins:', error);
       toast.error('خطأ في تحميل بيانات المدراء');
+    } finally {
+      if (requestId === latestRequestId.current) setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleCreate = async (e) => {

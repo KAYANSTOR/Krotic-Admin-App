@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  collection, getDocs, addDoc, doc, deleteDoc, serverTimestamp
+  collection, getDocs, addDoc, doc, deleteDoc, serverTimestamp, orderBy, limit, query
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
@@ -17,7 +17,40 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/notificationTemplates';
-import { fetchUsersForSelect, clearAdminDataCache } from '../lib/adminData';
+import { fetchUsersForSelect } from '../lib/adminData';
+
+const NOTIFICATION_PAGE_SIZE = 20;
+
+// Firestore timestamps, epoch values, and old date strings can coexist in this collection.
+export function toNotificationMillis(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (value instanceof Date) {
+    const millis = value.getTime();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  try {
+    if (typeof value.toMillis === 'function') {
+      const millis = value.toMillis();
+      return Number.isFinite(millis) ? millis : null;
+    }
+    if (typeof value.toDate === 'function') {
+      const millis = value.toDate().getTime();
+      return Number.isFinite(millis) ? millis : null;
+    }
+  } catch {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const millis = Date.parse(value);
+    return Number.isFinite(millis) ? millis : null;
+  }
+  return null;
+}
+
+export function notificationMillis(data) {
+  return toNotificationMillis(data?.timestamp) ?? toNotificationMillis(data?.createdAt);
+}
 
 export default function NotificationsPage() {
   const [type, setType] = useState('global');
@@ -28,6 +61,7 @@ export default function NotificationsPage() {
   const [users, setUsers] = useState([]);
   const [recentNotifications, setRecentNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -35,31 +69,55 @@ export default function NotificationsPage() {
   const [templates, setTemplates] = useState(() => loadTemplates());
   const [templateId, setTemplateId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     fetchData();
+    return () => { latestRequestId.current += 1; };
   }, []);
 
   const fetchData = async ({ force = false } = {}) => {
+    const requestId = ++latestRequestId.current;
     setLoadError(false);
-    if (force) clearAdminDataCache();
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const [usersData, notificationResult] = await Promise.all([
-        fetchUsersForSelect(),
-        getDocs(collection(db, 'app_settings', 'global_config', 'notifications')),
+        fetchUsersForSelect({ force }),
+        getDocs(query(
+          collection(db, 'app_settings', 'global_config', 'notifications'),
+          orderBy('timestamp', 'desc'),
+          limit(NOTIFICATION_PAGE_SIZE)
+        )),
       ]);
+      if (requestId !== latestRequestId.current) return;
       setUsers(usersData);
-      const notifs = notificationResult.docs
-        .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data(), type: 'global' }))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setRecentNotifications(notifs.slice(0, 20));
+      const notifs = notificationResult.docs.map((notificationDoc) => {
+        const data = notificationDoc.data();
+        return {
+          id: notificationDoc.id,
+          ...data,
+          type: 'global',
+          // Keep rendering safe for old records that used a Timestamp or createdAt.
+          displayTimestamp: notificationMillis(data),
+        };
+      });
+      setRecentNotifications(notifs);
       setUpdatedAt(Date.now());
     } catch (error) {
+      if (requestId !== latestRequestId.current) return;
       console.error('Error fetching data:', error);
       setLoadError(true);
-      toast.error('خطأ في تحميل البيانات');
+      toast.error(force ? 'تعذر تحديث سجل الإشعارات. أعد المحاولة.' : 'خطأ في تحميل البيانات. أعد المحاولة.');
+    } finally {
+      if (requestId === latestRequestId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-    setLoading(false);
   };
 
   const handleSend = async (e) => {
@@ -304,7 +362,7 @@ export default function NotificationsPage() {
         actions={
           <DataFreshness
             updatedAt={updatedAt}
-            refreshing={loading}
+            refreshing={loading || refreshing}
             onRefresh={() => fetchData({ force: true })}
           />
         }
@@ -317,7 +375,7 @@ export default function NotificationsPage() {
             <p className="notif-error__title">تعذّر تحميل البيانات</p>
             <p className="notif-error__msg">تحقق من الاتصال ثم أعد المحاولة.</p>
           </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => fetchData({ force: true })}>
             إعادة المحاولة
           </Button>
         </div>
@@ -517,7 +575,7 @@ export default function NotificationsPage() {
           <CardHeader
             icon={History}
             title="آخر الإشعارات العامة المرسلة"
-            description="أحدث 20 إشعارًا عامًا مسجّلًا في السجل."
+            description="أحدث 20 إشعارًا عامًا حسب timestamp من الخادم؛ قد لا تظهر السجلات القديمة التي تفتقد هذا الحقل."
             action={
               <Badge tone="brand" dot>
                 {recentNotifications.length}
@@ -558,7 +616,7 @@ export default function NotificationsPage() {
                         {notif.sentCount ?? 1} جهاز
                       </span>
                       <span className="notif-item__meta-item">
-                        {formatDate(notif.timestamp)}
+                        {formatDate(notif.displayTimestamp ?? notificationMillis(notif))}
                       </span>
                     </div>
                   </div>

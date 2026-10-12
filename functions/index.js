@@ -4,6 +4,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
+const crypto = require('crypto');
 
 initializeApp();
 const db = getFirestore();
@@ -16,76 +17,269 @@ function stringifyData(data) {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)]));
 }
 
-function hashToken(token) {
-  const crypto = require('crypto');
-  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 32);
+function chunksOf(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+const RETRYABLE_FCM_CODES = new Set([
+  'messaging/server-unavailable',
+  'messaging/internal-error',
+  'messaging/unknown-error',
+  'messaging/message-rate-exceeded',
+  'messaging/device-message-rate-exceeded',
+  'messaging/quota-exceeded',
+]);
+const INVALID_FCM_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
+
+async function sendTokensInBatches({
+  tokens,
+  tokenDocIds,
+  message,
+  sendEachForMulticast,
+  onAttempt = () => {},
+  onAccepted = () => {},
+  sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
+  maxAttempts = 3,
+}) {
+  let sent = 0;
+  let failed = 0;
+  const invalidDeviceDocIds = new Set();
+  for (const tokenBatch of chunksOf(tokens, 500)) {
+    let pendingTokens = tokenBatch;
+    for (let attempt = 1; pendingTokens.length && attempt <= maxAttempts; attempt += 1) {
+      const attemptedTokens = pendingTokens;
+      onAttempt();
+      const result = await sendEachForMulticast({ ...message, tokens: attemptedTokens });
+      onAccepted();
+      const responses = result?.responses;
+      const responseSuccesses = Array.isArray(responses) ? responses.filter((response) => response?.success === true).length : -1;
+      const responseFailures = Array.isArray(responses) ? responses.filter((response) => response?.success === false).length : -1;
+      const malformed = !Array.isArray(responses)
+        || responses.length !== attemptedTokens.length
+        || !Number.isInteger(result.successCount)
+        || !Number.isInteger(result.failureCount)
+        || result.successCount + result.failureCount !== attemptedTokens.length
+        || result.successCount !== responseSuccesses
+        || result.failureCount !== responseFailures
+        || responses.some((response) => !response
+          || typeof response.success !== 'boolean'
+          || (response.success === false && typeof response.error?.code !== 'string'));
+      if (malformed) {
+        throw new Error('fcm_malformed_multicast_response');
+      }
+      const retryTokens = [];
+      result.responses.forEach((response, index) => {
+        if (response.success) {
+          sent += 1;
+          return;
+        }
+        const code = response.error?.code;
+        if (INVALID_FCM_TOKEN_CODES.has(code)) {
+          failed += 1;
+          (tokenDocIds.get(attemptedTokens[index]) || []).forEach((docId) => invalidDeviceDocIds.add(docId));
+        } else if (RETRYABLE_FCM_CODES.has(code) && attempt < maxAttempts) {
+          retryTokens.push(attemptedTokens[index]);
+        } else {
+          failed += 1;
+        }
+      });
+      pendingTokens = retryTokens;
+      if (pendingTokens.length && attempt < maxAttempts) await sleep(250 * (2 ** (attempt - 1)));
+    }
+  }
+  return { sent, failed, invalidDeviceDocIds: [...invalidDeviceDocIds] };
+}
+
+async function deleteInvalidDeviceDocs(uid, docIds) {
+  const deviceCollection = db.collection('users').doc(uid).collection('devices');
+  for (const idBatch of chunksOf(docIds, 450)) {
+    const batch = db.batch();
+    idBatch.forEach((docId) => batch.delete(deviceCollection.doc(docId)));
+    await batch.commit();
+  }
+}
+
+const DISPATCH_LEASE_MS = 10 * 60 * 1000;
+const TERMINAL_DISPATCH_STATUSES = new Set(['sent', 'partial', 'no_devices', 'rejected', 'failed', 'delivery_uncertain']);
+
+function millis(value) {
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  return Number(value) || 0;
+}
+
+/**
+ * Claims a request before any FCM call. Only a stale processing lease is
+ * recoverable; a delivery outcome that crossed the FCM boundary is terminal.
+ */
+async function claimDispatchRequest(snapshot, { firestore = db, now = Date.now(), leaseMs = DISPATCH_LEASE_MS } = {}) {
+  return firestore.runTransaction(async (transaction) => {
+    const currentSnap = await transaction.get(snapshot.ref);
+    if (!currentSnap.exists) return null;
+    const request = currentSnap.data() || {};
+    const status = String(request.status || '');
+    if (TERMINAL_DISPATCH_STATUSES.has(status)) return null;
+
+    const scheduledAt = Number(request.scheduledAt) || 0;
+    if (scheduledAt > now) {
+      if (status !== 'scheduled') transaction.update(snapshot.ref, { status: 'scheduled' });
+      return null;
+    }
+
+    const leaseUntil = millis(request.dispatchLeaseUntil);
+    if (status === 'processing' && leaseUntil > now) return null;
+
+    const claimId = crypto.randomUUID();
+    transaction.update(snapshot.ref, {
+      status: 'processing',
+      dispatchClaimId: claimId,
+      dispatchAttempt: (Number(request.dispatchAttempt) || 0) + 1,
+      dispatchClaimedAt: now,
+      dispatchLeaseUntil: now + leaseMs,
+      deliveryUncertain: false,
+    });
+    return { claimId, request, leaseUntil: now + leaseMs };
+  });
+}
+
+async function updateClaimedRequest(ref, claim, patch, { firestore = db, fieldValue = FieldValue, delivery } = {}) {
+  return firestore.runTransaction(async (transaction) => {
+    const currentSnap = await transaction.get(ref);
+    const current = currentSnap.exists ? currentSnap.data() || {} : {};
+    if (!currentSnap.exists || current.dispatchClaimId !== claim.claimId || current.status !== 'processing') return false;
+    transaction.update(ref, {
+      ...patch,
+      dispatchLeaseUntil: null,
+      updatedAt: fieldValue.serverTimestamp(),
+    });
+    if (delivery) {
+      transaction.set(firestore.collection('notification_deliveries').doc(ref.id), delivery, { merge: true });
+    }
+    return true;
+  });
+}
+
+async function schedulePreFcmRetry(ref, claim, error, { firestore = db, fieldValue = FieldValue, now = Date.now() } = {}) {
+  const attempt = Math.max(1, Number(claim.request?.dispatchAttempt) || 1);
+  const delayMs = Math.min(60_000 * (2 ** Math.min(attempt - 1, 5)), 30 * 60_000);
+  return updateClaimedRequest(ref, claim, {
+    status: 'scheduled',
+    scheduledAt: now + delayMs,
+    error: String(error.message || error),
+  }, { firestore, fieldValue });
+}
+
+/**
+ * FCM does not provide exactly-once delivery. A network error while sending or
+ * persisting the result leaves delivery uncertain; the
+ * request is marked terminal delivery_uncertain so a scheduler does not resend
+ * successful batches and create duplicate notifications. An administrator may
+ * inspect and manually resolve that status; FCM itself cannot guarantee exactly once.
+ */
+async function markDeliveryUncertain(ref, claim, error, { firestore = db } = {}) {
+  return firestore.runTransaction(async (transaction) => {
+    const currentSnap = await transaction.get(ref);
+    const current = currentSnap.exists ? currentSnap.data() || {} : {};
+    if (!currentSnap.exists || current.dispatchClaimId !== claim.claimId || current.status !== 'processing') return false;
+    transaction.update(ref, {
+      status: 'delivery_uncertain',
+      deliveryUncertain: true,
+      error: 'fcm_outcome_uncertain',
+      errorDetail: String(error.message || error),
+      dispatchLeaseUntil: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
 }
 
 /**
  * ينفّذ طلب إشعار واحد ويسجّل النتيجة. مشترك بين الإرسال الفوري والمُجدوَل.
  */
 async function dispatchRequest(snapshot) {
-  const request = snapshot.data();
-  if (!request) return;
+  const initialRequest = snapshot.data();
+  if (!initialRequest) return;
   const requestId = snapshot.id;
-  const title = String(request.title || '').trim();
-  const body = String(request.body || request.message || '').trim();
+  const title = String(initialRequest.title || '').trim();
+  const body = String(initialRequest.body || initialRequest.message || '').trim();
 
   if (!title || !body) {
     await snapshot.ref.update({ status: 'rejected', error: 'title_and_body_required' });
     return;
   }
 
-  // طلب مجدول لم يحن وقته بعد: يُترك بحالة scheduled ليلتقطه المُجدوِل.
-  const scheduledAt = Number(request.scheduledAt) || 0;
-  if (scheduledAt > Date.now()) {
-    await snapshot.ref.update({ status: 'scheduled' });
-    return;
-  }
+  const claim = await claimDispatchRequest(snapshot);
+  if (!claim) return;
+  const request = claim.request;
 
-  const base = { title, body, requestId, type: String(request.type || 'admin') };
+  const type = String(request.type || 'admin');
+  const data = { ...stringifyData(request.data), requestId: String(requestId), type };
   let message;
   let targetDescription = `topic:${DEFAULT_TOPIC}`;
-
-  if (request.audienceType === 'user' && request.targetUid) {
-    const devices = await db.collection('users').doc(request.targetUid).collection('devices').get();
-    const tokens = devices.docs.map((doc) => doc.data().token).filter(Boolean);
-    if (!tokens.length) {
-      await snapshot.ref.update({ status: 'no_devices', completedAt: FieldValue.serverTimestamp() });
-      return;
-    }
-    message = {
-      tokens: tokens.slice(0, 500),
-      notification: { title, body },
-      data: stringifyData(request.data),
-      android: { priority: 'high', notification: { channelId: ANDROID_CHANNEL_ID } },
-    };
-    targetDescription = `user:${request.targetUid}`;
-  } else {
-    message = {
-      topic: DEFAULT_TOPIC,
-      notification: { title, body },
-      data: stringifyData(request.data),
-      android: { priority: 'high', notification: { channelId: ANDROID_CHANNEL_ID } },
-    };
-  }
+  let fcmAccepted = false;
+  let fcmAttempted = false;
+  let sent = 0;
+  let failed = 0;
+  let invalidDeviceDocIds = [];
 
   try {
-    const result = message.tokens
-      ? await getMessaging().sendEachForMulticast(message)
-      : await getMessaging().send(message);
-    const sent = message.tokens ? result.successCount : 1;
-    const failed = message.tokens ? result.failureCount : 0;
+    if (request.audienceType === 'user' && request.targetUid) {
+      const devices = await db.collection('users').doc(request.targetUid).collection('devices').get();
+      const tokenDocIds = new Map();
+      devices.docs.forEach((deviceDoc) => {
+        const token = deviceDoc.data().token;
+        if (typeof token !== 'string' || !token) return;
+        const docIds = tokenDocIds.get(token) || [];
+        docIds.push(deviceDoc.id);
+        tokenDocIds.set(token, docIds);
+      });
+      const tokens = [...tokenDocIds.keys()];
+      if (!tokens.length) {
+        await updateClaimedRequest(snapshot.ref, claim, { status: 'no_devices', completedAt: FieldValue.serverTimestamp() });
+        return;
+      }
+      message = {
+        notification: { title, body },
+        data,
+        android: { priority: 'high', notification: { channelId: ANDROID_CHANNEL_ID } },
+      };
+      targetDescription = `user:${request.targetUid}`;
+      const result = await sendTokensInBatches({
+        tokens,
+        tokenDocIds,
+        message,
+        sendEachForMulticast: (payload) => getMessaging().sendEachForMulticast(payload),
+        onAttempt: () => { fcmAttempted = true; },
+        onAccepted: () => { fcmAccepted = true; },
+      });
+      sent = result.sent;
+      failed = result.failed;
+      invalidDeviceDocIds = result.invalidDeviceDocIds;
+    } else {
+      message = {
+        topic: DEFAULT_TOPIC,
+        notification: { title, body },
+        data,
+        android: { priority: 'high', notification: { channelId: ANDROID_CHANNEL_ID } },
+      };
+      fcmAttempted = true;
+      await getMessaging().send(message);
+      fcmAccepted = true;
+      sent = 1;
+    }
 
-    await snapshot.ref.update({
+    const committed = await updateClaimedRequest(snapshot.ref, claim, {
       status: failed ? 'partial' : 'sent',
       target: targetDescription,
       sent,
       failed,
       completedAt: FieldValue.serverTimestamp(),
-    });
-
-    await db.collection('notification_deliveries').doc(requestId).set({
+    }, { delivery: {
       requestId,
       title,
       body,
@@ -93,25 +287,31 @@ async function dispatchRequest(snapshot) {
       sent,
       failed,
       createdAt: FieldValue.serverTimestamp(),
-    });
+    } });
+    if (!committed) throw new Error('dispatch_claim_lost_after_fcm');
 
-    if (message.tokens && result.responses) {
-      const batch = db.batch();
-      result.responses.forEach((response, index) => {
-        if (!response.success && response.error?.code === 'messaging/registration-token-not-registered') {
-          batch.delete(
-            db.collection('users').doc(request.targetUid).collection('devices').doc(hashToken(message.tokens[index]))
-          );
-        }
-      });
-      await batch.commit();
+    if (invalidDeviceDocIds.length) {
+      try {
+        await deleteInvalidDeviceDocs(request.targetUid, invalidDeviceDocIds);
+      } catch (error) {
+        // Delivery is already recorded; device cleanup failure must not re-send FCM.
+        console.error('Unable to delete invalid device documents', requestId, error);
+      }
     }
   } catch (error) {
-    await snapshot.ref.update({
-      status: 'failed',
-      error: String(error.message || error),
-      completedAt: FieldValue.serverTimestamp(),
-    });
+    if (fcmAccepted || fcmAttempted) {
+      try {
+        await markDeliveryUncertain(snapshot.ref, claim, error);
+      } catch (uncertaintyError) {
+        console.error('Unable to persist delivery uncertainty', requestId, uncertaintyError);
+      }
+    } else {
+      try {
+        await schedulePreFcmRetry(snapshot.ref, claim, error);
+      } catch (failureStateError) {
+        console.error('Unable to schedule dispatch retry', requestId, failureStateError);
+      }
+    }
     throw error;
   }
 }
@@ -129,16 +329,24 @@ exports.dispatchNotificationRequest = onDocumentCreated(
 // المُجدوِل: يلتقط الطلبات المجدولة التي حان وقتها كل 5 دقائق.
 exports.dispatchScheduledNotifications = onSchedule('every 5 minutes', async () => {
   const now = Date.now();
-  const due = await db
-    .collection('notification_requests')
-    .where('status', '==', 'scheduled')
-    .where('scheduledAt', '<=', now)
-    .limit(25)
-    .get();
+  const [due, processing] = await Promise.all([
+    db.collection('notification_requests')
+      .where('status', '==', 'scheduled')
+      .where('scheduledAt', '<=', now)
+      .limit(25)
+      .get(),
+    // Only stale in-progress claims are recoverable. An uncertain FCM acceptance
+    // is terminal to avoid resending batches that may already have reached users.
+    db.collection('notification_requests').where('status', '==', 'processing').get(),
+  ]);
+  const staleProcessing = processing.docs
+    .filter((doc) => millis(doc.data()?.dispatchLeaseUntil) <= now)
+    .slice(0, 25);
+  const candidates = [...due.docs, ...staleProcessing];
 
-  if (due.empty) return;
+  if (!candidates.length) return;
 
-  for (const doc of due.docs) {
+  for (const doc of candidates) {
     try {
       await dispatchRequest(doc);
     } catch (error) {
@@ -159,87 +367,115 @@ function monthKey(value) {
   const date = dateFrom(value);
   return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : null;
 }
-function saleContribution(sale, commissionRate) {
-  if (!sale || sale.status !== 'COMPLETED') return { face: 0, earnings: 0, count: 0, month: null };
+function saleContribution(sale) {
+  if (!sale || sale.status !== 'COMPLETED') return { face: 0, count: 0, month: null };
   const face = numeric(sale.faceValue);
-  return { face, earnings: face * (numeric(commissionRate) / 100), count: 1, month: monthKey(sale.createdAt) };
+  return { face, count: 1, month: monthKey(sale.createdAt) };
 }
-function applySaleDelta(summary, before, after, commissionRate) {
+function hasSameSaleAggregateContribution(before, after) {
+  const oldPart = saleContribution(before);
+  const newPart = saleContribution(after);
+  return oldPart.face === newPart.face
+    && oldPart.count === newPart.count
+    && oldPart.month === newPart.month;
+}
+function applySaleDelta(summary, before, after) {
   const next = { ...summary, monthly: { ...(summary.monthly || {}) } };
-  const oldPart = saleContribution(before, commissionRate);
-  const newPart = saleContribution(after, commissionRate);
+  const oldPart = saleContribution(before);
+  const newPart = saleContribution(after);
   next.totalFaceValue = numeric(summary.totalFaceValue) - oldPart.face + newPart.face;
-  next.totalAdminEarnings = numeric(summary.totalAdminEarnings) - oldPart.earnings + newPart.earnings;
   next.totalTransactions = numeric(summary.totalTransactions) - oldPart.count + newPart.count;
   [oldPart, newPart].forEach((part, index) => {
     if (!part.month) return;
     const sign = index === 0 ? -1 : 1;
-    const bucket = next.monthly[part.month] || { face: 0, earnings: 0, count: 0 };
+    const bucket = next.monthly[part.month] || { face: 0, count: 0 };
     bucket.face = numeric(bucket.face) + sign * part.face;
-    bucket.earnings = numeric(bucket.earnings) + sign * part.earnings;
     bucket.count = numeric(bucket.count) + sign * part.count;
     if (bucket.count <= 0 && bucket.face <= 0) delete next.monthly[part.month];
     else next.monthly[part.month] = bucket;
   });
   return next;
 }
-async function commissionRateFor(uid) {
-  const [user, settings] = await Promise.all([
-    db.collection('users').doc(uid).get(),
-    db.collection('app_settings').doc('global_config').get(),
-  ]);
-  const userRate = user.exists ? numeric(user.data().commission_rate) : 0;
-  const globalRate = settings.exists ? numeric(settings.data().default_commission_rate) : 5;
-  return userRate > 0 ? userRate : (globalRate || 5);
+const PROCESSED_AGGREGATE_EVENT_COLLECTIONS = {
+  sale: 'processed_sale_aggregate_events',
+  payment: 'processed_payment_aggregate_events',
+};
+const EMPTY_AGGREGATE = { totalFaceValue: 0, totalTransactions: 0, totalPaid: 0, monthly: {} };
+
+function hashEventId(eventId) {
+  return crypto.createHash('sha256').update(String(eventId)).digest('hex');
 }
-async function updateAggregate(uid, updater) {
-  const ref = db.collection('admin_aggregates').doc(uid);
-  await db.runTransaction(async (transaction) => {
-    const snap = await transaction.get(ref);
-    const current = snap.exists ? snap.data() : { totalFaceValue: 0, totalAdminEarnings: 0, totalTransactions: 0, totalPaid: 0, monthly: {} };
-    transaction.set(ref, { ...updater(current), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+/**
+ * Idempotency marker and aggregate are committed in one Firestore transaction.
+ * Sale and payment markers intentionally live in different collections: an event
+ * id collision across trigger types must not suppress the other trigger.
+ */
+async function updateAggregateForEvent({ firestore = db, fieldValue = FieldValue, uid, eventType, eventId, updater }) {
+  if (!eventId) throw new Error(`Missing event id for ${eventType} aggregate update`);
+  const processedCollection = PROCESSED_AGGREGATE_EVENT_COLLECTIONS[eventType];
+  if (!processedCollection) throw new Error(`Unknown aggregate event type: ${eventType}`);
+  const aggregateRef = firestore.collection('admin_aggregates').doc(uid);
+  const processedRef = firestore.collection(processedCollection).doc(hashEventId(eventId));
+
+  return firestore.runTransaction(async (transaction) => {
+    const processedSnap = await transaction.get(processedRef);
+    if (processedSnap.exists) return false;
+    const aggregateSnap = await transaction.get(aggregateRef);
+    const current = aggregateSnap.exists ? aggregateSnap.data() : EMPTY_AGGREGATE;
+    const nextSummary = await updater(current, transaction, firestore);
+    transaction.set(aggregateRef, {
+      ...nextSummary,
+      updatedAt: fieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(processedRef, {
+      eventId: String(eventId),
+      eventType,
+      uid,
+      processedAt: fieldValue.serverTimestamp(),
+    }, { merge: false });
+    return true;
   });
 }
 exports.updateSaleAggregate = onDocumentWritten('networks/{uid}/sales/{saleId}', async (event) => {
   const before = event.data?.before.exists ? event.data.before.data() : null;
   const after = event.data?.after.exists ? event.data.after.data() : null;
-  if (!before && !after) return;
-  const rate = await commissionRateFor(event.params.uid);
-  await updateAggregate(event.params.uid, (summary) => applySaleDelta(summary, before, after, rate));
+  // Android currently upserts every completed local sale on session start.
+  // Ignore writes whose financial contribution is unchanged before reading any
+  // rate/aggregate documents or creating an event marker.
+  if ((!before && !after) || hasSameSaleAggregateContribution(before, after)) return;
+  await updateAggregateForEvent({
+    uid: event.params.uid,
+    eventType: 'sale',
+    eventId: event.id,
+    updater: (summary) => applySaleDelta(summary, before, after),
+  });
 });
 exports.updatePaymentAggregate = onDocumentWritten('networks/{uid}/payments/{paymentId}', async (event) => {
   const before = event.data?.before.exists ? event.data.before.data() : null;
   const after = event.data?.after.exists ? event.data.after.data() : null;
   const delta = numeric(after?.amount) - numeric(before?.amount);
-  if (delta) await updateAggregate(event.params.uid, (summary) => ({ ...summary, totalPaid: numeric(summary.totalPaid) + delta }));
+  if (delta === 0) return;
+  await updateAggregateForEvent({
+    uid: event.params.uid,
+    eventType: 'payment',
+    eventId: event.id,
+    updater: (summary) => ({ ...summary, totalPaid: numeric(summary.totalPaid) + delta }),
+  });
 });
 
-async function rebuildAggregate(uid) {
-  const [userSnap, settingsSnap, salesSnap, paymentsSnap] = await Promise.all([
-    db.collection('users').doc(uid).get(), db.collection('app_settings').doc('global_config').get(),
-    db.collection('networks').doc(uid).collection('sales').get(), db.collection('networks').doc(uid).collection('payments').get(),
-  ]);
-  const userRate = userSnap.exists ? numeric(userSnap.data().commission_rate) : 0;
-  const globalRate = settingsSnap.exists ? numeric(settingsSnap.data().default_commission_rate) : 5;
-  const rate = userRate > 0 ? userRate : (globalRate || 5);
-  const summary = { totalFaceValue: 0, totalAdminEarnings: 0, totalTransactions: 0, totalPaid: 0, monthly: {} };
-  salesSnap.forEach((sale) => {
-    const part = saleContribution(sale.data(), rate); summary.totalFaceValue += part.face; summary.totalAdminEarnings += part.earnings; summary.totalTransactions += part.count;
-    if (part.month) { const bucket = summary.monthly[part.month] || { face: 0, earnings: 0, count: 0 }; bucket.face += part.face; bucket.earnings += part.earnings; bucket.count += part.count; summary.monthly[part.month] = bucket; }
-  });
-  paymentsSnap.forEach((payment) => { summary.totalPaid += numeric(payment.data().amount); });
-  await db.collection('admin_aggregates').doc(uid).set({ ...summary, rebuiltAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-}
-exports.refreshAggregateOnUserChange = onDocumentWritten('users/{uid}', async (event) => {
-  const before = event.data?.before.exists ? event.data.before.data() : {};
-  const after = event.data?.after.exists ? event.data.after.data() : {};
-  if (numeric(before.commission_rate) !== numeric(after.commission_rate)) await rebuildAggregate(event.params.uid);
-});
-exports.rebuildAdminAggregates = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Authentication is required.');
-  const admin = await db.collection('Admins').doc(request.auth.uid).get();
-  if (!admin.exists || admin.data().uid !== request.auth.uid) throw new HttpsError('permission-denied', 'Admin access is required.');
-  const users = await db.collection('users').get();
-  for (const user of users.docs) await rebuildAggregate(user.id);
-  return { rebuilt: users.size };
-});
+// No aggregate backfill callable is exposed until a source-version-aware,
+// restartable migration and the owner-approved financial policy are specified.
+
+// Test seam: production handlers above continue to use the initialized db.
+exports.__test = {
+  applySaleDelta,
+  claimDispatchRequest,
+  chunksOf,
+  hasSameSaleAggregateContribution,
+  sendTokensInBatches,
+  updateAggregateForEvent,
+  millis,
+  PROCESSED_AGGREGATE_EVENT_COLLECTIONS,
+  schedulePreFcmRetry,
+};

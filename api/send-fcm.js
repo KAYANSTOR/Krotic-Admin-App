@@ -72,6 +72,93 @@ function stringifyData(data) {
   );
 }
 
+const FCM_BATCH_SIZE = 500;
+const FCM_DELETE_BATCH_SIZE = 450;
+const RETRYABLE_FCM_CODES = new Set([
+  'messaging/server-unavailable',
+  'messaging/internal-error',
+  'messaging/unknown-error',
+  'messaging/message-rate-exceeded',
+  'messaging/device-message-rate-exceeded',
+  'messaging/quota-exceeded',
+]);
+const INVALID_FCM_TOKEN_CODES = new Set([
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+]);
+
+function chunksOf(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+export async function sendTokensInBatches({
+  tokens,
+  tokenDocIds,
+  message,
+  sendEachForMulticast,
+  onAttempt = () => {},
+  sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
+  maxAttempts = 3,
+}) {
+  let sent = 0;
+  let failed = 0;
+  const invalidDeviceDocIds = new Set();
+  for (const batch of chunksOf(tokens, FCM_BATCH_SIZE)) {
+    let pendingTokens = batch;
+    for (let attempt = 1; pendingTokens.length && attempt <= maxAttempts; attempt += 1) {
+      onAttempt();
+      const result = await sendEachForMulticast({ ...message, tokens: pendingTokens });
+      const responses = result?.responses;
+      const responseSuccesses = Array.isArray(responses) ? responses.filter((response) => response?.success === true).length : -1;
+      const responseFailures = Array.isArray(responses) ? responses.filter((response) => response?.success === false).length : -1;
+      const malformed = !Array.isArray(responses)
+        || responses.length !== pendingTokens.length
+        || !Number.isInteger(result.successCount)
+        || !Number.isInteger(result.failureCount)
+        || result.successCount + result.failureCount !== pendingTokens.length
+        || result.successCount !== responseSuccesses
+        || result.failureCount !== responseFailures
+        || responses.some((response) => !response
+          || typeof response.success !== 'boolean'
+          || (response.success === false && typeof response.error?.code !== 'string'));
+      if (malformed) {
+        throw new Error('fcm_malformed_multicast_response');
+      }
+
+      const retryTokens = [];
+      result.responses.forEach((response, index) => {
+        if (response?.success) {
+          sent += 1;
+          return;
+        }
+        const code = response?.error?.code;
+        if (INVALID_FCM_TOKEN_CODES.has(code)) {
+          failed += 1;
+          (tokenDocIds.get(pendingTokens[index]) || []).forEach((docId) => invalidDeviceDocIds.add(docId));
+        } else if (RETRYABLE_FCM_CODES.has(code) && attempt < maxAttempts) {
+          retryTokens.push(pendingTokens[index]);
+        } else {
+          failed += 1;
+        }
+      });
+      pendingTokens = retryTokens;
+      if (pendingTokens.length && attempt < maxAttempts) await sleep(250 * (2 ** (attempt - 1)));
+    }
+  }
+  return { sent, failed, invalidDeviceDocIds: [...invalidDeviceDocIds] };
+}
+
+async function deleteInvalidDeviceDocs(uid, docIds) {
+  const devices = getFirestore().collection('users').doc(uid).collection('devices');
+  for (const idBatch of chunksOf(docIds, FCM_DELETE_BATCH_SIZE)) {
+    const batch = getFirestore().batch();
+    idBatch.forEach((id) => batch.delete(devices.doc(id)));
+    await batch.commit();
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -125,6 +212,7 @@ export default async function handler(req, res) {
     },
   );
 
+  let sendAttempted = false;
   try {
     let sent = 0;
     let failed = 0;
@@ -146,9 +234,15 @@ export default async function handler(req, res) {
         .doc(targetUid)
         .collection('devices')
         .get();
-      const tokens = devicesSnap.docs
-        .map((deviceDoc) => deviceDoc.data()?.token)
-        .filter(Boolean);
+      const tokenDocIds = new Map();
+      devicesSnap.docs.forEach((deviceDoc) => {
+        const token = String(deviceDoc.data()?.token || '').trim();
+        if (!token) return;
+        const docIds = tokenDocIds.get(token) || [];
+        docIds.push(deviceDoc.id);
+        tokenDocIds.set(token, docIds);
+      });
+      const tokens = [...tokenDocIds.keys()];
 
       if (tokens.length === 0) {
         return res.status(200).json({
@@ -158,16 +252,29 @@ export default async function handler(req, res) {
         });
       }
 
-      const multicast = await getMessaging().sendEachForMulticast({
-        tokens: tokens.slice(0, 500),
-        notification: { title, body: text },
-        data,
-        android: androidConfig,
+      const result = await sendTokensInBatches({
+        tokens,
+        tokenDocIds,
+        sendEachForMulticast: (message) => getMessaging().sendEachForMulticast(message),
+        onAttempt: () => { sendAttempted = true; },
+        message: {
+          notification: { title, body: text },
+          data,
+          android: androidConfig,
+        },
       });
-      sent = multicast.successCount;
-      failed = multicast.failureCount;
+      sent = result.sent;
+      failed = result.failed;
+      if (result.invalidDeviceDocIds.length) {
+        try {
+          await deleteInvalidDeviceDocs(targetUid, result.invalidDeviceDocIds);
+        } catch (cleanupError) {
+          console.error('send-fcm: invalid token cleanup failed', cleanupError);
+        }
+      }
       target = `user:${targetUid}`;
     } else {
+      sendAttempted = true;
       await getMessaging().send({
         topic,
         notification: { title, body: text },
@@ -192,9 +299,39 @@ export default async function handler(req, res) {
       console.error('send-fcm: delivery log failed', logError);
     }
 
-    return res.status(200).json({ success: true, target, sent, failed });
+    const success = failed === 0 && sent > 0;
+    return res.status(200).json({
+      success,
+      partial: sent > 0 && failed > 0,
+      error: success ? undefined : (sent > 0 ? 'partial_delivery' : 'delivery_failed'),
+      target,
+      sent,
+      failed,
+    });
   } catch (error) {
     console.error('send-fcm: send failed', error);
+    if (sendAttempted) {
+      const uncertainTarget = targetUid ? `user:${targetUid}` : `topic:${topic}`;
+      try {
+        await getFirestore().collection('notification_deliveries').add({
+          title,
+          body: text,
+          target: uncertainTarget,
+          status: 'delivery_uncertain',
+          error: 'fcm_outcome_uncertain',
+          createdBy: callerUid,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (logError) {
+        console.error('send-fcm: uncertain delivery log failed', logError);
+      }
+      return res.status(202).json({
+        success: false,
+        status: 'delivery_uncertain',
+        error: 'delivery_uncertain',
+        target: uncertainTarget,
+      });
+    }
     return res.status(500).json({
       success: false,
       error: 'send_failed',

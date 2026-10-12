@@ -145,7 +145,31 @@ if (!emulatorAddress) {
     await assertFails(getDoc(doc(userDb, 'admin_aggregates/user-1')));
   });
 
-  test('the designated primary admin has full Firestore access; other admins do not', async () => {
+  test('payment records are server-write-only even for both admin roles', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const paymentRef = doc(adminDb, 'networks/user-1/payments/payment-1');
+    await assertFails(setDoc(paymentRef, { amount: 25, month: '2026-10' }));
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'networks/user-1/payments/payment-1'), {
+        amount: 25,
+        month: '2026-10',
+      });
+    });
+    await assertSucceeds(getDoc(paymentRef));
+    await assertFails(updateDoc(paymentRef, { amount: 30 }));
+    await assertFails(deleteDoc(paymentRef));
+
+    const primaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
+      email: 'jarallhalkboudi@gmail.com',
+    }).firestore();
+    await assertFails(setDoc(
+      doc(primaryDb, 'networks/user-1/payments/payment-2'),
+      { amount: 10, month: '2026-10' },
+    ));
+  });
+
+  test('the designated primary admin has broad access outside server-only payments; other admins do not', async () => {
     const primaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
       email: 'jarallhalkboudi@gmail.com',
     }).firestore();

@@ -22,6 +22,11 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 const MIN_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 128;
+const MAX_UID_LENGTH = 128;
+const MAX_ACTION_LENGTH = 32;
+const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const ALLOWED_ACTIONS = new Set(['get', 'set-password', 'reset-link']);
 
 function ensureInitialized() {
   if (getApps().length > 0) return { ok: true };
@@ -54,15 +59,69 @@ function ensureInitialized() {
 }
 
 function normalizeBody(body) {
-  if (!body) return {};
   if (typeof body === 'string') {
     try {
-      return JSON.parse(body);
+      const parsed = JSON.parse(body);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
   return body;
+}
+
+export function validateManageUserInput(body) {
+  const normalized = normalizeBody(body);
+  const actionValue = normalized.action === undefined ? 'get' : normalized.action;
+  if (typeof actionValue !== 'string' || actionValue.length > MAX_ACTION_LENGTH) {
+    return { ok: false, error: 'invalid_action' };
+  }
+  const action = actionValue.trim();
+  if (!ALLOWED_ACTIONS.has(action)) {
+    return { ok: false, error: 'unknown_action' };
+  }
+
+  if (normalized.uid === undefined || normalized.uid === null) {
+    return { ok: false, error: 'uid_required' };
+  }
+  if (typeof normalized.uid !== 'string') {
+    return { ok: false, error: 'uid_invalid' };
+  }
+  const uid = normalized.uid.trim();
+  if (uid.length === 0) return { ok: false, error: 'uid_required' };
+  if (uid.length > MAX_UID_LENGTH || !UID_PATTERN.test(uid)) {
+    return { ok: false, error: 'uid_invalid' };
+  }
+
+  if (action === 'set-password') {
+    if (typeof normalized.password !== 'string') {
+      return { ok: false, error: 'password_invalid' };
+    }
+    if (normalized.password.length < MIN_PASSWORD_LENGTH) {
+      return { ok: false, error: 'password_too_short' };
+    }
+    if (normalized.password.length > MAX_PASSWORD_LENGTH) {
+      return { ok: false, error: 'password_too_long' };
+    }
+  }
+
+  return { ok: true, action, uid, password: normalized.password };
+}
+
+export async function authorizeTargetClient(db, uid) {
+  if (typeof uid !== 'string' || uid.length > MAX_UID_LENGTH || !UID_PATTERN.test(uid)) {
+    return { ok: false, error: 'uid_invalid' };
+  }
+
+  const [userSnap, adminSnap] = await Promise.all([
+    db.collection('users').doc(uid).get(),
+    db.collection('Admins').doc(uid).get(),
+  ]);
+  if (!userSnap.exists || adminSnap.exists) {
+    return { ok: false, error: 'target_not_client' };
+  }
+  return { ok: true };
 }
 
 function toIso(value) {
@@ -122,12 +181,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'admin_check_failed' });
   }
 
-  const body = normalizeBody(req.body);
-  const action = String(body.action || 'get').trim();
-  const uid = String(body.uid || '').trim();
+  const input = validateManageUserInput(req.body);
+  if (!input.ok) {
+    return res.status(400).json({ success: false, error: input.error });
+  }
+  const { action, uid, password } = input;
 
-  if (!uid) {
-    return res.status(400).json({ success: false, error: 'uid_required' });
+  try {
+    const target = await authorizeTargetClient(getFirestore(), uid);
+    if (!target.ok) {
+      return res.status(403).json({ success: false, error: target.error });
+    }
+  } catch (error) {
+    console.error('manage-user-auth: target check failed', error);
+    return res.status(500).json({ success: false, error: 'target_check_failed' });
   }
 
   if (action === 'get') {
@@ -144,11 +211,6 @@ export default async function handler(req, res) {
   }
 
   if (action === 'set-password') {
-    const password = String(body.password || '');
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      return res.status(400).json({ success: false, error: 'password_too_short' });
-    }
-
     try {
       const record = await getAuth().updateUser(uid, { password });
       return res.status(200).json({ success: true, user: publicAuthInfo(record) });

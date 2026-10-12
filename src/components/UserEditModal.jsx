@@ -62,7 +62,7 @@ export default function UserEditModal({ isOpen, onClose, user, onSave }) {
 
         <Field
           label="العمولة الخاصة (%)"
-          hint="إذا تركته فارغاً أو صفر، سيتم حساب أرباح هذا الحساب بناءً على النسبة العامة."
+          hint="إعداد للحساب؛ لا يثبت عمولة السجلات التاريخية ولا يعيد تسعيرها تلقائياً. القيمة العامة الافتراضية 5%."
         >
           <Input
             type="number" step="0.1" min="0" max="100"

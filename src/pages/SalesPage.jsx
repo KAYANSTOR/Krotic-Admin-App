@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DollarSign, TrendingUp, Filter, Download,
-  ChevronDown, ChevronUp, Receipt, Wallet, Inbox, AlertCircle,
+  DollarSign, Filter, Download,
+  ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
@@ -10,10 +10,11 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { fetchNetworkSales, clearAdminDataCache } from '../lib/adminData';
+import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
 
 const NETWORK_PAGE_SIZE = 10;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters';
@@ -56,25 +57,39 @@ export default function SalesPage() {
   const [dateFrom, setDateFrom] = useState(savedFilters?.dateFrom || '');
   const [dateTo, setDateTo] = useState(savedFilters?.dateTo || '');
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [cacheState, setCacheState] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
+  const latestRequestId = useRef(0);
 
   const load = useCallback(async ({ force = false } = {}) => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
-    if (force) clearAdminDataCache();
     try {
-      const data = await fetchNetworkSales();
+      const data = await fetchNetworkSales({ force });
+      if (requestId !== latestRequestId.current) return;
       setNetworkSales(data);
       setUpdatedAt(Date.now());
+      setCacheState(getAdminDataCacheState('network-sales'));
     } catch (error) {
+      if (requestId !== latestRequestId.current) return;
       console.error('Error fetching sales:', error);
       toast.error('خطأ في تحميل بيانات المبيعات');
+    } finally {
+      if (requestId === latestRequestId.current) setLoading(false);
     }
-    setLoading(false);
   }, []);
+
+  useEffect(() => subscribeAdminDataCache('network-sales', (data, state) => {
+    setNetworkSales(data);
+    setUpdatedAt(Date.now());
+    setCacheState(state);
+    setLoading(false);
+  }), []);
 
   useEffect(() => {
     load();
+    return () => { latestRequestId.current += 1; };
   }, [load]);
 
   const filterSales = useCallback((sales) => {
@@ -97,14 +112,10 @@ export default function SalesPage() {
     const filtered = filterSales(network.sales);
     const completed = filtered.filter((s) => s.status === 'COMPLETED');
     const totalFaceValue = completed.reduce((sum, s) => sum + (s.faceValue || 0), 0);
-    const totalNetAmount = completed.reduce((sum, s) => sum + (s.netAmount || 0), 0);
-    const adminEarnings = totalFaceValue * (network.commissionRate / 100);
     return {
       totalSales: filtered.length,
       completedCount: completed.length,
       totalFaceValue,
-      totalNetAmount,
-      adminEarnings,
       filteredSales: filtered,
     };
   }, [filterSales]);
@@ -150,19 +161,17 @@ export default function SalesPage() {
       (acc, network) => {
         const stats = calcNetworkStats(network);
         acc.totalSales += stats.totalFaceValue;
-        acc.totalNet += stats.totalNetAmount;
-        acc.totalEarnings += stats.adminEarnings;
         acc.totalCount += stats.completedCount;
         return acc;
       },
-      { totalSales: 0, totalNet: 0, totalEarnings: 0, totalCount: 0 }
+      { totalSales: 0, totalCount: 0 }
     );
   }, [networkSales, calcNetworkStats]);
 
   const statusLabel = {
-    COMPLETED: { text: 'مكتمل', class: 'badge-success' },
-    ROLLED_BACK: { text: 'مسترجع', class: 'badge-danger' },
-    SMS_PENDING: { text: 'بانتظار SMS', class: 'badge-warning' },
+    COMPLETED: { text: 'مكتمل حسب التطبيق — غير متحقق', class: 'badge-warning' },
+    ROLLED_BACK: { text: 'مسترجع حسب التطبيق — غير متحقق', class: 'badge-warning' },
+    SMS_PENDING: { text: 'بانتظار SMS حسب التطبيق', class: 'badge-warning' },
   };
 
   const handleExportSales = useCallback(() => {
@@ -179,12 +188,10 @@ export default function SalesPage() {
       { label: 'رقم الهاتف', value: (r) => r.network.phoneNumber || '' },
       { label: 'التاريخ', value: (r) => formatDate(r.sale.createdAt, { withTime: true }) },
       { label: 'الزبون', value: (r) => r.sale.customerId || '' },
-      { label: 'القيمة', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
-      { label: 'عمولة الصراف', value: (r) => Math.round(Number(r.sale.commission) || 0) },
-      { label: 'الصافي', value: (r) => Math.round(Number(r.sale.netAmount) || 0) },
-      { label: 'الحالة', value: (r) => r.sale.status || '' },
+      { label: 'القيمة المرسلة من التطبيق (غير متحققة)', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
+      { label: 'حالة التطبيق (غير متحققة)', value: (r) => r.sale.status || '' },
     ]);
-    toast.success('تم تصدير بيانات المبيعات');
+    toast.success('تم تصدير السجلات المحمّلة فقط (حتى 50 سجلاً لكل شبكة)');
   }, [networkSales, calcNetworkStats]);
 
   const hasActiveFilters = statusFilter !== 'COMPLETED' || dateFrom || dateTo;
@@ -201,18 +208,21 @@ export default function SalesPage() {
     <div className="sales-page">
       <PageHeader
         icon={DollarSign}
-        title="المبيعات والعمولات"
-        description="سجل مبيعات جميع الشبكات وأرباح الإدارة"
+        title="سجل المبيعات المبلّغ عنها"
+        description="سجلات أبلغ بها التطبيق؛ القيم والحالات غير معتمدة خادمياً"
         actions={
-          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => load({ force: true })} />
+          <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => load({ force: true })} />
         }
       />
 
+      <FinancialVerificationNotice className="mb-6" />
+      <p className="mb-4 text-sm text-ink-secondary" role="note">
+        الملخص والتصدير يعتمدان على أحدث 50 سجلاً محمّلاً لكل شبكة؛ لا يتضمنان عمولة أو صافي APK ولا يمثلان كشف تسوية.
+      </p>
+
       <div className="grid-kpi">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
-        <StatCard title="إجمالي الصافي" value={formatNumber(grandTotals.totalNet)} icon={Receipt} tone="neutral" subtitle="ريال يمني" />
-        <StatCard title="أرباح الإدارة" value={formatNumber(grandTotals.totalEarnings)} icon={TrendingUp} tone="gold" subtitle="ريال يمني" />
-        <StatCard title="عمليات مكتملة" value={formatNumber(grandTotals.totalCount)} icon={Wallet} tone="success" subtitle="عملية" />
+        <StatCard title="قيمة السجلات المبلّغ عنها (غير متحققة)" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني • أحدث 50/شبكة" />
+        <StatCard title="حالات اكتمال أبلغ بها التطبيق" value={formatNumber(grandTotals.totalCount)} icon={Wallet} tone="warning" subtitle="غير متحققة • ضمن السجلات المحمّلة" />
       </div>
 
       <Card className="sales-filters">
@@ -254,9 +264,9 @@ export default function SalesPage() {
             <label className="label-field">حالة البيع</label>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input-field">
               <option value="all">الكل</option>
-              <option value="COMPLETED">مكتمل</option>
-              <option value="ROLLED_BACK">مسترجع</option>
-              <option value="SMS_PENDING">بانتظار SMS</option>
+              <option value="COMPLETED">مكتمل حسب التطبيق (غير متحقق)</option>
+              <option value="ROLLED_BACK">مسترجع حسب التطبيق (غير متحقق)</option>
+              <option value="SMS_PENDING">بانتظار SMS حسب التطبيق</option>
             </select>
           </div>
           <div className="sales-filters__field">
@@ -288,7 +298,7 @@ export default function SalesPage() {
             </span>
             <p className="sales-empty__title">لا يوجد مبيعات مسجلة بعد</p>
             <p className="sales-empty__desc">
-              ستظهر هنا مبيعات الشبكات وأرباح الإدارة بمجرد تسجيل أول عملية.
+              ستظهر هنا سجلات البيع التي يرسلها التطبيق، دون اعتبارها اعتماداً مالياً.
             </p>
           </Card>
         ) : (
@@ -327,21 +337,13 @@ export default function SalesPage() {
 
                   <div className="sales-network__stats">
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">المبيعات</span>
+                      <span className="sales-network__stat-label">القيمة المبلّغ عنها (غير متحققة)</span>
                       <span className="sales-network__stat-value">
                         {formatNumber(stats.totalFaceValue)}
                       </span>
                     </div>
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">
-                        العمولة ({network.commissionRate}%)
-                      </span>
-                      <span className="sales-network__stat-value sales-network__stat-value--gold">
-                        {formatNumber(stats.adminEarnings)}
-                      </span>
-                    </div>
-                    <div className="sales-network__stat sales-network__stat--count">
-                      <span className="sales-network__stat-label">عمليات</span>
+                      <span className="sales-network__stat-label">حالات مكتملة حسب التطبيق (غير متحققة)</span>
                       <span className="sales-network__stat-value">
                         {formatNumber(stats.completedCount)}
                       </span>
@@ -360,17 +362,11 @@ export default function SalesPage() {
                   <div className="sales-network__body">
                     <div className="sales-network__mobile-stats">
                       <div className="sales-network__mobile-stat">
-                        <span>المبيعات</span>
+                        <span>قيمة مبلّغ عنها (غير متحققة)</span>
                         <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
-                        <span>العمولة ({network.commissionRate}%)</span>
-                        <strong className="sales-network__stat-value--gold">
-                          {formatNumber(stats.adminEarnings)}
-                        </strong>
-                      </div>
-                      <div className="sales-network__mobile-stat">
-                        <span>عمليات مكتملة</span>
+                        <span>حالات اكتمال أبلغ بها التطبيق</span>
                         <strong>{formatNumber(stats.completedCount)}</strong>
                       </div>
                     </div>
@@ -387,10 +383,8 @@ export default function SalesPage() {
                             <tr className="table-header">
                               <th className="text-right px-6 py-3">التاريخ</th>
                               <th className="text-right px-6 py-3">الزبون</th>
-                              <th className="text-right px-6 py-3">القيمة</th>
-                              <th className="text-right px-6 py-3">العمولة (صراف)</th>
-                              <th className="text-right px-6 py-3">الصافي</th>
-                              <th className="text-right px-6 py-3">الحالة</th>
+                              <th className="text-right px-6 py-3">القيمة المرسلة (غير متحققة)</th>
+                              <th className="text-right px-6 py-3">حالة التطبيق (غير متحققة)</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-line">
@@ -402,16 +396,10 @@ export default function SalesPage() {
                                 <td className="px-6 py-3 text-sm" dir="ltr" data-label="الزبون">
                                   {sale.customerId || '—'}
                                 </td>
-                                <td className="px-6 py-3 text-sm font-medium" data-label="القيمة">
+                                <td className="px-6 py-3 text-sm font-medium" data-label="القيمة المرسلة (غير متحققة)">
                                   {formatNumber(sale.faceValue)}
                                 </td>
-                                <td className="px-6 py-3 text-sm text-ink-soft" data-label="العمولة (صراف)">
-                                  {formatNumber(sale.commission)}
-                                </td>
-                                <td className="px-6 py-3 text-sm font-medium" data-label="الصافي">
-                                  {formatNumber(sale.netAmount)}
-                                </td>
-                                <td className="px-6 py-3" data-label="الحالة">
+                                <td className="px-6 py-3" data-label="حالة التطبيق (غير متحققة)">
                                   <span className={statusLabel[sale.status]?.class || 'badge-info'}>
                                     {statusLabel[sale.status]?.text || sale.status}
                                   </span>
@@ -431,7 +419,7 @@ export default function SalesPage() {
                           icon={ChevronDown}
                           onClick={() => setFullSales((prev) => ({ ...prev, [network.uid]: true }))}
                         >
-                          عرض {formatNumber(hiddenSales)} عملية إضافية
+                          عرض بقية السجلات المحمّلة ({formatNumber(hiddenSales)})
                         </Button>
                       </div>
                     )}

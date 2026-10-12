@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  Activity, AlertTriangle, ArrowUpLeft, Bell, Clock, Coins, CreditCard,
+  Activity, AlertTriangle, ArrowUpLeft, Bell, Clock, CreditCard,
   LayoutDashboard, RefreshCw, Settings, ShieldCheck, Sparkles,
   TrendingUp, UserCheck, UserPlus, Users, Wallet,
 } from 'lucide-react';
@@ -13,9 +13,10 @@ import { Card } from '../components/ui/Card';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import FinancialVerificationNotice from '../components/ui/FinancialVerificationNotice';
 import BarChart from '../components/ui/BarChart';
 import { formatNumber } from '../lib/format';
-import { fetchDashboardStats, clearAdminDataCache } from '../lib/adminData';
+import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
@@ -24,35 +25,56 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [appStatus, setAppStatus] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [cacheState, setCacheState] = useState(null);
   const [alerts, setAlerts] = useState(null);
   const [monthlySales, setMonthlySales] = useState([]);
+  const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
+  const latestRequestId = useRef(0);
 
   const load = useCallback(async ({ force = false } = {}) => {
+    const requestId = ++latestRequestId.current;
     setLoading(true);
     setError(null);
-    if (force) clearAdminDataCache();
     try {
       const {
         appStatus: status,
         stats: nextStats,
         alerts: nextAlerts,
         monthlySales: nextMonthlySales,
-      } = await fetchDashboardStats();
+        monthlyDataWarning: nextMonthlyDataWarning,
+      } = await fetchDashboardStats({ force });
+      if (requestId !== latestRequestId.current) return;
       setAppStatus(status);
       setStats(nextStats);
       setAlerts(nextAlerts);
       setMonthlySales(nextMonthlySales || []);
+      setMonthlyDataWarning(Boolean(nextMonthlyDataWarning));
       setUpdatedAt(Date.now());
+      setCacheState(getAdminDataCacheState('dashboard-stats'));
     } catch (err) {
+      if (requestId !== latestRequestId.current) return;
       console.error('Error fetching dashboard data:', err);
       setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestId.current) setLoading(false);
     }
   }, []);
 
+  useEffect(() => subscribeAdminDataCache('dashboard-stats', (data, state) => {
+    setAppStatus(data.appStatus);
+    setStats(data.stats);
+    setAlerts(data.alerts);
+    setMonthlySales(data.monthlySales || []);
+    setMonthlyDataWarning(Boolean(data.monthlyDataWarning));
+    setUpdatedAt(Date.now());
+    setCacheState(state);
+    setError(null);
+    setLoading(false);
+  }), []);
+
   useEffect(() => {
     load();
+    return () => { latestRequestId.current += 1; };
   }, [load]);
 
   if (loading) return <PageSkeleton />;
@@ -75,10 +97,14 @@ export default function DashboardPage() {
         </div>
         <DataFreshness
           updatedAt={updatedAt}
+          lastSyncedAt={cacheState?.lastSyncedAt}
           refreshing={loading}
+          fromCache={cacheState?.fromCache}
           onRefresh={() => load({ force: true })}
         />
       </section>
+
+      <FinancialVerificationNotice className="mb-6" />
 
       {maintenance && (
         <div className="dash-alert" role="status" aria-live="polite">
@@ -90,6 +116,16 @@ export default function DashboardPage() {
             {appStatus.maintenance_message && (
               <p className="dash-alert__msg">{appStatus.maintenance_message}</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {monthlyDataWarning && (
+        <div className="dash-error" role="status" aria-live="polite">
+          <span className="dash-error__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
+          <div className="dash-error__body">
+            <p className="dash-error__title">تفصيل الأشهر غير مكتمل</p>
+            <p className="dash-error__msg">الإجماليات الكلية متاحة، لكن تعذر تحميل بيانات الأشهر لبعض الشبكات. تحقّق من اتصال Firestore وفهرس المبيعات المركّب.</p>
           </div>
         </div>
       )}
@@ -121,7 +157,7 @@ export default function DashboardPage() {
           <section className="dash-finance" aria-label="الملخص المالي">
             <article className="dash-finance__primary">
               <header className="dash-finance__head">
-                <span className="dash-finance__eyebrow">إجمالي المبيعات المكتملة</span>
+                <span className="dash-finance__eyebrow">قيمة السجلات التي أبلغ التطبيق عن اكتمالها</span>
                 <span className="dash-finance__pill">
                   <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
                   كل الوقت
@@ -132,30 +168,17 @@ export default function DashboardPage() {
                 <span>ريال يمني</span>
               </div>
               <p className="dash-finance__hint">
-                مجموع قيمة عمليات البيع بحالة «مكتمل» عبر جميع الشبكات.
+                مجموع القيم المرسلة من التطبيق؛ لا تمثل هذه الأرقام مبيعات أو تسوية معتمدة خادمياً.
               </p>
             </article>
 
             <div className="dash-finance__side">
-              <article className="dash-finance__tile dash-finance__tile--gold">
-                <span className="dash-finance__tile-icon" aria-hidden="true">
-                  <Coins className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="dash-finance__tile-label">أرباح الإدارة</p>
-                  <p className="dash-finance__tile-value">
-                    {formatNumber(stats.totalAdminEarnings)}
-                    <small> ريال يمني</small>
-                  </p>
-                </div>
-              </article>
-
               <article className="dash-finance__tile dash-finance__tile--brand">
                 <span className="dash-finance__tile-icon" aria-hidden="true">
                   <Wallet className="w-5 h-5" />
                 </span>
                 <div>
-                  <p className="dash-finance__tile-label">عمليات بيع مكتملة</p>
+                  <p className="dash-finance__tile-label">حالات مكتملة حسب التطبيق (غير متحققة)</p>
                   <p className="dash-finance__tile-value">
                     {formatNumber(stats.totalTransactions)}
                     <small> عملية</small>
@@ -167,8 +190,8 @@ export default function DashboardPage() {
 
           <Section
             eyebrow="الاتجاه"
-            title="المبيعات في آخر 6 أشهر"
-            description="قيمة المبيعات المكتملة شهرياً عبر جميع الشبكات."
+            title="القيم المرسلة في آخر 6 أشهر"
+            description="قيم سجلات Android التي تحمل حالة مكتمل؛ غير متحققة ولا تمثل كشفاً مالياً معتمداً."
             aria-label="مخطط المبيعات"
           >
             <Card>
