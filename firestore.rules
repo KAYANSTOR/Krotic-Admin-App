@@ -185,6 +185,10 @@ service cloud.firestore {
       match /payments/{paymentId} {
         allow read: if isAdmin() || isSelf(userId);
         // Payment settlements must be created/updated by trusted server code only.
+        // DEPLOY GATE: do not publish this rule as part of a plain `firestore`
+        // deploy. The dashboard still has no server endpoint that records a
+        // settlement, so publishing it now would stop payment entry entirely.
+        // Deploy it only together with that idempotent server endpoint.
         allow write: if false;
       }
 
