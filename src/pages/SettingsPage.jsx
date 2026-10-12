@@ -1,7 +1,7 @@
 // src/pages/SettingsPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  doc, getDoc, setDoc, collection, getDocs, writeBatch, Timestamp,
+  doc, setDoc, collection, getDocs, writeBatch, Timestamp,
 } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -15,12 +15,14 @@ import { Card, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Switch from '../components/ui/Switch';
+import DataFreshness from '../components/ui/DataFreshness';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
-import { invalidateAdminDataCache, invalidateAdminGlobalConfigData } from '../lib/adminData';
+import { invalidateAdminDataCache, invalidateAdminGlobalConfigData, fetchGlobalConfig, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
+import useAppRefresh from '../lib/useAppRefresh';
 
 const DEFAULTS = {
   is_app_active: true,
@@ -48,35 +50,52 @@ function SettingsSkeleton() {
 export default function SettingsPage() {
   const [config, setConfig] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [cacheState, setCacheState] = useState(null);
 
   // For batch update expiry
   const [batchDate, setBatchDate] = useState('');
   const [updatingBatch, setUpdatingBatch] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async ({ force = false } = {}) => {
+    if (force) setRefreshing(true);
+    else setLoading(true);
     try {
-      const configDoc = await getDoc(doc(db, 'app_settings', 'global_config'));
-      if (configDoc.exists()) {
-        const loaded = configDoc.data();
-        setConfig((prev) => ({
-          ...prev,
-          ...loaded,
-          default_commission_rate: loaded.default_commission_rate ?? 5,
-        }));
-      }
+      const loaded = await fetchGlobalConfig({ force });
+      setConfig((prev) => ({
+        ...prev,
+        ...loaded,
+        default_commission_rate: loaded?.default_commission_rate ?? 5,
+      }));
+      setCacheState(getAdminDataCacheState('global-config'));
+      setUpdatedAt(Date.now());
     } catch (error) {
       console.error('Error fetching config:', error);
       toast.error('خطأ في تحميل الإعدادات');
     }
     setLoading(false);
-  };
+    setRefreshing(false);
+  }, []);
+
+  const handleRefresh = () => fetchConfig({ force: true });
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
+
+  // يعكس تحديثات الكاش (بما فيها الجلب الخلفي) في الصفحة.
+  useEffect(() => subscribeAdminDataCache('global-config', (data) => {
+    if (!data) return;
+    setConfig((prev) => ({ ...prev, ...data, default_commission_rate: data.default_commission_rate ?? 5 }));
+    setCacheState(getAdminDataCacheState('global-config'));
+  }), []);
+
+  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
+  useAppRefresh(() => fetchConfig({ force: true }));
 
   const handleSave = async () => {
     setSaving(true);
@@ -219,9 +238,17 @@ export default function SettingsPage() {
         title="الإعدادات العامة"
         description="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
         actions={
-          <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
-            إدارة المدراء
-          </Button>
+          <>
+            <DataFreshness
+              updatedAt={updatedAt}
+              refreshing={loading || refreshing}
+              onRefresh={handleRefresh}
+              fromCache={cacheState?.fromCache ?? null}
+            />
+            <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
+              إدارة المدراء
+            </Button>
+          </>
         }
       />
 

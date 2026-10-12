@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  collection, getDocs, addDoc, doc, deleteDoc, serverTimestamp, orderBy, limit, query
+  collection, addDoc, doc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
@@ -17,7 +17,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/notificationTemplates';
-import { fetchUsersForSelect } from '../lib/adminData';
+import { fetchUsersForSelect, fetchNotificationHistory, getAdminDataCacheState, subscribeAdminDataCache, invalidateNotificationHistory } from '../lib/adminData';
+import useAppRefresh from '../lib/useAppRefresh';
 import { triggerScheduledDispatch } from '../lib/adminApi';
 
 const NOTIFICATION_PAGE_SIZE = 20;
@@ -64,6 +65,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [cacheState, setCacheState] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -76,6 +78,20 @@ export default function NotificationsPage() {
     fetchData();
     return () => { latestRequestId.current += 1; };
   }, []);
+
+  // يعكس تحديثات الكاش (بما فيها الجلب الخلفي) في سجل الإشعارات.
+  useEffect(() => subscribeAdminDataCache('notification-history', (history) => {
+    if (!Array.isArray(history)) return;
+    setRecentNotifications(history.map((data) => ({
+      ...data,
+      type: 'global',
+      displayTimestamp: notificationMillis(data),
+    })));
+    setCacheState(getAdminDataCacheState('notification-history'));
+  }), []);
+
+  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
+  useAppRefresh(() => fetchData({ force: true }));
 
   // إرسال أي إشعار مجدول استحقّ موعده (بديل مجاني لمُجدوِل Cloud Functions).
   // يعمل في الخلفية دون حجب الواجهة، ولا يظهر أي خطأ إن فشل.
@@ -92,27 +108,20 @@ export default function NotificationsPage() {
       setLoading(true);
     }
     try {
-      const [usersData, notificationResult] = await Promise.all([
+      const [usersData, notificationHistory] = await Promise.all([
         fetchUsersForSelect({ force }),
-        getDocs(query(
-          collection(db, 'app_settings', 'global_config', 'notifications'),
-          orderBy('timestamp', 'desc'),
-          limit(NOTIFICATION_PAGE_SIZE)
-        )),
+        fetchNotificationHistory({ force }),
       ]);
       if (requestId !== latestRequestId.current) return;
       setUsers(usersData);
-      const notifs = notificationResult.docs.map((notificationDoc) => {
-        const data = notificationDoc.data();
-        return {
-          id: notificationDoc.id,
-          ...data,
-          type: 'global',
-          // Keep rendering safe for old records that used a Timestamp or createdAt.
-          displayTimestamp: notificationMillis(data),
-        };
-      });
+      const notifs = notificationHistory.map((data) => ({
+        ...data,
+        type: 'global',
+        // Keep rendering safe for old records that used a Timestamp or createdAt.
+        displayTimestamp: notificationMillis(data),
+      }));
       setRecentNotifications(notifs);
+      setCacheState(getAdminDataCacheState('notification-history'));
       setUpdatedAt(Date.now());
     } catch (error) {
       if (requestId !== latestRequestId.current) return;
@@ -242,6 +251,7 @@ export default function NotificationsPage() {
             ...notificationData,
             timestamp: Date.now(),
           });
+          invalidateNotificationHistory();
         } else {
           await addDoc(collection(db, 'users', selectedUser, 'notifications'), {
             title: notificationData.title,
@@ -371,6 +381,7 @@ export default function NotificationsPage() {
             updatedAt={updatedAt}
             refreshing={loading || refreshing}
             onRefresh={() => fetchData({ force: true })}
+            fromCache={cacheState?.fromCache ?? null}
           />
         }
       />

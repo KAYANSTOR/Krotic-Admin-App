@@ -88,6 +88,51 @@ export async function fetchGlobalConfig(options) {
   }, options);
 }
 
+/**
+ * قائمة المدراء مع تخزين محلي. المدير لا يُغيَّر إلا عبر مسار المصادقة، لذا
+ * نُبطل مفتاحه يدوياً بعد الإنشاء/الحذف (انظر invalidateAdminListData).
+ */
+export async function fetchAdmins(options) {
+  return readCached('admins', async () => {
+    const snap = await getDocs(collection(db, 'Admins'));
+    const admins = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    admins.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    return admins;
+  }, options);
+}
+
+/** أول صفحة من سجل العمليات مع تخزين محلي (الصفحات التالية تُدمج عند الطلب). */
+export async function fetchAuditLogs(options) {
+  return readCached('audit-logs', async () => {
+    const snap = await getDocs(query(
+      collection(db, 'admin_audit_logs'),
+      orderBy('createdAtMs', 'desc'),
+      limit(30),
+    ));
+    return { logs: snap.docs.map((d) => ({ id: d.id, ...d.data() })), hasMore: snap.docs.length === 30 };
+  }, options);
+}
+
+/** أول صفحة من الإشعارات العامة مع تخزين محلي. */
+export async function fetchNotificationHistory(options) {
+  return readCached('notification-history', async () => {
+    const snap = await getDocs(query(
+      collection(db, 'app_settings', 'global_config', 'notifications'),
+      orderBy('timestamp', 'desc'),
+      limit(20),
+    ));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }, options);
+}
+
+export function invalidateNotificationHistory() {
+  invalidateAdminDataCache(['notification-history']);
+}
+
+export function invalidateAdminListData() {
+  invalidateAdminDataCache(['admins']);
+}
+
 function nestedReadOptions(options, loaderContext) {
   return { ...(options || {}), force: Boolean(options?.force || loaderContext?.force) };
 }

@@ -13,6 +13,10 @@ import { SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
+import {
+  fetchAuditLogs as loadAuditLogs, getAdminDataCacheState, subscribeAdminDataCache,
+} from '../lib/adminData';
+import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 30;
 const FILTER_STORAGE_KEY = 'krotak:audit-filter';
@@ -57,6 +61,16 @@ export function mapAuditDocs(docs) {
   return docs.map((entry) => ({ id: entry.id, ...entry.data() }));
 }
 
+/** أحدث طابع زمني في مجموعة سجلات — يُستخدم كمؤشر ترقيم عددي لقيمة createdAtMs. */
+export function latestCreatedAtMs(entries) {
+  let max = -Infinity;
+  (entries || []).forEach((entry) => {
+    const value = Number(entry?.createdAtMs);
+    if (Number.isFinite(value) && value > max) max = value;
+  });
+  return Number.isFinite(max) ? max : null;
+}
+
 // Merge by id while preserving the server's orderBy order, including timestamp ties.
 export function mergeAuditLogs(existing, incoming) {
   const merged = [...existing];
@@ -78,26 +92,26 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [cacheState, setCacheState] = useState(null);
   const [actionFilter, setActionFilter] = useState(loadSavedFilter);
   const [searchTerm, setSearchTerm] = useState('');
-  const [lastDoc, setLastDoc] = useState(null);
+  const [cursorMs, setCursorMs] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const requestInFlight = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ force = false } = {}) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     setLoading(true);
     setError(null);
     try {
-      const snapshot = await getDocs(
-        query(collection(db, 'admin_audit_logs'), orderBy('createdAtMs', 'desc'), limit(PAGE_SIZE))
-      );
-      const page = mapAuditDocs(snapshot.docs);
-      setLogs(mergeAuditLogs([], page));
-      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-      setHasMore(snapshot.docs.length === PAGE_SIZE);
+      const { logs: page, hasMore: more } = await loadAuditLogs({ force });
+      const merged = mergeAuditLogs([], page || []);
+      setLogs(merged);
+      setHasMore(Boolean(more) && (page?.length || 0) === PAGE_SIZE);
+      setCursorMs(latestCreatedAtMs(merged));
+      setCacheState(getAdminDataCacheState('audit-logs'));
       setUpdatedAt(Date.now());
     } catch (err) {
       console.error('Error fetching audit log:', err);
@@ -110,7 +124,7 @@ export default function AuditPage() {
   }, []);
 
   const loadMore = useCallback(async () => {
-    if (requestInFlight.current || !hasMore || !lastDoc) return;
+    if (requestInFlight.current || !hasMore || !Number.isFinite(cursorMs)) return;
     requestInFlight.current = true;
     setLoadingMore(true);
     setError(null);
@@ -119,14 +133,14 @@ export default function AuditPage() {
         query(
           collection(db, 'admin_audit_logs'),
           orderBy('createdAtMs', 'desc'),
-          startAfter(lastDoc),
+          startAfter(cursorMs),
           limit(PAGE_SIZE)
         )
       );
       const page = mapAuditDocs(snapshot.docs);
       setLogs((current) => mergeAuditLogs(current, page));
-      setLastDoc(snapshot.docs[snapshot.docs.length - 1] || lastDoc);
       setHasMore(snapshot.docs.length === PAGE_SIZE);
+      setCursorMs(latestCreatedAtMs(page) ?? cursorMs);
     } catch (err) {
       console.error('Error fetching next audit page:', err);
       setError('تعذر تحميل الصفحة التالية من السجل. أعد المحاولة.');
@@ -134,11 +148,22 @@ export default function AuditPage() {
       requestInFlight.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, lastDoc]);
+  }, [hasMore, cursorMs]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // أحدث ما وصل من طبقة الكاش (بما فيها التحديث الخلفي) يُدمج في العرض.
+  useEffect(() => subscribeAdminDataCache('audit-logs', (data) => {
+    const page = data?.logs;
+    if (!Array.isArray(page)) return;
+    setLogs((current) => mergeAuditLogs(current, page));
+    setCacheState(getAdminDataCacheState('audit-logs'));
+  }), []);
+
+  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
+  useAppRefresh(() => load({ force: true }));
 
   useEffect(() => {
     try {
@@ -191,7 +216,7 @@ export default function AuditPage() {
         description="توثيق كامل لكل إجراء إداري مؤثر: من قام به، على أي حساب، ومتى."
         meta={`${filteredLogs.length} من ${logs.length} عملية`}
         actions={
-          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={load} />
+          <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={load} fromCache={cacheState?.fromCache ?? null} />
         }
       />
 

@@ -241,6 +241,26 @@ if (!emulatorAddress) {
     await assertSucceeds(getDocs(collection(db, 'app_settings/global_config/notifications')));
   });
 
+  test('every admin can read and append the audit log; it stays append-only', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertSucceeds(setDoc(doc(adminDb, 'admin_audit_logs/log-1'), {
+      action: 'SETTINGS_SAVE',
+      actorUid: 'admin-1',
+      createdAtMs: 1,
+    }));
+    await assertSucceeds(getDocs(collection(adminDb, 'admin_audit_logs')));
+    await assertFails(updateDoc(doc(adminDb, 'admin_audit_logs/log-1'), { action: 'TAMPERED' }));
+    await assertFails(deleteDoc(doc(adminDb, 'admin_audit_logs/log-1')));
+
+    const userDb = testEnv.authenticatedContext('user-1').firestore();
+    await assertFails(setDoc(doc(userDb, 'admin_audit_logs/log-2'), {
+      action: 'SETTINGS_SAVE',
+      actorUid: 'user-1',
+      createdAtMs: 2,
+    }));
+    await assertFails(getDocs(collection(userDb, 'admin_audit_logs')));
+  });
+
   test('sale uploads are constrained and an owner cannot revise a completed sale', async () => {
     const db = testEnv.authenticatedContext('user-1').firestore();
     const saleRef = doc(db, 'networks/user-1/sales/sale-1');

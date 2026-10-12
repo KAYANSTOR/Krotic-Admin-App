@@ -3,7 +3,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWith
 import { doc, getDocFromCache, getDocFromServer, setDoc } from 'firebase/firestore';
 import { auth, db, secondaryAuth } from '../firebase';
 import { signOut as secondarySignOut } from 'firebase/auth';
-import { clearAdminDataCache } from '../lib/adminData';
+import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
 
 const AuthContext = createContext();
 
@@ -81,6 +81,7 @@ export function AuthProvider({ children }) {
     const uid = userCredential.user.uid;
     await setDoc(doc(db, 'Admins', uid), { uid, name, email, phone, createdAt: Date.now() });
     await secondarySignOut(secondaryAuth);
+    invalidateAdminListData();
     return uid;
   }
 

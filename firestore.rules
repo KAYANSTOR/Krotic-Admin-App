@@ -121,6 +121,14 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    // سجل العمليات الإدارية: قراءة/إضافة لكل مدير، وغير قابل للتعديل أو الحذف
+    // من العميل حتى يبقى أثراً تدقيقياً موثوقاً. المدراء العاديون كانوا يُمنعون
+    // من قراءته وإضافته (لا قاعدة سابقة) فتفشل الصفحة بصمت.
+    match /admin_audit_logs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
     match /notification_requests/{requestId} {
       allow create, read: if isAdmin();
       allow update: if false;

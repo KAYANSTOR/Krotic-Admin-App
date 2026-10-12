@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import {
-  collection, getDocs, doc, deleteDoc,
-} from 'firebase/firestore';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -19,6 +17,10 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import {
+  fetchAdmins as loadAdmins, getAdminDataCacheState, subscribeAdminDataCache, invalidateAdminListData,
+} from '../lib/adminData';
+import useAppRefresh from '../lib/useAppRefresh';
 
 function AdminsSkeleton() {
   return (
@@ -47,24 +49,18 @@ export default function AdminsPage() {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [cacheState, setCacheState] = useState(null);
   const { createAdmin, currentUser } = useAuth();
   const latestRequestId = useRef(0);
 
-  useEffect(() => {
-    fetchAdmins();
-    return () => { latestRequestId.current += 1; };
-  }, []);
-
-  const fetchAdmins = async () => {
+  const fetchAdmins = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
     setLoading(true);
     try {
-      const adminsSnap = await getDocs(collection(db, 'Admins'));
+      const data = await loadAdmins({ force });
       if (requestId !== latestRequestId.current) return;
-      const adminsData = [];
-      adminsSnap.forEach((d) => adminsData.push({ id: d.id, ...d.data() }));
-      adminsData.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      setAdmins(adminsData);
+      setAdmins(data);
+      setCacheState(getAdminDataCacheState('admins'));
       setUpdatedAt(Date.now());
     } catch (error) {
       if (requestId !== latestRequestId.current) return;
@@ -73,7 +69,20 @@ export default function AdminsPage() {
     } finally {
       if (requestId === latestRequestId.current) setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchAdmins();
+    return () => { latestRequestId.current += 1; };
+  }, [fetchAdmins]);
+
+  // يعرض التحديثات من طبقة الكاش (بما فيها التحديث الخلفي والتنبيه عند التغيير).
+  useEffect(() => subscribeAdminDataCache('admins', (data) => {
+    if (Array.isArray(data)) setAdmins(data);
+  }), []);
+
+  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
+  useAppRefresh(() => fetchAdmins({ force: true }));
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -109,6 +118,7 @@ export default function AdminsPage() {
     if (!deleteTarget) return;
     try {
       await deleteDoc(doc(db, 'Admins', deleteTarget.id));
+      invalidateAdminListData();
       logAdminAction({
         action: AUDIT_ACTIONS.ADMIN_DELETE,
         targetType: 'admin',
@@ -144,7 +154,7 @@ export default function AdminsPage() {
         meta={`${admins.length} مدير مسجل`}
         actions={
           <>
-            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={fetchAdmins} />
+            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchAdmins({ force: true })} fromCache={cacheState?.fromCache ?? null} />
             <Button
               variant={showForm ? 'ghost' : 'primary'}
               icon={showForm ? X : UserPlus}
