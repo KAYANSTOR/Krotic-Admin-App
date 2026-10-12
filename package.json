@@ -12,7 +12,7 @@
     "prebuild": "node scripts/generate-icons.js",
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "test:rules": "npx -y firebase-tools@latest emulators:exec --project demo-krotic-firestore-rules --only firestore \"node --test security-tests/firestore-rules.test.js\"",
     "preview": "vite preview"
   },
