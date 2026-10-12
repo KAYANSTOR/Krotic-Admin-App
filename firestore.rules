@@ -49,6 +49,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /admin_aggregates/{userId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || isSelf(userId);
 

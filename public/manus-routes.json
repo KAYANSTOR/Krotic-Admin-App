@@ -6,6 +6,7 @@
     { "path": "/users", "title": "إدارة المستخدمين" },
     { "path": "/sales", "title": "المبيعات والعمولات" },
     { "path": "/notifications", "title": "الإشعارات" },
-    { "path": "/admins", "title": "إدارة المدراء" }
+    { "path": "/admins", "title": "إدارة المدراء" },
+    { "path": "/audit", "title": "سجل التدقيق" }
   ]
 }

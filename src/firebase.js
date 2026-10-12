@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 
 // All values must come from environment variables.
 // Create a .env file based on .env.example and fill in your NEW Firebase project credentials.
@@ -23,7 +28,22 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Keep Firestore documents in IndexedDB. The dashboard can render its last
+// known state immediately, while Firestore revalidates only what is missing.
+// Some embedded/private browser contexts do not support persistence, so the
+// fallback keeps the application functional without local caching.
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  });
+} catch (error) {
+  console.warn('Persistent Firestore cache unavailable; using memory cache.', error);
+  db = getFirestore(app);
+}
+export { db };
 
 // Secondary app instance for creating new admin users without signing out the current admin
 const secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
