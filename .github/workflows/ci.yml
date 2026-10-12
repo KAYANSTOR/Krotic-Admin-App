@@ -24,6 +24,11 @@ jobs:
         run: npm ci
       - name: Test admin unit suite
         run: npm test
+      - name: Set up Java 21 for Firebase Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Test Firestore security rules
         run: npm run test:rules
       - name: Build admin dashboard
