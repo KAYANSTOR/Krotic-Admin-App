@@ -22,6 +22,10 @@ jobs:
           cache: npm
       - name: Install web dependencies
         run: npm ci
+      - name: Test admin unit suite
+        run: npm test
+      - name: Test Firestore security rules
+        run: npm run test:rules
       - name: Build admin dashboard
         run: npm run build
 
