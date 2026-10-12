@@ -105,28 +105,35 @@ async function fetchAggregateFromFirestore(uid, user, globalCommission) {
   const salesRef = collection(db, 'networks', uid, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
   const paymentsRef = collection(db, 'networks', uid, 'payments');
-  const [salesAggregate, paymentsAggregate, recentSalesSnapshot] = await Promise.all([
+  const [salesAggregate, paymentsAggregate] = await Promise.all([
     getAggregateFromServer(completedQuery, {
       totalFaceValue: sum('faceValue'),
       totalTransactions: count(),
     }),
     getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
-    getDocs(query(
-      completedQuery,
-      where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo())),
-      orderBy('createdAt', 'asc'),
-    )),
   ]);
   const totalFaceValue = Number(salesAggregate.data().totalFaceValue) || 0;
   const totalTransactions = Number(salesAggregate.data().totalTransactions) || 0;
   const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
-  const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  let monthly = {};
+  try {
+    const recentSalesSnapshot = await getDocs(query(
+      completedQuery,
+      where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo())),
+      orderBy('createdAt', 'asc'),
+    ));
+    const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+    monthly = buildMonthlyBuckets(recentSales, rate);
+  } catch (error) {
+    // The dashboard totals remain usable while a newly deployed composite index settles.
+    console.warn(`تعذر تحميل مبيعات الأشهر الأخيرة للشبكة ${uid}:`, error);
+  }
   return {
     totalFaceValue,
     totalAdminEarnings: totalFaceValue * rate,
     totalTransactions,
     totalPaid,
-    monthly: buildMonthlyBuckets(recentSales, rate),
+    monthly,
     source: 'aggregation',
   };
 }
