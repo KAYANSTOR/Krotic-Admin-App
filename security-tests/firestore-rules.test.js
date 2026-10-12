@@ -49,6 +49,12 @@ if (!emulatorAddress) {
       });
       await setDoc(doc(db, 'users/user-1'), account('user-1'));
       await setDoc(doc(db, 'users/user-2'), account('user-2'));
+      await setDoc(doc(db, 'admin_aggregates/user-1'), {
+        totalFaceValue: 1000,
+        totalTransactions: 2,
+        totalAdminEarnings: 50,
+        totalPaid: 0,
+      });
       await setDoc(doc(db, 'app_settings/global_config'), {
         isAppActive: true,
         defaultCommissionRate: 5,
@@ -121,6 +127,14 @@ if (!emulatorAddress) {
       phone: '',
       createdAt: Date.now(),
     }));
+  });
+
+  test('admins can read billing aggregates while normal accounts cannot', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertSucceeds(getDoc(doc(adminDb, 'admin_aggregates/user-1')));
+
+    const userDb = testEnv.authenticatedContext('user-1').firestore();
+    await assertFails(getDoc(doc(userDb, 'admin_aggregates/user-1')));
   });
 
   test('a user can read root app settings but cannot read old global notification archives', async () => {
