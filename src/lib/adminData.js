@@ -332,11 +332,16 @@ export async function fetchDashboardStats(options) {
 export async function fetchNetworkSales(options) {
   return readCached('network-sales', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
-    const users = await fetchAllUsers(childOptions);
+    const [users, config] = await Promise.all([fetchAllUsers(childOptions), fetchGlobalConfig(childOptions)]);
+    const defaultCommissionRate = Number(config.default_commission_rate ?? 5);
     const { values: rawNetworks, errors } = await mapUsersSoft(users, 'Network sales', async (user) => {
-      const [meta, aggregate, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchAggregate(user.uid, childOptions), fetchSalesForUser(user.uid, true, childOptions)]);
-      if (!sales.length && !aggregate.totalTransactions) return null;
-      return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, aggregate };
+      const [meta, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchSalesForUser(user.uid, false, childOptions)]);
+      if (!sales.length) return null;
+      const customRate = Number(user.commission_rate);
+      const commissionRate = user.commission_rate != null && user.commission_rate !== '' && Number.isFinite(customRate)
+        ? customRate
+        : (Number.isFinite(defaultCommissionRate) ? defaultCommissionRate : 5);
+      return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, commissionRate };
     });
     const value = rawNetworks.filter(Boolean);
     return errors.length ? partialResult(value, errors) : value;
