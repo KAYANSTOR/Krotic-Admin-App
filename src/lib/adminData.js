@@ -1,5 +1,5 @@
 import {
-  collection, count, doc, getAggregateFromServer, getDoc, getDocs, getDocsFromServer, limit, orderBy, query, startAt, sum, Timestamp, where,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocs, getDocsFromServer, limit, onSnapshot, orderBy, query, startAt, sum, Timestamp, where,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { toDate } from './format';
@@ -86,6 +86,12 @@ export async function fetchGlobalConfig(options) {
     const snap = await getDoc(doc(db, 'app_settings', 'global_config'));
     return snap.exists() ? snap.data() : { default_commission_rate: 5, is_app_active: true };
   }, options);
+}
+function resolveCommissionRate(user, defaultRate) {
+  const customRate = Number(user?.commission_rate);
+  return user?.commission_rate != null && user.commission_rate !== '' && Number.isFinite(customRate)
+    ? customRate
+    : (Number.isFinite(Number(defaultRate)) ? Number(defaultRate) : 5);
 }
 
 /**
@@ -337,15 +343,141 @@ export async function fetchNetworkSales(options) {
     const { values: rawNetworks, errors } = await mapUsersSoft(users, 'Network sales', async (user) => {
       const [meta, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchSalesForUser(user.uid, false, childOptions)]);
       if (!sales.length) return null;
-      const customRate = Number(user.commission_rate);
-      const commissionRate = user.commission_rate != null && user.commission_rate !== '' && Number.isFinite(customRate)
-        ? customRate
-        : (Number.isFinite(defaultCommissionRate) ? defaultCommissionRate : 5);
+      const commissionRate = resolveCommissionRate(user, defaultCommissionRate);
       return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, commissionRate };
     });
     const value = rawNetworks.filter(Boolean);
     return errors.length ? partialResult(value, errors) : value;
   }, options);
+}
+/**
+ * Streams all sale records for every registered network. Each subscription is
+ * scoped to one network's sales collection, so Firestore rules can authorize
+ * the same path the admin already reads for the initial page load.
+ */
+export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
+  let active = true;
+  let defaultCommissionRate = 5;
+  let usersUnsubscribe = null;
+  let configUnsubscribe = null;
+  let initialNetworkIds = null;
+  let readyCalled = false;
+  const usersByUid = new Map();
+  const metadataByUid = new Map();
+  const salesByUid = new Map();
+  const salesCacheByUid = new Map();
+  const salesUnsubscribers = new Map();
+  const initialSalesSnapshots = new Set();
+
+  const reportError = (error, uid = '') => {
+    if (active) onError?.(error, uid);
+  };
+  const isReady = () => initialNetworkIds !== null
+    && [...initialNetworkIds].every((uid) => initialSalesSnapshots.has(uid));
+  const publish = (newSales = []) => {
+    if (!active) return;
+    if (!readyCalled && initialNetworkIds !== null && !isReady()) return;
+    const networks = [];
+    usersByUid.forEach((user, uid) => {
+      const sales = salesByUid.get(uid) || [];
+      if (!sales.length) return;
+      const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
+      networks.push({
+        uid,
+        networkName: meta.networkName,
+        phoneNumber: meta.phoneNumber,
+        sales,
+        commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+      });
+    });
+    const fromCache = [...usersByUid.keys()].some((uid) => salesCacheByUid.get(uid) !== false);
+    onUpdate(networks, { fromCache }, newSales);
+    if (!readyCalled && isReady()) {
+      readyCalled = true;
+      onReady?.();
+    }
+  };
+  const startSalesSubscription = (uid) => {
+    if (salesUnsubscribers.has(uid)) return;
+    fetchNetworkMeta(uid).then((meta) => {
+      if (!active || !usersByUid.has(uid)) return;
+      metadataByUid.set(uid, meta);
+      publish();
+    }).catch((error) => reportError(error, uid));
+    const unsubscribe = onSnapshot(
+      collection(db, 'networks', uid, 'sales'),
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (!active || !usersByUid.has(uid)) return;
+        const isInitialSnapshot = !initialSalesSnapshots.has(uid);
+        const user = usersByUid.get(uid);
+        const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
+        const newSales = isInitialSnapshot ? [] : snapshot.docChanges()
+          .filter((change) => change.type === 'added')
+          .map((change) => ({
+            uid,
+            networkName: meta.networkName,
+            faceValue: Number(change.doc.data().faceValue) || 0,
+            status: change.doc.data().status || '',
+            commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+          }));
+        salesByUid.set(uid, snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() })));
+        salesCacheByUid.set(uid, snapshot.metadata.fromCache);
+        initialSalesSnapshots.add(uid);
+        publish(newSales);
+      },
+      (error) => {
+        initialSalesSnapshots.add(uid);
+        publish();
+        reportError(error, uid);
+      },
+    );
+    salesUnsubscribers.set(uid, unsubscribe);
+  };
+
+  usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+    if (!active) return;
+    const currentUids = new Set(snapshot.docs.map((userDoc) => userDoc.id));
+    if (initialNetworkIds === null || !readyCalled) initialNetworkIds = new Set(currentUids);
+    for (const [uid, unsubscribe] of salesUnsubscribers) {
+      if (currentUids.has(uid)) continue;
+      unsubscribe();
+      salesUnsubscribers.delete(uid);
+      usersByUid.delete(uid);
+      metadataByUid.delete(uid);
+      salesByUid.delete(uid);
+      salesCacheByUid.delete(uid);
+      initialSalesSnapshots.delete(uid);
+    }
+    snapshot.docs.forEach((userDoc) => {
+      usersByUid.set(userDoc.id, { uid: userDoc.id, ...userDoc.data() });
+      startSalesSubscription(userDoc.id);
+    });
+    publish();
+  }, (error) => {
+    reportError(error);
+    if (!readyCalled) {
+      readyCalled = true;
+      onReady?.();
+    }
+  });
+
+  configUnsubscribe = onSnapshot(doc(db, 'app_settings', 'global_config'), (snapshot) => {
+    if (!active) return;
+    defaultCommissionRate = snapshot.exists()
+      ? Number(snapshot.data().default_commission_rate ?? 5)
+      : 5;
+    publish();
+  }, (error) => reportError(error));
+
+  return () => {
+    active = false;
+    usersUnsubscribe?.();
+    configUnsubscribe?.();
+    salesUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    salesUnsubscribers.clear();
+    salesCacheByUid.clear();
+  };
 }
 export async function fetchUsersForSelect(options) {
   return readCached('users-for-select', async (loaderContext) => {

@@ -1794,3 +1794,72 @@
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+
+/* إشعار لحظي عند وصول بيع جديد من Firestore */
+.sales-live-alert {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  margin-bottom: 1rem;
+  padding: .875rem 1rem;
+  border: 1px solid #A7F3D0;
+  border-radius: 1rem;
+  background: linear-gradient(110deg, #ECFDF5, #FFFFFF 72%);
+  color: #065F46;
+  box-shadow: 0 10px 28px rgba(6, 95, 70, .10);
+  animation: sales-live-enter .32s ease-out both;
+}
+.sales-live-alert__pulse {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 2.75rem;
+  border-radius: 999px;
+  background: #D1FAE5;
+  color: #047857;
+}
+.sales-live-alert__pulse::after {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #34D399;
+  border-radius: inherit;
+  content: "";
+  animation: sales-live-pulse 1.5s ease-out infinite;
+}
+.sales-live-alert__content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: .2rem;
+}
+.sales-live-alert__content strong { font-size: .9rem; font-weight: 800; }
+.sales-live-alert__content span { color: #047857; font-size: .8rem; line-height: 1.5; }
+.sales-live-alert__close {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #047857;
+  cursor: pointer;
+  font-size: 1.35rem;
+}
+.sales-live-alert__close:hover { background: #D1FAE5; }
+@keyframes sales-live-enter {
+  from { opacity: 0; transform: translateY(-8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes sales-live-pulse {
+  0% { opacity: .75; transform: scale(.75); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sales-live-alert,
+  .sales-live-alert__pulse::after { animation: none; }
+}

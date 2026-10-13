@@ -14,7 +14,7 @@ import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
 import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
+import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 
 const NETWORK_PAGE_SIZE = 10;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v2';
@@ -59,9 +59,12 @@ export default function SalesPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [newSaleNotice, setNewSaleNotice] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
   const latestRequestId = useRef(0);
+  const hasRealtimeSnapshot = useRef(false);
+  const saleNoticeTimer = useRef(null);
 
   const load = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
@@ -83,6 +86,7 @@ export default function SalesPage() {
   }, []);
 
   useEffect(() => subscribeAdminDataCache('network-sales', (data, state) => {
+    if (hasRealtimeSnapshot.current) return;
     setNetworkSales(data);
     setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
     setUpdatedAt(Date.now());
@@ -91,9 +95,49 @@ export default function SalesPage() {
   }), []);
 
   useEffect(() => {
-    load();
-    return () => { latestRequestId.current += 1; };
-  }, [load]);
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (data, freshness, addedSales = []) => {
+        hasRealtimeSnapshot.current = true;
+        setNetworkSales(data);
+        setUpdatedAt(Date.now());
+        setCacheState((previous) => ({
+          ...previous,
+          fromCache: freshness?.fromCache ?? false,
+          lastSyncedAt: freshness?.fromCache ? previous?.lastSyncedAt : Date.now(),
+        }));
+        if (addedSales.length) {
+          const totalFaceValue = addedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+          const totalCommission = addedSales.reduce(
+            (sum, sale) => sum + ((Number(sale.faceValue) || 0) * (Number(sale.commissionRate) || 0) / 100),
+            0,
+          );
+          const networkNames = [...new Set(addedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
+          setNewSaleNotice({
+            id: Date.now(),
+            count: addedSales.length,
+            totalFaceValue,
+            totalCommission,
+            networkName: networkNames.length === 1 ? networkNames[0] : 'عدة شبكات',
+          });
+          if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
+          saleNoticeTimer.current = window.setTimeout(() => setNewSaleNotice(null), 7000);
+        }
+      },
+      (error, uid) => {
+        console.error('Realtime sales listener error:', uid, error);
+        const message = uid
+          ? `تعذر استقبال تحديثات المبيعات للشبكة ${uid}: ${error.message || error}`
+          : `تعذر استقبال تحديثات المبيعات: ${error.message || error}`;
+        setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
+      },
+      () => setLoading(false),
+    );
+    return () => {
+      unsubscribe();
+      if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
+      latestRequestId.current += 1;
+    };
+  }, []);
 
   // السحب للأسفل على الجوال يعيد جلب بيانات المبيعات (force).
   useAppRefresh(() => load({ force: true }));
@@ -219,11 +263,38 @@ export default function SalesPage() {
       <PageHeader
         icon={DollarSign}
         title="سجل المبيعات والعمولات"
-        description="جميع سجلات المبيعات واحتساب العمولة من إجمالي قيمها"
+        description="جميع السجلات والعمولات، مع تحديث تلقائي عند تسجيل عملية بيع جديدة"
         actions={
           <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => load({ force: true })} />
         }
       />
+
+      {newSaleNotice && (
+        <div key={newSaleNotice.id} className="sales-live-alert" role="status" aria-live="polite">
+          <span className="sales-live-alert__pulse" aria-hidden="true">
+            <DollarSign className="w-5 h-5" />
+          </span>
+          <div className="sales-live-alert__content">
+            <strong>
+              {newSaleNotice.count === 1 ? 'عملية بيع جديدة' : `${formatNumber(newSaleNotice.count)} عمليات بيع جديدة`}
+            </strong>
+            <span>
+              {newSaleNotice.networkName} • المبيعات: {formatNumber(newSaleNotice.totalFaceValue)} ريال • العمولة: {formatNumber(newSaleNotice.totalCommission)} ريال
+            </span>
+          </div>
+          <button
+            type="button"
+            className="sales-live-alert__close"
+            aria-label="إغلاق تنبيه المبيعات"
+            onClick={() => {
+              setNewSaleNotice(null);
+              if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <p className="mb-4 text-sm text-ink-secondary" role="note">
         العمولة محسوبة كنسبة من إجمالي المبيعات وتشمل كل الحالات، وفق نسبة العمولة الخاصة بالشبكة أو النسبة العامة.
