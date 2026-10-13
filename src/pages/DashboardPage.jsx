@@ -15,8 +15,45 @@ import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import BarChart from '../components/ui/BarChart';
-import { formatNumber } from '../lib/format';
-import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
+import { formatNumber, toDate } from '../lib/format';
+import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
+
+const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+function summarizeRealtimeSales(networks) {
+  const now = new Date();
+  const months = [];
+  const monthBuckets = new Map();
+  for (let offset = 5; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = { month, label: MONTH_LABELS[date.getMonth()], face: 0, count: 0 };
+    months.push(bucket);
+    monthBuckets.set(month, bucket);
+  }
+
+  const totals = networks.reduce((summary, network) => {
+    const rate = Number(network.commissionRate) || 0;
+    (network.sales || []).forEach((sale) => {
+      const faceValue = Number(sale.faceValue) || 0;
+      summary.totalSales += faceValue;
+      summary.totalTransactions += 1;
+      summary.totalCommission += faceValue * rate / 100;
+
+      const date = toDate(sale.createdAt);
+      if (!date || Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const bucket = monthBuckets.get(key);
+      if (bucket) {
+        bucket.face += faceValue;
+        bucket.count += 1;
+      }
+    });
+    return summary;
+  }, { totalSales: 0, totalTransactions: 0, totalCommission: 0 });
+
+  return { stats: totals, monthlySales: months };
+}
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
@@ -31,6 +68,9 @@ export default function DashboardPage() {
   const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
   const [partialErrors, setPartialErrors] = useState([]);
   const latestRequestId = useRef(0);
+  const realtimeSummary = useRef(null);
+  const dashboardDataReady = useRef(false);
+  const salesRealtimeReady = useRef(false);
 
   const load = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
@@ -47,39 +87,68 @@ export default function DashboardPage() {
       } = await fetchDashboardStats({ force });
       if (requestId !== latestRequestId.current) return;
       setAppStatus(status);
-      setStats(nextStats);
+      setStats({ ...nextStats, ...(realtimeSummary.current?.stats || {}) });
       setAlerts(nextAlerts);
-      setMonthlySales(nextMonthlySales || []);
+      setMonthlySales(realtimeSummary.current?.monthlySales || nextMonthlySales || []);
       setMonthlyDataWarning(Boolean(nextMonthlyDataWarning));
       setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('dashboard-stats'));
+      dashboardDataReady.current = true;
     } catch (err) {
       if (requestId !== latestRequestId.current) return;
       console.error('Error fetching dashboard data:', err);
       setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
+      dashboardDataReady.current = true;
     } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
+      if (requestId === latestRequestId.current && dashboardDataReady.current && salesRealtimeReady.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => subscribeAdminDataCache('dashboard-stats', (data, state) => {
+    dashboardDataReady.current = true;
     setAppStatus(data.appStatus);
-    setStats(data.stats);
+    setStats({ ...data.stats, ...(realtimeSummary.current?.stats || {}) });
     setAlerts(data.alerts);
-    setMonthlySales(data.monthlySales || []);
+    setMonthlySales(realtimeSummary.current?.monthlySales || data.monthlySales || []);
     setMonthlyDataWarning(Boolean(data.monthlyDataWarning));
     setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
     setUpdatedAt(Date.now());
     setCacheState(state);
     setError(null);
-    setLoading(false);
   }), []);
 
   useEffect(() => {
     load();
     return () => { latestRequestId.current += 1; };
   }, [load]);
+
+  useEffect(() => subscribeNetworkSalesRealtime(
+    (networks, freshness) => {
+      const summary = summarizeRealtimeSales(networks);
+      realtimeSummary.current = summary;
+      setStats((current) => current ? { ...current, ...summary.stats } : current);
+      setMonthlySales(summary.monthlySales);
+      setUpdatedAt(Date.now());
+      setCacheState((current) => ({
+        ...current,
+        fromCache: freshness?.fromCache ?? false,
+        lastSyncedAt: freshness?.fromCache ? current?.lastSyncedAt : Date.now(),
+      }));
+    },
+    (listenerError, uid) => {
+      console.error('Dashboard live sales listener error:', uid, listenerError);
+      const message = uid
+        ? `تعذر استقبال مبيعات الشبكة ${uid}: ${listenerError.message || listenerError}`
+        : `تعذر استقبال تحديثات المبيعات: ${listenerError.message || listenerError}`;
+      setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
+      setMonthlyDataWarning(true);
+    },
+    () => {
+      salesRealtimeReady.current = true;
+      if (dashboardDataReady.current) setLoading(false);
+    },
+  ), []);
 
   // السحب للأسفل على الجوال يعيد جلب بيانات اللوحة (force).
   useAppRefresh(() => load({ force: true }));
@@ -173,7 +242,7 @@ export default function DashboardPage() {
           <section className="dash-finance" aria-label="الملخص المالي">
             <article className="dash-finance__primary">
               <header className="dash-finance__head">
-                <span className="dash-finance__eyebrow">قيمة السجلات التي أبلغ التطبيق عن اكتمالها</span>
+                <span className="dash-finance__eyebrow">إجمالي المبيعات</span>
                 <span className="dash-finance__pill">
                   <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
                   كل الوقت
@@ -184,7 +253,7 @@ export default function DashboardPage() {
                 <span>ريال يمني</span>
               </div>
               <p className="dash-finance__hint">
-                مجموع القيم المرسلة من التطبيق؛ لا تمثل هذه الأرقام مبيعات أو تسوية معتمدة خادمياً.
+                يشمل جميع حالات البيع، وتتحدث الأرقام تلقائياً عند وصول عمليات جديدة.
               </p>
             </article>
 
@@ -194,10 +263,22 @@ export default function DashboardPage() {
                   <Wallet className="w-5 h-5" />
                 </span>
                 <div>
-                  <p className="dash-finance__tile-label">حالات مكتملة حسب التطبيق (غير متحققة)</p>
+                  <p className="dash-finance__tile-label">عدد عمليات البيع</p>
                   <p className="dash-finance__tile-value">
                     {formatNumber(stats.totalTransactions)}
                     <small> عملية</small>
+                  </p>
+                </div>
+              </article>
+              <article className="dash-finance__tile dash-finance__tile--gold">
+                <span className="dash-finance__tile-icon" aria-hidden="true">
+                  <CreditCard className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="dash-finance__tile-label">إجمالي العمولة</p>
+                  <p className="dash-finance__tile-value">
+                    {formatNumber(stats.totalCommission)}
+                    <small> ريال يمني</small>
                   </p>
                 </div>
               </article>
@@ -206,8 +287,8 @@ export default function DashboardPage() {
 
           <Section
             eyebrow="الاتجاه"
-            title="القيم المرسلة في آخر 6 أشهر"
-            description="قيم سجلات Android التي تحمل حالة مكتمل؛ غير متحققة ولا تمثل كشفاً مالياً معتمداً."
+            title="إجمالي المبيعات في آخر 6 أشهر"
+            description="إجمالي القيم وعدد العمليات لجميع حالات البيع، مع تحديث مباشر."
             aria-label="مخطط المبيعات"
           >
             <Card>
