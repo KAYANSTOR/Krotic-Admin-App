@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Activity, AlertTriangle, ArrowUpLeft, Bell, Clock, CreditCard,
-  LayoutDashboard, RefreshCw, Settings, ShieldCheck, Sparkles,
+  LayoutDashboard, RefreshCw, Settings, Sparkles,
   TrendingUp, UserCheck, UserPlus, Users, Wallet,
 } from 'lucide-react';
 import StatCard from '../components/ui/StatCard';
@@ -15,7 +15,7 @@ import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import BarChart from '../components/ui/BarChart';
-import { formatNumber, toDate } from '../lib/format';
+import { formatDate, formatNumber, toDate } from '../lib/format';
 import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -55,6 +55,17 @@ function summarizeRealtimeSales(networks) {
   return { stats: totals, monthlySales: months };
 }
 
+function recentOperationsFromNetworks(networks) {
+  return networks
+    .flatMap((network) => (network.sales || []).map((sale) => ({
+      ...sale,
+      networkName: network.networkName || network.uid,
+      commissionRate: network.commissionRate,
+    })))
+    .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
+    .slice(0, 8);
+}
+
 export default function DashboardPage() {
   const { adminData } = useAuth();
   const [stats, setStats] = useState(null);
@@ -65,6 +76,7 @@ export default function DashboardPage() {
   const [cacheState, setCacheState] = useState(null);
   const [alerts, setAlerts] = useState(null);
   const [monthlySales, setMonthlySales] = useState([]);
+  const [recentOperations, setRecentOperations] = useState([]);
   const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
   const [partialErrors, setPartialErrors] = useState([]);
   const latestRequestId = useRef(0);
@@ -129,6 +141,7 @@ export default function DashboardPage() {
       realtimeSummary.current = summary;
       setStats((current) => current ? { ...current, ...summary.stats } : current);
       setMonthlySales(summary.monthlySales);
+      setRecentOperations(recentOperationsFromNetworks(networks));
       setUpdatedAt(Date.now());
       setCacheState((current) => ({
         ...current,
@@ -257,32 +270,13 @@ export default function DashboardPage() {
               </p>
             </article>
 
-            <div className="dash-finance__side">
-              <article className="dash-finance__tile dash-finance__tile--brand">
-                <span className="dash-finance__tile-icon" aria-hidden="true">
-                  <Wallet className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="dash-finance__tile-label">عدد عمليات البيع</p>
-                  <p className="dash-finance__tile-value">
-                    {formatNumber(stats.totalTransactions)}
-                    <small> عملية</small>
-                  </p>
-                </div>
-              </article>
-              <article className="dash-finance__tile dash-finance__tile--gold">
-                <span className="dash-finance__tile-icon" aria-hidden="true">
-                  <CreditCard className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="dash-finance__tile-label">إجمالي العمولة</p>
-                  <p className="dash-finance__tile-value">
-                    {formatNumber(stats.totalCommission)}
-                    <small> ريال يمني</small>
-                  </p>
-                </div>
-              </article>
-            </div>
+          </section>
+
+          <section className="grid-kpi" aria-label="المؤشرات المالية والتشغيلية">
+            <StatCard title="عدد عمليات البيع" value={formatNumber(stats.totalTransactions)} icon={Wallet} tone="brand" subtitle="كل العمليات المسجلة" iconStart />
+            <StatCard title="إجمالي العمولة" value={formatNumber(stats.totalCommission)} icon={CreditCard} tone="gold" subtitle="حسب نسب الشبكات" iconStart />
+            <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" subtitle="حسابات متاحة" iconStart />
+            <StatCard title="تحتاج انتباهًا" value={formatNumber((alerts?.expiredUsers || 0) + (alerts?.expiringSoonUsers || 0))} icon={AlertTriangle} tone="warning" subtitle="منتهية أو قريبة الانتهاء" iconStart />
           </section>
 
           <Section
@@ -367,12 +361,26 @@ export default function DashboardPage() {
                 <span className="dash-action__label">الإعدادات العامة</span>
                 <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
-              <Link to="/admins" className="dash-action">
-                <IconTile icon={ShieldCheck} tone="success" />
-                <span className="dash-action__label">إدارة المدراء</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
-              </Link>
             </div>
+          </Section>
+
+          <Section eyebrow="آخر العمليات" title="آخر مبيعات الشبكات" description="أحدث العمليات الواردة من الشبكات مرتبة حسب وقت التسجيل." aria-label="آخر العمليات">
+            {recentOperations.length === 0 ? (
+              <Card><p className="text-sm text-ink-secondary">لا توجد عمليات حديثة لعرضها.</p></Card>
+            ) : (
+              <div className="recent-operations">
+                {recentOperations.map((operation) => (
+                  <Link key={`${operation.networkName}-${operation.id}`} to="/sales" className="recent-operation">
+                    <span className="recent-operation__icon"><CreditCard className="w-4 h-4" aria-hidden="true" /></span>
+                    <span className="recent-operation__body">
+                      <strong>{operation.networkName}</strong>
+                      <span>{formatDate(operation.createdAt, { withTime: true })} • {operation.customerId || 'عميل غير محدد'}</span>
+                    </span>
+                    <span className="recent-operation__amount">{formatNumber(operation.faceValue)} ريال</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </Section>
 
           <Section title="حالة النظام" aria-label="حالة النظام">
