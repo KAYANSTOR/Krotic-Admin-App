@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
+import MeniscusSurface from './MeniscusSurface';
 
 /** العناصر اليومية تظهر مباشرة؛ الباقي داخل لوحة «المزيد». */
 const primaryItems = [
@@ -33,8 +34,9 @@ function preloadRoute(path) {
 
 export default function BottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
-  const [dragIndex, setDragIndex] = useState(null);
   const navRef = useRef(null);
+  const surfaceRef = useRef(null);
+  const dragIndexRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -44,19 +46,30 @@ export default function BottomNav() {
   const activeIndex = isMoreActive ? 4 : Math.max(0, primaryItems.findIndex((item) => (
     item.path === location.pathname || (item.path === '/' && location.pathname === '/')
   )));
-  const visualIndex = dragIndex ?? activeIndex;
-
-  const indexFromPointer = (event) => {
+  const positionFromPointer = (event) => {
     const element = navRef.current;
     if (!element) return 0;
     const rect = element.getBoundingClientRect();
     // The project is RTL, so the first tab is on the right.
     const fromRight = rect.right - event.clientX;
-    return Math.max(0, Math.min(4, Math.floor((fromRight / rect.width) * 5)));
+    return Math.max(0, Math.min(4, (fromRight / rect.width) * 5 - 0.5));
+  };
+
+  const indexFromPointer = (event) => Math.max(0, Math.min(4, Math.floor(positionFromPointer(event))));
+
+  useEffect(() => {
+    surfaceRef.current?.setTarget(activeIndex, true);
+  }, [activeIndex]);
+
+  const updateDragPosition = (event) => {
+    const position = positionFromPointer(event);
+    dragIndexRef.current = Math.floor(position);
+    surfaceRef.current?.setTarget(position);
   };
 
   const selectIndex = (index) => {
-    setDragIndex(null);
+    dragIndexRef.current = null;
+    surfaceRef.current?.setTarget(index);
     if (index === 4) {
       setMoreOpen((open) => !open);
       return;
@@ -68,12 +81,12 @@ export default function BottomNav() {
   const handlePointerDown = (event) => {
     if (event.target.closest('a, button')) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    setDragIndex(indexFromPointer(event));
+    updateDragPosition(event);
   };
 
   const handlePointerMove = (event) => {
     if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
-    setDragIndex(indexFromPointer(event));
+    updateDragPosition(event);
   };
 
   const handlePointerUp = (event) => {
@@ -126,9 +139,12 @@ export default function BottomNav() {
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={() => setDragIndex(null)}
+        onPointerCancel={() => {
+          dragIndexRef.current = null;
+          surfaceRef.current?.setTarget(activeIndex);
+        }}
       >
-        <span className="meniscus-bead" aria-hidden="true" />
+        <MeniscusSurface ref={surfaceRef} position={activeIndex} />
         <div className="bottom-nav-row">
           {primaryItems.map(({ path, label, icon: Icon }, index) => (
             <NavLink
