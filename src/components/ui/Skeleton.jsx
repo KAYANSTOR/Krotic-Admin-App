@@ -22,18 +22,16 @@ export function SkeletonStatGrid() {
   );
 }
 
-/** Mirrors the shared PageHeader so loading screens keep the same rhythm. */
+/** Mirrors the shared PageHero (Dashboard header) so loading screens keep the same rhythm. */
 export function SkeletonPageHeader() {
   return (
-    <div className="page-header" aria-hidden="true">
-      <div className="page-header__main">
-        <Skeleton className="w-12 h-12 rounded-[16px]" />
-        <div className="space-y-2">
-          <SkeletonLine className="w-52 h-7" />
-          <SkeletonLine className="w-40" />
-        </div>
+    <section className="dash-hello" aria-hidden="true">
+      <div className="dash-hello__main">
+        <SkeletonLine className="w-28 h-7 rounded-full" />
+        <SkeletonLine className="w-56 h-8 mt-3" />
+        <SkeletonLine className="w-40 mt-3" />
       </div>
-    </div>
+    </section>
   );
 }
 

@@ -14,6 +14,7 @@ import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import { formatDate, formatNumber, toDate } from '../lib/format';
+import { saleCommission } from '../lib/commission';
 import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -31,12 +32,12 @@ function summarizeRealtimeSales(networks) {
   }
 
   const totals = networks.reduce((summary, network) => {
-    const rate = Number(network.commissionRate) || 0;
     (network.sales || []).forEach((sale) => {
       const faceValue = Number(sale.faceValue) || 0;
       summary.totalSales += faceValue;
       summary.totalTransactions += 1;
-      summary.totalCommission += faceValue * rate / 100;
+      // العمولة من حقول الخادم فقط (قرار ي3)؛ السجلات غير المتحقق منها تُهمَل.
+      summary.totalCommission += saleCommission(sale) ?? 0;
 
       const date = toDate(sale.createdAt);
       if (!date || Number.isNaN(date.getTime())) return;

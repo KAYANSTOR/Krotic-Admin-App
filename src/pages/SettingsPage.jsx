@@ -10,7 +10,8 @@ import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
   ShieldCheck, AlertTriangle, Users,
 } from 'lucide-react';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
+import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -21,6 +22,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
+import { updateSettings, batchExpiry, adminApiError } from '../lib/adminApi';
 import { invalidateAdminDataCache, invalidateAdminGlobalConfigData, fetchGlobalConfig, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
 import useAppRefresh from '../lib/useAppRefresh';
 
@@ -99,27 +101,36 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    try {
-      await setDoc(doc(db, 'app_settings', 'global_config'), config, { merge: true });
-      invalidateAdminGlobalConfigData();
-      logAdminAction({
-        action: AUDIT_ACTIONS.SETTINGS_SAVE,
-        targetType: 'settings',
-        targetId: 'global_config',
-        targetLabel: 'الإعدادات العامة',
-        details: {
-          default_commission_rate: config.default_commission_rate,
-          default_trial_days: config.default_trial_days,
-          warning_days_before_expiry: config.warning_days_before_expiry,
-          is_app_active: config.is_app_active,
-        },
-      });
-      toast.success('تم حفظ الإعدادات بنجاح');
-    } catch (error) {
-      console.error('Error saving config:', error);
-      toast.error('خطأ في حفظ الإعدادات');
-    }
+    // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
+    const patch = {
+      is_app_active: config.is_app_active,
+      maintenance_message: config.maintenance_message || '',
+      default_trial_days: Number(config.default_trial_days),
+      default_trial_warning: config.default_trial_warning || '',
+      default_commission_rate: Number(config.default_commission_rate),
+      global_official_warning: config.global_official_warning || '',
+      warning_days_before_expiry: Number(config.warning_days_before_expiry),
+    };
+    const result = await updateSettings(patch);
     setSaving(false);
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر حفظ الإعدادات على الخادم'));
+      return;
+    }
+    invalidateAdminGlobalConfigData();
+    logAdminAction({
+      action: AUDIT_ACTIONS.SETTINGS_SAVE,
+      targetType: 'settings',
+      targetId: 'global_config',
+      targetLabel: 'الإعدادات العامة',
+      details: {
+        default_commission_rate: patch.default_commission_rate,
+        default_trial_days: patch.default_trial_days,
+        warning_days_before_expiry: patch.warning_days_before_expiry,
+        is_app_active: patch.is_app_active,
+      },
+    });
+    toast.success('تم حفظ الإعدادات بنجاح');
   };
 
   const toggleAppStatus = () => {
@@ -147,82 +158,31 @@ export default function SettingsPage() {
       toast.error('يرجى تحديد التاريخ أولاً');
       return;
     }
-
     setUpdatingBatch(true);
-    let succeededCount = 0;
-    let requestedCount = 0;
-    let failedBatchIndex = null;
-    let updateError = null;
-    try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const newExpiry = Timestamp.fromDate(new Date(batchDate));
-      const officialUsers = usersSnap.docs.filter((userDoc) => userDoc.data().is_trial === false);
-      const userBatches = chunkArray(officialUsers, FIRESTORE_BATCH_LIMIT);
-      requestedCount = officialUsers.length;
-
-      // Each commit writes an absolute value, so retrying after a partial failure is idempotent.
-      for (let batchIndex = 0; batchIndex < userBatches.length; batchIndex += 1) {
-        const userBatch = userBatches[batchIndex];
-        const batch = writeBatch(db);
-        userBatch.forEach((userDoc) => {
-          batch.update(doc(db, 'users', userDoc.id), {
-            subscription_end_date: newExpiry,
-          });
-        });
-
-        try {
-          await batch.commit();
-          // Count only writes whose commit completed; a failed batch contributes zero.
-          succeededCount += userBatch.length;
-        } catch (error) {
-          failedBatchIndex = batchIndex;
-          updateError = error;
-          console.error(`Error committing expiry batch ${batchIndex + 1}:`, error);
-          break;
-        }
-      }
-
-      if (succeededCount > 0) {
-        invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
-      }
-
-      if (requestedCount > 0) {
-        await logAdminAction({
-          action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
-          targetType: 'settings',
-          targetId: 'global_config',
-          targetLabel: 'تواريخ الانتهاء المجمّعة',
-          details: {
-            affected_users: succeededCount,
-            requested_users: requestedCount,
-            new_date: batchDate,
-            failed_batch: failedBatchIndex == null ? null : failedBatchIndex + 1,
-            partial_failure: Boolean(updateError),
-          },
-        });
-
-        if (updateError) {
-          if (succeededCount > 0) {
-            toast.error(`تم تحديث ${succeededCount} من ${requestedCount} حساب رسمي، وتعذر إكمال الدفعات اللاحقة. أعد المحاولة لإكمال التحديث`);
-          } else {
-            toast.error('تعذر تحديث الحسابات الرسمية؛ لم يتم الالتزام بأي تغيير. أعد المحاولة');
-          }
-        } else {
-          toast.success(`تم تحديث تاريخ الانتهاء لـ ${succeededCount} حساب رسمي بنجاح`);
-          setBatchDate('');
-        }
-      } else {
-        toast.error('لا يوجد حسابات رسمية لتحديثها');
-        setBatchDate('');
-      }
-    } catch (error) {
-      console.error('Error batch updating:', error);
-      updateError = error;
-      toast.error(`حدث خطأ أثناء تحديث التواريخ؛ تم تحديث ${succeededCount} حساب فعلياً`);
-    } finally {
-      // Keep batchDate after a partial failure so the administrator can retry safely.
-      setUpdatingBatch(false);
-      setShowBatchConfirm(false);
+    // توحيد تواريخ الانتهاء للحسابات الرسمية عبر الخادم (قرار ح/ي3).
+    const subscriptionEndsAt = new Date(batchDate).getTime();
+    const result = await batchExpiry(subscriptionEndsAt);
+    setUpdatingBatch(false);
+    setShowBatchConfirm(false);
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر تحديث تواريخ الانتهاء'));
+      return;
+    }
+    const updated = Number(result.data?.updated) || 0;
+    if (updated > 0) {
+      invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
+      await logAdminAction({
+        action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
+        targetType: 'settings',
+        targetId: 'global_config',
+        targetLabel: 'تواريخ الانتهاء المجمّعة',
+        details: { affected_users: updated, new_date: batchDate },
+      });
+      toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
+      setBatchDate('');
+    } else {
+      toast.error('لا يوجد حسابات رسمية لتحديثها');
+      setBatchDate('');
     }
   };
 
@@ -233,10 +193,10 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <PageHeader
+      <PageHero
         icon={Settings}
         title="الإعدادات العامة"
-        description="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
+        subtitle="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
         actions={
           <>
             <DataFreshness
@@ -252,7 +212,7 @@ export default function SettingsPage() {
         }
       />
 
-      <div className="settings-grid">
+      <Section eyebrow="الإعدادات العامة" aria-label="إعدادات التطبيق">
         {/* ===== حالة التطبيق ===== */}
         <Card>
           <CardHeader
@@ -302,6 +262,7 @@ export default function SettingsPage() {
               <Input
                 type="number"
                 min="0"
+                max="20"
                 step="0.1"
                 inputMode="decimal"
                 value={config.default_commission_rate ?? ''}
@@ -328,7 +289,7 @@ export default function SettingsPage() {
               <Input
                 type="number"
                 min="1"
-                max="30"
+                max="7"
                 inputMode="numeric"
                 value={config.warning_days_before_expiry}
                 onChange={(e) => update({ warning_days_before_expiry: parseInt(e.target.value, 10) || 5 })}
@@ -368,17 +329,17 @@ export default function SettingsPage() {
             >
               <Input
                 type="number"
-                min="1"
-                max="365"
+                min="0"
+                max="30"
                 inputMode="numeric"
                 value={config.default_trial_days}
-                onChange={(e) => update({ default_trial_days: parseInt(e.target.value, 10) || 3 })}
+                onChange={(e) => update({ default_trial_days: parseInt(e.target.value, 10) || 0 })}
                 className="max-w-[10rem]"
               />
             </Field>
           </div>
         </Card>
-      </div>
+      </Section>
 
       {/* ===== شريط الحفظ ===== */}
       <div className="settings-savebar">
@@ -391,6 +352,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ===== العمليات المجمعة ===== */}
+      <Section eyebrow="العمليات المجمّعة" aria-label="إدارة تواريخ الانتهاء المجمّعة">
       <Card className="settings-batch">
         <CardHeader
           icon={Calendar}
@@ -428,6 +390,7 @@ export default function SettingsPage() {
           يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ الحسابات التجريبية.
         </p>
       </Card>
+      </Section>
 
       {/* ===== نوافذ التأكيد ===== */}
       <ConfirmDialog

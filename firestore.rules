@@ -6,54 +6,73 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // كل سلطة الإدارة تأتي من العضوية في مجموعة Admins فقط.
+    // أُزيل البايباس السابق "المشرف الرئيسي" المضمّن في الكود.
     function isAdmin() {
       return signedIn()
         && exists(/databases/$(database)/documents/Admins/$(request.auth.uid))
         && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.uid == request.auth.uid;
-    }
-    function isPrimaryAdmin() {
-      return isAdmin()
-        && request.auth.uid == 'akicZMi3cqcDXqlLUZMLL9OdAg53'
-        && get(/databases/$(database)/documents/Admins/$(request.auth.uid)).data.email == 'jarallhalkboudi@gmail.com';
     }
 
     function isSelf(userId) {
       return signedIn() && request.auth.uid == userId;
     }
 
-    // Must match the fields written by the current Android registration flow.
-    // Privileged fields (commission, role, subscription, activation overrides)
-    // are deliberately not accepted from a self-registering account.
+    // حقول الصلاحية مملوكة للخادم. لا يجوز لأي عميل (ولا حتى المدير) كتابتها؛
+    // تتغيّر فقط عبر نقاط النهاية الخادمية الموقّعة (Admin SDK).
+    function accessFields() {
+      return ['accessStatus', 'trialStartedAt', 'subscriptionEndsAt', 'is_active',
+              'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning'];
+    }
+    function touchesAccessFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());
+    }
+    function onlyProfileFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['phone', 'network_name', 'platform', 'app_version', 'last_seen_at']);
+    }
+
+    // الشبكة مملوكة للحساب المخزّن في owner_uid. الشبكات القديمة (قبل نظام
+    // NET-xxxxx) تبقى networkId == owner uid، لذا نغطّي الحالتين.
+    function isNetworkOwner(networkId) {
+      return signedIn() && (
+        request.auth.uid == networkId
+        || (exists(/databases/$(database)/documents/networks/$(networkId))
+            && get(/databases/$(database)/documents/networks/$(networkId)).data.owner_uid == request.auth.uid)
+      );
+    }
+
+    // التسجيل الذاتي يكتب الملف الشخصي فقط. حالة الوصول/التجربة قرار خادمي،
+    // لذا لم يعد يُقبل is_active / is_trial من العميل.
     function validSelfRegistration(userId) {
       return request.resource.data.keys().hasAll([
-          'uid', 'phone', 'network_name', 'is_active', 'is_trial',
-          'platform', 'app_version', 'created_at', 'last_seen_at'
+          'uid', 'phone', 'network_name', 'platform', 'app_version', 'created_at', 'last_seen_at'
         ])
         && request.resource.data.keys().hasOnly([
-          'uid', 'phone', 'network_name', 'is_active', 'is_trial',
-          'platform', 'app_version', 'created_at', 'last_seen_at'
+          'uid', 'phone', 'network_name', 'platform', 'app_version', 'created_at', 'last_seen_at'
         ])
         && request.resource.data.uid == userId
         && request.resource.data.phone is string
         && request.resource.data.network_name is string
-        && request.resource.data.is_active == true
-        && request.resource.data.is_trial == false
         && request.resource.data.platform is string
         && request.resource.data.app_version is string
         && request.resource.data.created_at is timestamp
         && request.resource.data.last_seen_at is timestamp;
     }
 
-    // The Android client may upload completed sales for its own account, but
-    // can only create a constrained record and cannot revise an existing sale.
-    // Client-originated sales are still not an authoritative financial ledger;
-    // use a trusted server to independently verify them before billing.
+    // رفع مبيعات العميل الانتقالي (Android قبل تعميم HMAC). يستطيع العميل إنشاء
+    // سجل مقيّد لشبكته فقط، ولا يستطيع أبدًا ضبط حقول العمولة/التسوية الخادمية،
+    // ولا تعديل سجل مبيعات قائم.
     function validSale(saleId) {
       return request.resource.data.keys().hasOnly([
           'saleId', 'customerId', 'cardId', 'faceValue', 'amount',
           'amountMinor', 'currencyCode', 'face_value', 'commission',
           'commissionAmount', 'netAmount', 'status', 'createdAt',
           'created_at', 'source'
+        ])
+        && !request.resource.data.keys().hasAny([
+          'settlement_status', 'is_settled', 'settled', 'settlementId', 'settledAt',
+          'settledBy', 'commissionRateBps', 'commissionMinor', 'verified'
         ])
         && request.resource.data.saleId == saleId
         && request.resource.data.status == 'COMPLETED'
@@ -72,36 +91,23 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.resource.data.created_at;
     }
 
-    // Admin identity documents can only be provisioned by an existing admin.
-    // The first admin must be provisioned out-of-band with trusted credentials.
+    // مستندات المدراء تُنشأ/تُعدَّل/تُحذف فقط عبر المسار الخادمي POST /api/admins.
+    // العميل — حتى المدير — لا يكتبها مباشرة (قرار و3).
     match /Admins/{adminId} {
       allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
-      allow create: if isAdmin()
-        && adminId != request.auth.uid
-        && request.resource.data.uid == adminId
-        && request.resource.data.keys().hasAll(['uid', 'name', 'email', 'phone', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'createdAt'])
-        && request.resource.data.name is string
-        && request.resource.data.email is string
-        && request.resource.data.phone is string
-        && request.resource.data.createdAt is int;
-      allow update: if isAdmin()
-        && request.resource.data.uid == adminId
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'phone']);
-      allow delete: if isAdmin() && adminId != request.auth.uid;
+      allow write: if false;
     }
 
-    // Root app settings (e.g. maintenance/commission config) are readable by
-    // signed-in app accounts. Nested archives and notification history are
-    // admin-only, so a new account cannot read old global notifications.
+    // إعدادات التطبيق الجذرية تُقرأ من الحسابات المسجّلة، وتُكتب فقط عبر
+    // نقطة النهاية الخادمية المقيّدة POST /api/settings.
     match /app_settings/{document} {
       allow read: if signedIn() && document == 'global_config';
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
     match /app_settings/{document=**} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Billing aggregates are private to admins and cannot be changed by clients.
@@ -143,21 +149,10 @@ service cloud.firestore {
       allow read: if isAdmin() || isSelf(userId);
       allow create: if isSelf(userId) && validSelfRegistration(userId);
 
-      // Owners may refresh only profile/presence fields; billing and access
-      // status remain admin-controlled.
-      allow update: if isAdmin() || (isSelf(userId)
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['phone', 'network_name', 'platform', 'app_version', 'last_seen_at'])
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone'])
-          || request.resource.data.phone is string)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['network_name'])
-          || request.resource.data.network_name is string)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['platform'])
-          || request.resource.data.platform is string)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['app_version'])
-          || request.resource.data.app_version is string)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['last_seen_at'])
-          || request.resource.data.last_seen_at is timestamp));
+      // أصحاب الحسابات يحدّثون الملف الشخصي/الحضور فقط. حقول الوصول والفوترة
+      // مملوكة للخادم ولا يمكن تغييرها من أي عميل، ولا حتى من المدير.
+      allow update: if !touchesAccessFields()
+        && (isAdmin() || (isSelf(userId) && onlyProfileFields()));
 
       allow delete: if isAdmin();
 
@@ -180,43 +175,41 @@ service cloud.firestore {
       }
     }
 
-    match /networks/{userId} {
-      allow read: if isAdmin() || isSelf(userId);
-      allow write: if isAdmin();
+    match /networks/{networkId} {
+      allow read: if isAdmin() || isNetworkOwner(networkId);
+      // هوية الشبكة والوصول والتسوية تُدار من الخادم فقط.
+      allow write: if false;
 
       match /_metadata/{documentId} {
-        allow read, write: if isAdmin() || isSelf(userId);
+        allow read, write: if isAdmin() || isNetworkOwner(networkId);
       }
 
       match /sales/{saleId} {
-        allow read: if isAdmin() || isSelf(userId);
-        allow create: if isAdmin() || (isSelf(userId) && validSale(saleId));
-        allow update: if isAdmin() || (isSelf(userId)
+        allow read: if isAdmin() || isNetworkOwner(networkId);
+        allow create: if isAdmin() || (isNetworkOwner(networkId) && validSale(saleId));
+        allow update: if isAdmin() || (isNetworkOwner(networkId)
           && validSale(saleId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([]));
         allow delete: if isAdmin();
       }
 
+      // الدفعات والتسويات تُسجّل فقط عبر نقاط النهاية الخادمية الموثوقة
+      // (Admin SDK، idempotent). مسار كتابة العميل مغلق نهائياً.
       match /payments/{paymentId} {
-        allow read: if isAdmin() || isSelf(userId);
-        // Payment settlements are recorded only by the trusted server endpoint
-        // POST /api/record-payment (Admin SDK, idempotent). The client write
-        // path stays closed; publishing this rule no longer stops payment
-        // entry because that endpoint exists. Deploying the rule is safe once
-        // FIREBASE_SERVICE_ACCOUNT is set on the host (already required by
-        // send-fcm / manage-user-auth).
+        allow read: if isAdmin() || isNetworkOwner(networkId);
         allow write: if false;
       }
 
-      match /{subcollection}/{documentId} {
-        allow read, write: if isAdmin() && subcollection != 'payments';
+      match /settlements/{settlementId} {
+        allow read: if isAdmin() || isNetworkOwner(networkId);
+        allow write: if false;
       }
-    }
-    // Broad access for the designated primary admin, except server-only payments.
-    match /{topLevelCollection}/{document=**} {
-      // Keep the primary admin's broad access, but do not let the recursive
-      // grant bypass the server-only payment rule under /networks.
-      allow read, write: if isPrimaryAdmin() && topLevelCollection != 'networks';
+
+      // أي مجموعة فرعية أخرى: قراءة للمدير فقط، وكتابة من الخادم فقط.
+      match /{subcollection}/{documentId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
     }
   }
 }

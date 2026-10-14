@@ -1,14 +1,26 @@
-// POST /api/settlement — اعتماد تسوية عمولة من مدير (idempotent)
-// يسجل التسوية دون تعديل أو حذف المبيعات السابقة. التمديد اختياري وصريح.
+// ============================================================
+// Krotak Pro — Vercel Serverless Function
+// POST /api/settlement — مسار التسوية الموحّد الخادمي (idempotent)
+// ------------------------------------------------------------
+// قرارات المالك (ج، هـ):
+//   - الريال اليمني صحيح بالكامل: كل المبالغ أعداد صحيحة.
+//   - مسار واحد للتسوية والمدفوعات؛ الكتابة من الخادم فقط (القواعد تمنع العميل).
+//   - رصيد تراكمي وتسوية المبيعات غير المسوّاة بنظام الأقدم فالأحدث (FIFO).
+//   - لا تعديل أو حذف لأي سجل بيع سابق؛ التمديد إجراء إداري صريح (30 يوماً).
+// ============================================================
 
 import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
+import { isPositiveRiyal } from './_lib/money.js';
+import { parseNetworkId } from './_lib/networkId.js';
+import { settleNetworkPayment } from './_lib/networkLedger.js';
 
-const MAX_AMOUNT_MINOR = 1_000_000_000_000;
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_SETTLEMENT_SALES = 400;
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -28,9 +40,7 @@ export function validateSettlementInput(body) {
   if (!uid || !/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return { ok: false, error: 'uid_invalid' };
 
   const amountMinor = Number(input.amountMinor);
-  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
-    return { ok: false, error: 'amount_invalid' };
-  }
+  if (!isPositiveRiyal(amountMinor)) return { ok: false, error: 'amount_invalid' };
 
   const idempotencyKey = typeof input.idempotencyKey === 'string' ? input.idempotencyKey.trim() : '';
   if (!KEY_PATTERN.test(idempotencyKey)) return { ok: false, error: 'idempotency_key_invalid' };
@@ -84,9 +94,15 @@ export function settlementNotification(value, settlementId, callerUid) {
 
 export async function approveSettlement({ db, callerUid, value, now = Date.now() }) {
   const settlementId = settlementDocId(value.uid, value.idempotencyKey);
-  const settlementRef = db.collection('networks').doc(value.uid).collection('settlements').doc(settlementId);
-  const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const userRef = db.collection('users').doc(value.uid);
+  const userPre = await userRef.get();
+  if (!userPre.exists) return { status: 'account_not_found', settlementId };
+  // الرصيد التراكمي والتسويات تُخزَّن على مستند الشبكة (NET-xxxxx إن وُجد).
+  const networkId = parseNetworkId(userPre.data()?.networkId) ? userPre.data().networkId : value.uid;
+  const networkRef = db.collection('networks').doc(networkId);
+  const settlementRef = networkRef.collection('settlements').doc(settlementId);
+  const salesQuery = networkRef.collection('sales').orderBy('createdAt', 'asc').limit(MAX_SETTLEMENT_SALES);
+  const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const auditRef = db.collection('admin_audit_logs').doc(`settlement_${settlementId}`);
   const fingerprint = createHash('sha256').update(JSON.stringify({
     amountMinor: value.amountMinor,
@@ -110,15 +126,34 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     const userSnap = await transaction.get(userRef);
     if (!userSnap.exists) return { status: 'account_not_found', settlementId };
     const user = userSnap.data() || {};
-    const previousEnd = toMillis(user.subscription_end_date);
+
+    // دفتر الرصيد التراكمي الموحّد + تسوية FIFO على مستند الشبكة.
+    const ledger = await settleNetworkPayment(transaction, {
+      networkRef,
+      salesQuery,
+      amountMinor: value.amountMinor,
+      settlementId,
+    });
+    const allocatedMinor = ledger.allocatedMinor;
+    const outstandingAfterMinor = ledger.outstandingBalance;
+
+    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
     const extensionApplied = value.extensionDays > 0;
     const base = Math.max(previousEnd, now);
-    const nextEnd = extensionApplied ? base + value.extensionDays * 24 * 60 * 60 * 1000 : previousEnd;
+    const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
 
     transaction.set(settlementRef, {
       settlementId,
       uid: value.uid,
       amountMinor: value.amountMinor,
+      allocatedMinor,
+      unallocatedMinor: ledger.unallocatedMinor,
+      outstandingAfterMinor,
+      allocations: ledger.allocations.map((entry) => ({
+        id: entry.id,
+        appliedMinor: entry.appliedMinor,
+        fullySettled: entry.fullySettled,
+      })),
       month: value.month,
       status: 'APPROVED',
       extensionDays: value.extensionDays,
@@ -137,8 +172,9 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
 
     if (extensionApplied) {
       transaction.update(userRef, {
+        accessStatus: 'ACTIVE_PAID',
+        subscriptionEndsAt: new Date(nextEnd),
         subscription_end_date: new Date(nextEnd),
-        is_active: true,
         updated_at: FieldValue.serverTimestamp(),
       });
     }
@@ -151,10 +187,19 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       settlementId,
       amountMinor: value.amountMinor,
       extensionDays: value.extensionDays,
+      settledSales: ledger.settledSales,
       createdAt: FieldValue.serverTimestamp(),
+      createdAtMs: now,
     }, { merge: false });
 
-    return { status: 'created', settlementId, extensionApplied, subscriptionEndAfter: nextEnd || null };
+    return {
+      status: 'created',
+      settlementId,
+      extensionApplied,
+      subscriptionEndAfter: nextEnd || null,
+      settledSales: ledger.settledSales,
+      outstandingAfterMinor,
+    };
   });
 }
 
@@ -180,3 +225,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'settlement_failed' });
   }
 }
+

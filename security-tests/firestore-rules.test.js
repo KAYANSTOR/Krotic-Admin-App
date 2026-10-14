@@ -26,12 +26,11 @@ if (!emulatorAddress) {
   const projectId = 'demo-krotic-firestore-rules';
   let testEnv;
 
+  // الملف الشخصي فقط: لا حقول صلاحية (is_active/is_trial) — صارت قرارًا خادميًا.
   const account = (uid) => ({
     uid,
     phone: '967777777777',
     network_name: 'Test Network',
-    is_active: true,
-    is_trial: false,
     platform: 'android',
     app_version: '1.0.0',
     created_at: Timestamp.now(),
@@ -45,13 +44,6 @@ if (!emulatorAddress) {
         uid: 'admin-1',
         name: 'Admin',
         email: 'admin@example.test',
-        phone: '',
-        createdAt: 1,
-      });
-      await setDoc(doc(db, 'Admins/akicZMi3cqcDXqlLUZMLL9OdAg53'), {
-        uid: 'akicZMi3cqcDXqlLUZMLL9OdAg53',
-        name: 'Primary Admin',
-        email: 'jarallhalkboudi@gmail.com',
         phone: '',
         createdAt: 1,
       });
@@ -83,6 +75,15 @@ if (!emulatorAddress) {
       await setDoc(doc(db, 'admin_notification_history/history-1'), {
         title: 'Private admin history',
         timestamp: Timestamp.now(),
+      });
+      // هوية شبكة خادمية (NET-xxxxx) مرتبطة بالمالك عبر owner_uid.
+      await setDoc(doc(db, 'networks/NET-10001'), {
+        networkId: 'NET-10001',
+        owner_uid: 'user-1',
+        accessStatus: 'TRIAL',
+      });
+      await setDoc(doc(db, 'networks/NET-10001/settlements/settlement-1'), {
+        amountMinor: 100,
       });
     });
   }
@@ -118,15 +119,19 @@ if (!emulatorAddress) {
     }));
   });
 
-  test('an existing admin can provision another admin; normal accounts cannot', async () => {
+  test('admin documents are server-write-only; a client admin cannot write them', async () => {
     const adminDb = testEnv.authenticatedContext('admin-1').firestore();
-    await assertSucceeds(setDoc(doc(adminDb, 'Admins/admin-2'), {
+    await assertFails(setDoc(doc(adminDb, 'Admins/admin-2'), {
       uid: 'admin-2',
       name: 'Second Admin',
       email: 'admin2@example.test',
       phone: '',
       createdAt: Date.now(),
     }));
+    await assertFails(deleteDoc(doc(adminDb, 'Admins/admin-1')));
+    // القراءة للمدير مسموحة (لعرض القائمة).
+    await assertSucceeds(getDoc(doc(adminDb, 'Admins/admin-1')));
+
     const userDb = testEnv.authenticatedContext('user-1').firestore();
     await assertFails(setDoc(doc(userDb, 'Admins/user-1-copy'), {
       uid: 'user-1-copy',
@@ -145,52 +150,41 @@ if (!emulatorAddress) {
     await assertFails(getDoc(doc(userDb, 'admin_aggregates/user-1')));
   });
 
-  test('payment records are server-write-only even for both admin roles', async () => {
+  test('payment and settlement records are server-write-only for every client', async () => {
     const adminDb = testEnv.authenticatedContext('admin-1').firestore();
-    const paymentRef = doc(adminDb, 'networks/user-1/payments/payment-1');
-    await assertFails(setDoc(paymentRef, { amount: 25, month: '2026-10' }));
+    await assertFails(setDoc(doc(adminDb, 'networks/user-1/payments/payment-1'), { amount: 25, month: '2026-10' }));
+    await assertFails(setDoc(doc(adminDb, 'networks/NET-10001/settlements/settlement-2'), { amountMinor: 50 }));
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'networks/user-1/payments/payment-1'), {
-        amount: 25,
-        month: '2026-10',
-      });
+      await setDoc(doc(context.firestore(), 'networks/user-1/payments/payment-1'), { amount: 25, month: '2026-10' });
     });
+    const paymentRef = doc(adminDb, 'networks/user-1/payments/payment-1');
     await assertSucceeds(getDoc(paymentRef));
     await assertFails(updateDoc(paymentRef, { amount: 30 }));
     await assertFails(deleteDoc(paymentRef));
 
-    const primaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
-      email: 'jarallhalkboudi@gmail.com',
-    }).firestore();
-    await assertFails(setDoc(
-      doc(primaryDb, 'networks/user-1/payments/payment-2'),
-      { amount: 10, month: '2026-10' },
-    ));
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    await assertFails(setDoc(doc(ownerDb, 'networks/user-1/payments/payment-2'), { amount: 10, month: '2026-10' }));
   });
 
-  test('the designated primary admin has broad access outside server-only payments; other admins do not', async () => {
-    const primaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
+  test('the hardcoded primary-admin bypass no longer exists', async () => {
+    const exPrimaryDb = testEnv.authenticatedContext('akicZMi3cqcDXqlLUZMLL9OdAg53', {
       email: 'jarallhalkboudi@gmail.com',
     }).firestore();
-    const unrestrictedRef = doc(primaryDb, 'private_test_records/record-1');
-    await assertSucceeds(setDoc(unrestrictedRef, { value: 1 }));
-    await assertSucceeds(getDoc(unrestrictedRef));
-    await assertSucceeds(updateDoc(unrestrictedRef, { value: 2 }));
-    await assertSucceeds(deleteDoc(unrestrictedRef));
-
-    const otherAdminDb = testEnv.authenticatedContext('admin-1', {
-      email: 'admin@example.test',
-    }).firestore();
-    await assertFails(getDoc(doc(otherAdminDb, 'private_test_records/record-1')));
-    await assertFails(setDoc(doc(otherAdminDb, 'private_test_records/record-2'), { value: 1 }));
+    await assertFails(setDoc(doc(exPrimaryDb, 'private_test_records/record-1'), { value: 1 }));
+    await assertFails(getDoc(doc(exPrimaryDb, 'private_test_records/record-1')));
   });
 
-  test('a user can read root app settings but cannot read old global notification archives', async () => {
+  test('a user can read root app settings but cannot read private settings or old broadcasts', async () => {
     const db = testEnv.authenticatedContext('user-1').firestore();
     await assertSucceeds(getDoc(doc(db, 'app_settings/global_config')));
     await assertFails(getDoc(doc(db, 'app_settings/private_config')));
     await assertFails(getDocs(collection(db, 'app_settings/global_config/notifications')));
+  });
+
+  test('app settings are server-write-only even for admins', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertFails(setDoc(doc(adminDb, 'app_settings/global_config'), { is_app_active: false }, { merge: true }));
   });
 
   test('a new account gets no historical broadcasts and can only read its own inbox', async () => {
@@ -203,15 +197,24 @@ if (!emulatorAddress) {
     await assertFails(getDoc(doc(db, 'users/user-1/notifications/inbox-1')));
   });
 
-  test('self-registration accepts the current Android payload but rejects privileged fields', async () => {
+
+  test('self-registration accepts the profile payload but rejects access fields', async () => {
     const db = testEnv.authenticatedContext('new-user').firestore();
     await assertSucceeds(setDoc(doc(db, 'users/new-user'), account('new-user')));
 
-    const secondDb = testEnv.authenticatedContext('malicious-user').firestore();
-    await assertFails(setDoc(doc(secondDb, 'users/malicious-user'), {
-      ...account('malicious-user'),
+    const privileged = testEnv.authenticatedContext('privileged-user').firestore();
+    await assertFails(setDoc(doc(privileged, 'users/privileged-user'), {
+      ...account('privileged-user'),
+      is_active: true,
+    }));
+    await assertFails(setDoc(doc(privileged, 'users/privileged-user'), {
+      ...account('privileged-user'),
+      is_trial: false,
+    }));
+    await assertFails(setDoc(doc(privileged, 'users/privileged-user'), {
+      ...account('privileged-user'),
       commission_rate: 99,
-      role: 'admin',
+      accessStatus: 'ACTIVE_PAID',
     }));
   });
 
@@ -230,9 +233,30 @@ if (!emulatorAddress) {
     await assertSucceeds(updateDoc(doc(db, 'users/user-1/notifications/inbox-1'), {
       is_read: true,
     }));
-    await assertFails(updateDoc(doc(db, 'users/user-1'), {
-      is_active: false,
-    }));
+    await assertFails(updateDoc(doc(db, 'users/user-1'), { is_active: false }));
+  });
+
+  test('access and billing fields are server-owned: not even an admin can write them', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { is_active: false }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { is_trial: false }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { accessStatus: 'LOCKED_EXPIRED' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { subscriptionEndsAt: Timestamp.now() }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { commission_rate: 3 }));
+    await assertSucceeds(updateDoc(doc(adminDb, 'users/user-1'), { network_name: 'Renamed' }));
+  });
+
+  test('network identity documents are server-write-only but readable by admin and owner', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertSucceeds(getDoc(doc(adminDb, 'networks/NET-10001')));
+    await assertFails(setDoc(doc(adminDb, 'networks/NET-10002'), { networkId: 'NET-10002', owner_uid: 'user-2' }));
+
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    await assertSucceeds(getDoc(doc(ownerDb, 'networks/NET-10001')));
+    await assertFails(setDoc(doc(ownerDb, 'networks/NET-10001'), { accessStatus: 'ACTIVE_PAID' }, { merge: true }));
+
+    const strangerDb = testEnv.authenticatedContext('user-2').firestore();
+    await assertFails(getDoc(doc(strangerDb, 'networks/NET-10001')));
   });
 
   test('admins can read private history and nested legacy notifications', async () => {
@@ -261,7 +285,7 @@ if (!emulatorAddress) {
     await assertFails(getDocs(collection(userDb, 'admin_audit_logs')));
   });
 
-  test('sale uploads are constrained and an owner cannot revise a completed sale', async () => {
+  test('sale uploads are constrained; server-owned fields and revisions are rejected', async () => {
     const db = testEnv.authenticatedContext('user-1').firestore();
     const saleRef = doc(db, 'networks/user-1/sales/sale-1');
     const sale = {
@@ -271,7 +295,7 @@ if (!emulatorAddress) {
       faceValue: 100,
       amount: 100,
       amountMinor: 10000,
-      currencyCode: 'IQD',
+      currencyCode: 'YER',
       face_value: 100,
       commission: 0,
       commissionAmount: 0,
@@ -294,5 +318,16 @@ if (!emulatorAddress) {
       saleId: 'inconsistent',
       amount: 999,
     }));
+    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-fields'), {
+      ...sale,
+      saleId: 'server-fields',
+      settlement_status: 'SETTLED',
+    }));
+    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-commission'), {
+      ...sale,
+      saleId: 'server-commission',
+      commissionMinor: 500,
+    }));
   });
 }
+

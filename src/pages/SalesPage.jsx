@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
 import { Card } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
@@ -16,6 +16,7 @@ import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
+import { saleCommission, sumCommission, hasUnverifiedCommission } from '../lib/commission';
 import SettlementModal from '../components/SettlementModal';
 
 const NETWORK_PAGE_SIZE = 10;
@@ -110,10 +111,7 @@ export default function SalesPage() {
         }));
         if (addedSales.length) {
           const totalFaceValue = addedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-          const totalCommission = addedSales.reduce(
-            (sum, sale) => sum + ((Number(sale.faceValue) || 0) * (Number(sale.commissionRate) || 0) / 100),
-            0,
-          );
+          const totalCommission = sumCommission(addedSales);
           const networkNames = [...new Set(addedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
           setNewSaleNotice({
             id: Date.now(),
@@ -164,12 +162,15 @@ export default function SalesPage() {
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales);
     const totalFaceValue = filtered.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
-    const totalCommission = totalFaceValue * (Number(network.commissionRate) || 0) / 100;
+    // العمولة تُقرأ من حقول الخادم فقط (قرار المالك ي3)؛ لا حساب مالي محلي.
+    const totalCommission = sumCommission(filtered);
+    const unverified = hasUnverifiedCommission(filtered);
     return {
       totalSales: filtered.length,
       completedCount: filtered.filter((s) => s.status === 'COMPLETED').length,
       totalFaceValue,
       totalCommission,
+      unverified,
       filteredSales: filtered,
     };
   }, [filterSales]);
@@ -251,7 +252,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة', value: (r) => Math.round((Number(r.sale.faceValue) || 0) * r.network.commissionRate / 100) },
+      { label: 'العمولة (خادمية)', value: (r) => saleCommission(r.sale) ?? '' },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
@@ -268,10 +269,10 @@ export default function SalesPage() {
 
   return (
     <div className="sales-page">
-      <PageHeader
+      <PageHero
         icon={DollarSign}
         title="سجل المبيعات والعمولات"
-        description="جميع السجلات والعمولات، مع تحديث تلقائي عند تسجيل عملية بيع جديدة"
+        subtitle="جميع السجلات والعمولات، مع تحديث تلقائي عند تسجيل عملية بيع جديدة"
         actions={
           <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => load({ force: true })} />
         }
@@ -305,7 +306,7 @@ export default function SalesPage() {
       )}
 
       <p className="mb-4 text-sm text-ink-secondary" role="note">
-        العمولة محسوبة كنسبة من إجمالي المبيعات وتشمل كل الحالات، وفق نسبة العمولة الخاصة بالشبكة أو النسبة العامة.
+        العمولة تُحسب خادمياً وقت تسجيل البيع وتُقرأ من السجلات المعتمدة فقط. السجلات القديمة غير المتحقق منها تظهر «غير متحقق» ولا تُحتسب ضمن الإجمالي.
       </p>
 
       {partialErrors.length > 0 && (
@@ -451,7 +452,7 @@ export default function SalesPage() {
                       </span>
                     </div>
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">العمولة ({network.commissionRate}%)</span>
+                      <span className="sales-network__stat-label">العمولة (خادمية)</span>
                       <span className="sales-network__stat-value sales-network__stat-value--gold">
                         {formatNumber(stats.totalCommission)}
                       </span>
@@ -492,7 +493,7 @@ export default function SalesPage() {
                         <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
-                        <span>العمولة ({network.commissionRate}%)</span>
+                        <span>العمولة (خادمية)</span>
                         <strong>{formatNumber(stats.totalCommission)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
@@ -531,7 +532,7 @@ export default function SalesPage() {
                                   {formatNumber(sale.faceValue)}
                                 </td>
                                 <td className="px-6 py-3 text-sm font-medium" data-label="العمولة">
-                                  {formatNumber((Number(sale.faceValue) || 0) * network.commissionRate / 100)}
+                                  {saleCommission(sale) === null ? 'غير متحقق' : formatNumber(saleCommission(sale))}
                                 </td>
                                 <td className="px-6 py-3" data-label="الحالة">
                                   <span className={statusLabel[sale.status]?.class || 'badge-info'}>

@@ -24,21 +24,16 @@ export default function UserEditModal({ isOpen, onClose, user, onSave }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // حمولة خادمية: تُرسَل إلى POST /api/networks (update-access). لا كتابة مباشرة.
     const updates = {};
     if (subscriptionEnd) {
-      updates.subscription_end_date = new Date(subscriptionEnd);
+      updates.subscriptionEndsAt = new Date(subscriptionEnd).getTime();
     }
     if (commissionRate !== '') {
       updates.commission_rate = parseFloat(commissionRate);
-    } else {
-      updates.commission_rate = null;
     }
     updates.has_custom_warning = hasCustomWarning;
-    if (hasCustomWarning) {
-      updates.warning_message = warningMessage;
-    } else {
-      updates.warning_message = '';
-    }
+    updates.warning_message = hasCustomWarning ? warningMessage : '';
     onSave(user.uid, updates);
   };
 

@@ -3,7 +3,7 @@ import { collection, getDocs, query, orderBy, limit, startAfter } from 'firebase
 import { db } from '../firebase';
 import { ScrollText, Search, Download, Inbox, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
 import { Card } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -210,10 +210,10 @@ export default function AuditPage() {
 
   return (
     <div className="audit-page">
-      <PageHeader
+      <PageHero
         icon={ScrollText}
         title="سجل العمليات"
-        description="توثيق كامل لكل إجراء إداري مؤثر: من قام به، على أي حساب، ومتى."
+        subtitle="توثيق كامل لكل إجراء إداري مؤثر: من قام به، على أي حساب، ومتى."
         meta={`${filteredLogs.length} من ${logs.length} عملية`}
         actions={
           <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={load} fromCache={cacheState?.fromCache ?? null} />

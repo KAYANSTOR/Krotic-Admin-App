@@ -7,7 +7,8 @@ import {
   Mail, Phone, User, Users, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
+import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -20,6 +21,7 @@ import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import {
   fetchAdmins as loadAdmins, getAdminDataCacheState, subscribeAdminDataCache, invalidateAdminListData,
 } from '../lib/adminData';
+import { deleteAdminAccount, adminApiError } from '../lib/adminApi';
 import useAppRefresh from '../lib/useAppRefresh';
 
 function AdminsSkeleton() {
@@ -105,33 +107,28 @@ export default function AdminsPage() {
       fetchAdmins();
     } catch (error) {
       console.error(error);
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('هذا البريد الإلكتروني مستخدم بالفعل');
-      } else {
-        toast.error('حدث خطأ أثناء إنشاء الحساب: ' + error.message);
-      }
+      toast.error(error.message || 'تعذر إنشاء حساب المدير');
     }
     setCreating(false);
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    try {
-      await deleteDoc(doc(db, 'Admins', deleteTarget.id));
-      invalidateAdminListData();
-      logAdminAction({
-        action: AUDIT_ACTIONS.ADMIN_DELETE,
-        targetType: 'admin',
-        targetId: deleteTarget.id,
-        targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
-      });
-      toast.success('تم حذف المدير من القائمة');
-      setDeleteTarget(null);
-      fetchAdmins();
-    } catch (error) {
-      console.error(error);
-      toast.error('حدث خطأ أثناء الحذف');
+    const result = await deleteAdminAccount(deleteTarget.id);
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
+      return;
     }
+    invalidateAdminListData();
+    logAdminAction({
+      action: AUDIT_ACTIONS.ADMIN_DELETE,
+      targetType: 'admin',
+      targetId: deleteTarget.id,
+      targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
+    });
+    toast.success('تم حذف المدير من القائمة');
+    setDeleteTarget(null);
+    fetchAdmins();
   };
 
   const formatDate = (timestamp) => {
@@ -147,10 +144,10 @@ export default function AdminsPage() {
 
   return (
     <div className="admins-page">
-      <PageHeader
+      <PageHero
         icon={ShieldCheck}
         title="إدارة المدراء"
-        description="إضافة وحذف حسابات المدراء الذين يمكنهم الوصول إلى لوحة التحكم."
+        subtitle="إضافة وحذف حسابات المدراء الذين يمكنهم الوصول إلى لوحة التحكم."
         meta={`${admins.length} مدير مسجل`}
         actions={
           <>
@@ -167,6 +164,7 @@ export default function AdminsPage() {
       />
 
       {showForm && (
+        <Section eyebrow="إنشاء" aria-label="إنشاء حساب مدير">
         <Card className="mb-6">
           <CardHeader
             icon={UserPlus}
@@ -234,6 +232,7 @@ export default function AdminsPage() {
             </div>
           </form>
         </Card>
+        </Section>
       )}
 
       {admins.length === 0 ? (
@@ -250,6 +249,7 @@ export default function AdminsPage() {
           />
         </Card>
       ) : (
+        <Section eyebrow="الفريق" title="حسابات المدراء" aria-label="حسابات المدراء">
         <div className="admins-grid">
           {admins.map((admin) => (
             <Card key={admin.id} className="admin-card">
@@ -290,6 +290,7 @@ export default function AdminsPage() {
             </Card>
           ))}
         </div>
+        </Section>
       )}
 
       <ConfirmDialog
