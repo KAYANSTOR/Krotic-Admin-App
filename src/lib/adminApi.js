@@ -32,6 +32,7 @@ export const ADMIN_API_ERRORS = {
   uid_invalid: 'معرّف المستخدم غير صالح.',
   sale_id_invalid: 'معرّف البيع غير صالح.',
   amount_invalid: 'المبلغ غير صالح.',
+  month_invalid: 'شهر العمولة غير صالح.',
   month_invalid: 'الشهر غير صالح (الصيغة المطلوبة YYYY-MM).',
   extension_days_invalid: 'مدة التمديد يجب أن تكون 0 أو 30 يوماً.',
   idempotency_key_invalid: 'مفتاح العملية غير صالح.',
@@ -75,10 +76,11 @@ export function createAdminIdempotencyKey(prefix) {
   return newIdempotencyKey(prefix);
 }
 
-export async function approveSettlement({ uid, amountMinor, extensionDays = 0, note = '', idempotencyKey }) {
+export async function approveSettlement({ uid, amountMinor, month, extensionDays = 0, note = '', idempotencyKey }) {
   return callAdminApi('/api/settlement', {
     uid,
     amountMinor,
+    month,
     extensionDays,
     note,
     idempotencyKey: idempotencyKey || newIdempotencyKey(`settlement-${uid}`),
