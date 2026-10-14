@@ -18,7 +18,7 @@
 // يتطلب FIREBASE_SERVICE_ACCOUNT. لا يحتاج أي كتابة عميل في Firestore.
 // ============================================================
 
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
@@ -26,6 +26,7 @@ import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
 const MAX_SALE_ID_LENGTH = 128;
 const MAX_AMOUNT_MINOR = 1_000_000_000_000;
 const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -61,6 +62,41 @@ export function computePayloadHash(input) {
   return createHash('sha256').update(canonicalSalePayload(input)).digest('hex');
 }
 
+/**
+ * HMAC داخلي للتأكد من أن الطلب صادر من نسخة التطبيق المهيأة للتكامل.
+ * الصيغة: timestamp.signature، والتوقيع على الحمولة القانونية + UID.
+ * لا يُعامل هذا التوقيع كإثبات دفع خارجي؛ المبيعات تبقى مستحقة للتسوية.
+ */
+export function canonicalReceiptPayload(input, timestamp) {
+  return `${timestamp}.${canonicalSalePayload(input)}`;
+}
+
+export function createInternalReceipt({ payload, timestamp, secret }) {
+  return `${timestamp}.${createHmac('sha256', secret)
+    .update(canonicalReceiptPayload(payload, timestamp))
+    .digest('hex')}`;
+}
+
+export function verifyInternalReceipt({ token, payload, secret, now = Date.now(), maxSkewMs = HMAC_MAX_SKEW_MS }) {
+  if (!token || !secret) return { ok: false, error: 'hmac_invalid' };
+  const separator = token.indexOf('.');
+  if (separator <= 0) return { ok: false, error: 'hmac_invalid' };
+  const timestamp = Number(token.slice(0, separator));
+  const signature = token.slice(separator + 1);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > maxSkewMs || !/^[a-f0-9]{64}$/i.test(signature)) {
+    return { ok: false, error: 'hmac_expired_or_malformed' };
+  }
+  const expected = createHmac('sha256', secret)
+    .update(canonicalReceiptPayload(payload, timestamp))
+    .digest('hex');
+  const actualBytes = Buffer.from(signature, 'hex');
+  const expectedBytes = Buffer.from(expected, 'hex');
+  if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) {
+    return { ok: false, error: 'hmac_invalid' };
+  }
+  return { ok: true, timestamp };
+}
+
 export function validateIngestInput(body) {
   const input = normalizeBody(body);
   const saleId = typeof input.saleId === 'string' ? input.saleId.trim() : '';
@@ -87,7 +123,7 @@ export function validateIngestInput(body) {
  * Persists a verified sale idempotently.
  * Returns { status: 'created' | 'duplicate' | 'conflict', ... }.
  */
-export async function ingestSale({ db, uid, payload, payloadHash, receipt, now = Date.now() }) {
+export async function ingestSale({ db, uid, payload, payloadHash, receipt, commissionRateBps = 500, now = Date.now() }) {
   const saleRef = db.collection('networks').doc(uid).collection('sales').doc(payload.saleId);
   const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${payload.saleId}`);
 
@@ -108,6 +144,8 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, now =
     }
 
     const amount = payload.amountMinor / 100;
+    const commissionMinor = Math.floor((payload.amountMinor * commissionRateBps) / 10000);
+    const commissionAmount = commissionMinor / 100;
     transaction.set(saleRef, {
       saleId: payload.saleId,
       customerId: payload.customerId || null,
@@ -118,12 +156,14 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, now =
       faceValue: amount,
       face_value: amount,
       netAmount: amount,
-      commission: 0,
-      commissionAmount: 0,
-      status: 'COMPLETED',
+      commission: commissionAmount,
+      commissionAmount,
+      commissionMinor,
+      commissionRateBps,
+      status: 'PENDING_SETTLEMENT',
       verified: true,
       source: 'admin_api',
-      verificationReceipt: receipt || null,
+      verificationReceipt: receipt,
       payloadHash,
       payloadPolicyVersion: 1,
       createdAt: new Date(payload.createdMs),
@@ -131,7 +171,7 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, now =
       verifiedAt: FieldValue.serverTimestamp(),
       ingestedAtMs: now,
     }, { merge: false });
-    return { status: 'created', saleId: payload.saleId, payloadHash };
+    return { status: 'created', saleId: payload.saleId, payloadHash, commissionMinor, commissionRateBps };
   });
 }
 
@@ -177,19 +217,29 @@ export default async function handler(req, res) {
   const payload = { ...parsed.value, uid };
   const payloadHash = computePayloadHash(payload);
 
-  const receipt = String(req.headers['x-verification-receipt'] || '').trim();
-  if (!receipt) {
-    // No external proof configured yet -> do not mint an authoritative record.
-    return res.status(412).json({ success: false, error: 'verification_receipt_required', payloadHash });
-  }
-
   const claimedHash = normalizeBody(req.body).payloadHash;
   if (typeof claimedHash === 'string' && claimedHash.trim() && claimedHash.trim() !== payloadHash) {
     return res.status(400).json({ success: false, error: 'payload_hash_mismatch', expected: payloadHash });
   }
 
+  const receipt = String(req.headers['x-verification-receipt'] || '').trim();
+  const hmacSecret = process.env.KROTAK_HMAC_SECRET || '';
+  if (!hmacSecret) return res.status(503).json({ success: false, error: 'hmac_not_configured' });
+  const receiptCheck = verifyInternalReceipt({ token: receipt, payload, secret: hmacSecret });
+  if (!receiptCheck.ok) return res.status(401).json({ success: false, error: receiptCheck.error });
+
+  let commissionRateBps = 500;
   try {
-    const result = await ingestSale({ db: getFirestore(), uid, payload, payloadHash, receipt });
+    const userSnap = await getFirestore().collection('users').doc(uid).get();
+    const rawRate = Number(userSnap.data()?.commission_rate);
+    if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 100) commissionRateBps = Math.round(rawRate * 100);
+  } catch (error) {
+    console.error('sales/ingest: commission lookup failed', error);
+    return res.status(500).json({ success: false, error: 'commission_lookup_failed' });
+  }
+
+  try {
+    const result = await ingestSale({ db: getFirestore(), uid, payload, payloadHash, receipt, commissionRateBps });
     if (result.status === 'conflict') {
       return res.status(409).json({ success: false, error: 'sale_id_conflict', ...result });
     }

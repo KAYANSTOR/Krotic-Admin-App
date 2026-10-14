@@ -4,6 +4,9 @@ import {
   validateIngestInput,
   canonicalSalePayload,
   computePayloadHash,
+  canonicalReceiptPayload,
+  createInternalReceipt,
+  verifyInternalReceipt,
 } from '../api/sales/ingest.js';
 
 const validBody = {
@@ -52,4 +55,26 @@ test('canonical representation pins the uid and field order', () => {
     cardId: validBody.cardId,
     createdMs: validBody.createdMs,
   }));
+});
+
+test('internal HMAC receipt verifies the exact sale payload and expires', () => {
+  const payload = { ...validBody, uid: 'user-1', currencyCode: 'YER' };
+  const timestamp = 1_700_000_000_000;
+  const secret = 'staging-only-test-secret';
+  const token = createInternalReceipt({ payload, timestamp, secret });
+
+  assert.equal(canonicalReceiptPayload(payload, timestamp).startsWith(`${timestamp}.`), true);
+  assert.equal(verifyInternalReceipt({ token, payload, secret, now: timestamp }).ok, true);
+  assert.equal(verifyInternalReceipt({
+    token,
+    payload: { ...payload, amountMinor: 1501 },
+    secret,
+    now: timestamp,
+  }).error, 'hmac_invalid');
+  assert.equal(verifyInternalReceipt({
+    token,
+    payload,
+    secret,
+    now: timestamp + 6 * 60 * 1000,
+  }).error, 'hmac_expired_or_malformed');
 });
