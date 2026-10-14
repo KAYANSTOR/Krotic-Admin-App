@@ -20,6 +20,7 @@ import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import {
   fetchAdmins as loadAdmins, getAdminDataCacheState, subscribeAdminDataCache, invalidateAdminListData,
 } from '../lib/adminData';
+import { deleteAdminAccount, adminApiError } from '../lib/adminApi';
 import useAppRefresh from '../lib/useAppRefresh';
 
 function AdminsSkeleton() {
@@ -105,33 +106,28 @@ export default function AdminsPage() {
       fetchAdmins();
     } catch (error) {
       console.error(error);
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('هذا البريد الإلكتروني مستخدم بالفعل');
-      } else {
-        toast.error('حدث خطأ أثناء إنشاء الحساب: ' + error.message);
-      }
+      toast.error(error.message || 'تعذر إنشاء حساب المدير');
     }
     setCreating(false);
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    try {
-      await deleteDoc(doc(db, 'Admins', deleteTarget.id));
-      invalidateAdminListData();
-      logAdminAction({
-        action: AUDIT_ACTIONS.ADMIN_DELETE,
-        targetType: 'admin',
-        targetId: deleteTarget.id,
-        targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
-      });
-      toast.success('تم حذف المدير من القائمة');
-      setDeleteTarget(null);
-      fetchAdmins();
-    } catch (error) {
-      console.error(error);
-      toast.error('حدث خطأ أثناء الحذف');
+    const result = await deleteAdminAccount(deleteTarget.id);
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
+      return;
     }
+    invalidateAdminListData();
+    logAdminAction({
+      action: AUDIT_ACTIONS.ADMIN_DELETE,
+      targetType: 'admin',
+      targetId: deleteTarget.id,
+      targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
+    });
+    toast.success('تم حذف المدير من القائمة');
+    setDeleteTarget(null);
+    fetchAdmins();
   };
 
   const formatDate = (timestamp) => {

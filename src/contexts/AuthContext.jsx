@@ -4,6 +4,7 @@ import { doc, getDocFromCache, getDocFromServer, setDoc } from 'firebase/firesto
 import { auth, db, secondaryAuth } from '../firebase';
 import { signOut as secondarySignOut } from 'firebase/auth';
 import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
+import { callAdminApi, adminApiError } from '../lib/adminApi';
 
 const AuthContext = createContext();
 
@@ -77,12 +78,11 @@ export function AuthProvider({ children }) {
   }
 
   async function createAdmin(email, password, name, phone) {
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    const uid = userCredential.user.uid;
-    await setDoc(doc(db, 'Admins', uid), { uid, name, email, phone, createdAt: Date.now() });
-    await secondarySignOut(secondaryAuth);
+    // قرار و3: إنشاء المدراء عبر المسار الخادمي فقط (لا كتابة عميل على Admins).
+    const result = await callAdminApi('/api/admins', { action: 'create', email, password, name, phone });
+    if (!result.ok) throw new Error(adminApiError(result.error, 'تعذر إنشاء حساب المدير'));
     invalidateAdminListData();
-    return uid;
+    return result.data?.uid;
   }
 
   useEffect(() => {

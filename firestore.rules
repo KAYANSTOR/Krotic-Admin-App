@@ -91,24 +91,11 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.resource.data.created_at;
     }
 
-    // Admin identity documents can only be provisioned by an existing admin.
-    // The first admin must be provisioned out-of-band with trusted credentials.
+    // مستندات المدراء تُنشأ/تُعدَّل/تُحذف فقط عبر المسار الخادمي POST /api/admins.
+    // العميل — حتى المدير — لا يكتبها مباشرة (قرار و3).
     match /Admins/{adminId} {
       allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
-      allow create: if isAdmin()
-        && adminId != request.auth.uid
-        && request.resource.data.uid == adminId
-        && request.resource.data.keys().hasAll(['uid', 'name', 'email', 'phone', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'createdAt'])
-        && request.resource.data.name is string
-        && request.resource.data.email is string
-        && request.resource.data.phone is string
-        && request.resource.data.createdAt is int;
-      allow update: if isAdmin()
-        && request.resource.data.uid == adminId
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'phone']);
-      allow delete: if isAdmin() && adminId != request.auth.uid;
+      allow write: if false;
     }
 
     // إعدادات التطبيق الجذرية تُقرأ من الحسابات المسجّلة، وتُكتب فقط عبر

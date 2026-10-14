@@ -53,7 +53,7 @@ function blockIsClosed(header) {
   const slice = rules.slice(start, start + 700);
   return /allow\s+write:\s*if\s+false/.test(slice);
 }
-for (const header of ['match /settlements/{settlementId} {', 'match /payments/{paymentId} {']) {
+for (const header of ['match /settlements/{settlementId} {', 'match /payments/{paymentId} {', 'match /Admins/{adminId} {']) {
   if (!blockIsClosed(header)) failures.push(`كتابة العميل ليست مغلقة في الكتلة: ${header}`);
 }
 if (!/match\s+\/app_settings\/\{document\}\s*\{[\s\S]{0,200}allow\s+write:\s*if\s+false/.test(rules)) {

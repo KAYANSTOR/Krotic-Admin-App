@@ -53,6 +53,12 @@ export const ADMIN_API_ERRORS = {
   default_commission_rate_out_of_range: 'العمولة العامة يجب أن تكون بين 0 و20.',
   warning_days_before_expiry_out_of_range: 'أيام التحذير يجب أن تكون بين 1 و7.',
   is_app_active_invalid: 'قيمة حالة التطبيق غير صالحة.',
+  email_already_in_use: 'هذا البريد الإلكتروني مستخدم بالفعل.',
+  email_invalid: 'البريد الإلكتروني غير صالح.',
+  name_invalid: 'الاسم غير صالح.',
+  phone_invalid: 'رقم الهاتف غير صالح.',
+  cannot_modify_self: 'لا يمكنك تعديل أو حذف حسابك الحالي.',
+  admin_action_failed: 'تعذر تنفيذ إجراء المدير على الخادم.',
 };
 
 /** يسجّل دفعة/تسوية عبر الخادم الآمن idempotent. */
@@ -116,6 +122,23 @@ export async function renewNetwork(uid, extensionDays = 30) {
 
 export async function batchExpiry(subscriptionEndsAt) {
   return callAdminApi('/api/networks', { action: 'batch-expiry', subscriptionEndsAt });
+}
+
+/** إدارة المدراء عبر POST /api/admins (قرار و3: خادمي فقط). */
+export async function createAdminAccount(payload) {
+  return callAdminApi('/api/admins', { action: 'create', ...payload });
+}
+
+export async function listAdminAccounts() {
+  return callAdminApi('/api/admins', { action: 'list' });
+}
+
+export async function updateAdminAccount(uid, patch) {
+  return callAdminApi('/api/admins', { action: 'update', uid, ...patch });
+}
+
+export async function deleteAdminAccount(uid) {
+  return callAdminApi('/api/admins', { action: 'delete', uid });
 }
 
 export function adminApiError(code, fallback) {

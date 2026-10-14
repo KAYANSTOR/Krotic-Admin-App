@@ -119,15 +119,19 @@ if (!emulatorAddress) {
     }));
   });
 
-  test('an existing admin can provision another admin; normal accounts cannot', async () => {
+  test('admin documents are server-write-only; a client admin cannot write them', async () => {
     const adminDb = testEnv.authenticatedContext('admin-1').firestore();
-    await assertSucceeds(setDoc(doc(adminDb, 'Admins/admin-2'), {
+    await assertFails(setDoc(doc(adminDb, 'Admins/admin-2'), {
       uid: 'admin-2',
       name: 'Second Admin',
       email: 'admin2@example.test',
       phone: '',
       createdAt: Date.now(),
     }));
+    await assertFails(deleteDoc(doc(adminDb, 'Admins/admin-1')));
+    // القراءة للمدير مسموحة (لعرض القائمة).
+    await assertSucceeds(getDoc(doc(adminDb, 'Admins/admin-1')));
+
     const userDb = testEnv.authenticatedContext('user-1').firestore();
     await assertFails(setDoc(doc(userDb, 'Admins/user-1-copy'), {
       uid: 'user-1-copy',
