@@ -14,7 +14,7 @@
 | المتغير | الاستخدام | مطلوب |
 |---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | مفتاح خدمة Firebase (JSON أو base64) لتوقيع الطلبات وكتابة Firestore | نعم |
-| `KROTAK_HMAC_SECRET` | سرّ HMAC للتحقق من `x-verification-receipt` في `/api/sales/ingest` | نعم لمسار الاستقبال |
+| `KROTAK_HMAC_SECRET` | Master Secret (32 بايت عشوائية على الأقل) لتشفير أسرار HMAC الفردية للشبكات في Firestore؛ لا يوضع في التطبيق | نعم لـ provision وingest |
 | `CRON_SECRET` | سرّ حماية Vercel Cron لـ `/api/dispatch-notifications` | نعم |
 | `FCM_DEFAULT_TOPIC` | موضوع FCM الافتراضي (اختياري، القيمة الافتراضية `krotak_all_users`) | لا |
 | `FCM_ANDROID_CHANNEL_ID` | قناة أندرويد للإشعارات (اختياري) | لا |
@@ -23,7 +23,7 @@
 
 ## 2. البنية الخادمية المعتمدة
 
-- **مرجع الإشعارات المجدولة الوحيد:** Vercel Cron عبر `vercel.json` (`/api/dispatch-notifications`, مؤمَّن بـ `CRON_SECRET`). أُزيلت الدالة المجدولة المكررة من `functions/`.
+- **المجدول اليومي الوحيد:** Vercel Cron عبر `vercel.json` (`/api/dispatch-notifications`, مؤمَّن بـ `CRON_SECRET`). يشغّل فحص الاشتراكات المنتهية ويحوّل المستحقة إلى `LOCKED_EXPIRED` ثم يعالج الإشعارات المجدولة. لا تُضاف مهمة Cron ثانية، ولا تُنشر Cloud Functions للجدولة.
 - **الإشعار الفوري:** Cloud Function `dispatchNotificationRequest` (عند إنشاء طلب) — غير مجدولة.
 - **المصدر المالي الوحيد:** الرصيد التراكمي على مستند `networks/{networkId}`:
   `totalSalesAmount`, `totalCommissionDue`, `totalPaidAmount`, `outstandingBalance`.
@@ -79,10 +79,11 @@ cd functions && npm ci && npm test && node --check index.js
 1. **متغيّرات البيئة** (Settings → Environment Variables) لكل البيئات (Production/Preview):
    - `VITE_FIREBASE_*` (إعدادات الويب من Firebase Console → Project settings → Web app).
    - `FIREBASE_SERVICE_ACCOUNT` = محتوى ملف Service Account JSON كاملًا أو base64 له.
-   - `KROTAK_HMAC_SECRET` = سرّ عشوائي طويل لتوقيع طلبات `/api/sales/ingest`.
+   - `KROTAK_HMAC_SECRET` = Master Secret عشوائي طويل (32 بايت على الأقل) لتشفير `networkSecret` لكل شبكة. لا يُضمّن في APK ولا يُرسل للعميل.
    - `CRON_SECRET` = سرّ عشوائي لحماية `/api/dispatch-notifications`.
-2. **Cron:** `vercel.json` يعرّف Cron يوميًا لـ `/api/dispatch-notifications`؛ تأكد أن `CRON_SECRET` مضبوط فيكتمل الإرسال المجدول.
-3. **أعِد النشر (Redeploy)** بعد ضبط المتغيّرات، ثم تحقّق:
+2. **مفتاح الشبكة:** `POST /api/networks` مع `action=provision` ينشئ مفتاحًا خاصًا بالشبكة ويحفظ envelope مشفرًا (`networkSecretEncrypted`) بـ AES-256-GCM. بعد مصادقة العميل، يستدعي التطبيق `POST /api/network-secret` لاسترداد المفتاح عبر Firebase ID Token. يخزنه التطبيق في Android Keystore ولا يسجله أو يكتبه في Firestore/الـ APK.
+3. **Cron:** `vercel.json` يعرّف مهمة يومية واحدة لـ `/api/dispatch-notifications`. مع `CRON_SECRET` صحيح، تنفّذ فحص الانتهاء ثم إرسال الإشعارات؛ استدعاء المدير اليدوي يرسل الإشعارات فقط.
+4. **أعِد النشر (Redeploy)** بعد ضبط المتغيّرات، ثم تحقّق:
    - دخول اللوحة يعمل.
    - إرسال إشعار (اختبار) يعمل.
    - اعتماد تسوية/تسجيل دفعة يعمل ويحدّث الرصيد.
@@ -91,4 +92,3 @@ cd functions && npm ci && npm test && node --check index.js
 بعد ضبط الخادم، استدعِ `POST /api/migrate` برمز مدير موثّق:
 1. `{ "action": "classify-users", "limit": 100 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true`.
 2. `{ "action": "rebuild-all", "limit": 50 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true` (يعيد بناء أرصدة الشبكات و`admin_aggregates`).
-

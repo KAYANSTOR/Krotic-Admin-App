@@ -48,6 +48,8 @@ export const ADMIN_API_ERRORS = {
   has_custom_warning_invalid: 'قيمة تخصيص التحذير غير صالحة.',
   no_fields: 'لم يتم إرسال أي حقل للتعديل.',
   account_not_found: 'لا يوجد حساب مطابق لهذا المعرّف.',
+  hmac_not_configured: 'الخادم غير مهيّأ: أضف KROTAK_HMAC_SECRET إلى بيئة Vercel ثم أعد النشر.',
+  network_secret_unavailable: 'تعذر فك مفتاح الشبكة. تحقّق من Master Secret في Vercel قبل إعادة المحاولة.',
   default_trial_days_out_of_range: 'الأيام التجريبية يجب أن تكون بين 0 و30.',
   default_trial_days_invalid: 'الأيام التجريبية يجب أن تكون عدداً صحيحاً.',
   default_commission_rate_out_of_range: 'العمولة العامة يجب أن تكون بين 0 و20.',

@@ -8,7 +8,8 @@
 //   action=provision      { ownerUid }                     → يخصّص NET-xxxxx ويمنح تجربة 30 يوماً
 //   action=update-access  { uid, accessStatus?, subscriptionEndsAt?, commission_rate?, warning_message?, has_custom_warning? }
 //   action=renew          { uid, extensionDays }           → تمديد يدوي (30 فقط)
-//   action=batch-expiry   { subscriptionEndsAt }           → توحيد تاريخ الانتهاء للرسميين
+//   action=batch-expiry   { subscriptionEndsAt }           → إجراء إداري قديم لتوحيد تاريخ الانتهاء؛ لا يُستدعى من Cron
+//   Vercel Cron يفحص الاستحقاقات عبر api/_lib/subscriptionExpiry.js ولا يغيّر تواريخ الانتهاء.
 //
 // يتطلب FIREBASE_SERVICE_ACCOUNT.
 // ============================================================
@@ -17,6 +18,8 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { nextNetworkSequence, formatNetworkId, parseNetworkId } from './_lib/networkId.js';
+import { encryptNetworkSecret, generateNetworkSecret } from './_lib/networkSecret.js';
+import { ensureNetworkSecret } from './_lib/networkSecretStore.js';
 
 export const ACCESS_STATUSES = ['TRIAL', 'ACTIVE_PAID', 'SUSPENDED_GRACE', 'LOCKED_EXPIRED'];
 export const TRIAL_DAYS = 30;
@@ -141,13 +144,19 @@ async function provision(db, { ownerUid, actorUid, now }) {
   const existing = userSnap.exists ? userSnap.data() : null;
   const existingId = existing?.networkId;
   if (parseNetworkId(existingId)) {
-    const netSnap = await db.collection('networks').doc(existingId).get();
-    if (netSnap.exists) return { status: 'duplicate', networkId: existingId };
+    const existingNetworkRef = db.collection('networks').doc(existingId);
+    const netSnap = await existingNetworkRef.get();
+    if (netSnap.exists) {
+      const { networkSecret } = await ensureNetworkSecret(db, existingNetworkRef);
+      return { status: 'duplicate', networkId: existingId, networkSecret };
+    }
   }
 
   const networkId = await allocateNetworkId(db);
   const trialStartedAt = now;
   const subscriptionEndsAt = now + TRIAL_DAYS * DAY_MS;
+  const networkSecret = generateNetworkSecret();
+  const networkSecretEncrypted = encryptNetworkSecret(networkSecret);
   const networkRef = db.collection('networks').doc(networkId);
   await db.runTransaction(async (transaction) => {
     transaction.set(networkRef, {
@@ -156,6 +165,9 @@ async function provision(db, { ownerUid, actorUid, now }) {
       accessStatus: 'TRIAL',
       trialStartedAt: Timestamp.fromMillis(trialStartedAt),
       subscriptionEndsAt: Timestamp.fromMillis(subscriptionEndsAt),
+      networkSecretEncrypted,
+      networkSecretVersion: 1,
+      networkSecretUpdatedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
       createdBy: actorUid,
     }, { merge: false });
@@ -169,7 +181,7 @@ async function provision(db, { ownerUid, actorUid, now }) {
     }, { merge: true });
   });
   await audit(db, { action: 'NETWORK_PROVISION', actorUid, uid: ownerUid, details: { networkId }, now });
-  return { status: 'created', networkId, trialStartedAt, subscriptionEndsAt };
+  return { status: 'created', networkId, trialStartedAt, subscriptionEndsAt, networkSecret };
 }
 
 async function updateAccess(db, { value, actorUid, now }) {
@@ -258,8 +270,14 @@ export default async function handler(req, res) {
     if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });
     return res.status(200).json({ success: true, ...result });
   } catch (error) {
+    if (error?.message === 'network_secret_master_not_configured') {
+      return res.status(503).json({ success: false, error: 'hmac_not_configured' });
+    }
+    if (error?.message === 'network_secret_decryption_failed') {
+      console.error('networks: stored network key could not be decrypted');
+      return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
+    }
     console.error('networks action failed', error);
     return res.status(500).json({ success: false, error: 'network_action_failed' });
   }
 }
-

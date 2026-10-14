@@ -5,28 +5,39 @@
 // بديل مجاني (باقة Spark / Vercel Hobby) لوظيفة Cloud Functions
 // `dispatchScheduledNotifications` التي تتطلب باقة Blaze.
 //
-// يلتقط الطلبات في `notification_requests` بحالة `scheduled` التي حان
-// وقتها، ويرسلها عبر FCM، ثم يحدّث الحالة إلى sent/partial/no_devices.
+// Vercel Cron اليومي يشغّل أولاً فحص الاشتراكات المنتهية (LOCKED_EXPIRED)،
+// ثم يلتقط الطلبات في `notification_requests` بحالة `scheduled` التي حان
+// وقتها ويرسلها عبر FCM، ثم يحدّث الحالة إلى sent/partial/no_devices.
 // كما يستعيد الطلبات العالقة بحالة `processing` إذا انتهت مدة الاستئجار.
 //
 // يتطلب متغير البيئة: FIREBASE_SERVICE_ACCOUNT (نفس إعداد send-fcm).
 // الحماية: متغير CRON_SECRET؛ إن كان مضبوطاً فيجب إرساله في هيدر
 //   Authorization: Bearer <CRON_SECRET>
 //   (Vercel Cron يرسله تلقائياً عند ضبطه).
-// إن لم يُضبط CRON_SECRET، يقبل الطلب من مدرّب موثّق فقط (Bearer ID token).
+// يقبل أيضاً استدعاء مدير موثّق (Bearer ID token) لإرسال الإشعارات فقط؛
+// فحص انتهاء الاشتراكات لا يعمل إلا عند مطابقة CRON_SECRET.
 // ============================================================
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { timingSafeEqual } from 'node:crypto';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { sendTokensInBatches } from './send-fcm.js';
+import { expireOverdueSubscriptions } from './_lib/subscriptionExpiry.js';
 
 const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
 const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
 const DISPATCH_LEASE_MS = 10 * 60 * 1000;
 const BATCH_LIMIT = 25;
 const TERMINAL_STATUSES = new Set(['sent', 'partial', 'no_devices', 'rejected', 'failed', 'delivery_uncertain']);
+
+export function isCronSecret(token, secret = process.env.CRON_SECRET) {
+  if (typeof token !== 'string' || !token || typeof secret !== 'string' || !secret) return false;
+  const tokenBytes = Buffer.from(token, 'utf8');
+  const secretBytes = Buffer.from(secret, 'utf8');
+  return tokenBytes.length === secretBytes.length && timingSafeEqual(tokenBytes, secretBytes);
+}
 
 function ensureInitialized() {
   if (getApps().length > 0) return { ok: true };
@@ -211,14 +222,10 @@ export default async function handler(req, res) {
 
   const authHeader = String(req.headers.authorization || '');
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const cronSecret = process.env.CRON_SECRET;
+  const isCronRequest = isCronSecret(token);
 
-  if (cronSecret) {
-    if (!token || token !== cronSecret) {
-      return res.status(401).json({ success: false, error: 'invalid_cron_secret' });
-    }
-  } else {
-    // Without a cron secret, only a verified admin may trigger dispatch.
+  if (!isCronRequest) {
+    // Admins can still dispatch manually even when CRON_SECRET is configured.
     if (!token) return res.status(401).json({ success: false, error: 'missing_token' });
     try {
       const decoded = await getAuth().verifyIdToken(token);
@@ -236,11 +243,35 @@ export default async function handler(req, res) {
     }
   }
 
-  try {
-    const result = await processDueNotifications(getFirestore(), getMessaging());
-    return res.status(200).json({ success: true, ...result });
-  } catch (error) {
-    console.error('dispatch-notifications: dispatch loop failed', error);
-    return res.status(500).json({ success: false, error: 'dispatch_failed' });
+  const db = getFirestore();
+  let subscriptionExpiry = null;
+  let dispatchResult = null;
+  let expiryFailed = false;
+  let dispatchFailed = false;
+
+  // Only Vercel's CRON_SECRET can trigger the expiry sweep; opening the
+  // notifications page as an admin remains a dispatch-only operation.
+  if (isCronRequest) {
+    try {
+      subscriptionExpiry = await expireOverdueSubscriptions(db);
+    } catch (error) {
+      expiryFailed = true;
+      console.error('dispatch-notifications: subscription expiry failed', error);
+    }
   }
+
+  try {
+    dispatchResult = await processDueNotifications(db, getMessaging());
+  } catch (error) {
+    dispatchFailed = true;
+    console.error('dispatch-notifications: dispatch loop failed', error);
+  }
+
+  const success = !expiryFailed && !dispatchFailed;
+  return res.status(success ? 200 : 500).json({
+    success,
+    ...(dispatchResult || {}),
+    ...(isCronRequest ? { subscriptionExpiry: subscriptionExpiry || { status: 'failed' } } : {}),
+    ...(!success ? { error: expiryFailed ? 'subscription_expiry_failed' : 'dispatch_failed' } : {}),
+  });
 }
