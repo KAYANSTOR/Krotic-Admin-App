@@ -100,9 +100,11 @@ export function verifyInternalReceipt({ token, payload, secret, now = Date.now()
 
 export function validateIngestInput(body) {
   const input = normalizeBody(body);
-  const saleId = typeof input.saleId === 'string' ? input.saleId.trim() : '';
-  if (!saleId) return { ok: false, error: 'sale_id_required' };
-  if (saleId.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleId)) return { ok: false, error: 'sale_id_invalid' };
+  // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
+  const saleUuid = typeof input.saleUuid === 'string' ? input.saleUuid.trim()
+    : (typeof input.saleId === 'string' ? input.saleId.trim() : '');
+  if (!saleUuid) return { ok: false, error: 'sale_id_required' };
+  if (saleUuid.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleUuid)) return { ok: false, error: 'sale_id_invalid' };
 
   const amountMinor = Number(input.amountMinor);
   if (!Number.isInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
@@ -117,7 +119,21 @@ export function validateIngestInput(body) {
   const customerId = typeof input.customerId === 'string' ? input.customerId.slice(0, 128) : '';
   const cardId = typeof input.cardId === 'string' ? input.cardId.slice(0, 128) : '';
 
-  return { ok: true, value: { saleId, amountMinor, currencyCode, createdMs, customerId, cardId } };
+  return { ok: true, value: { saleId: saleUuid, saleUuid, amountMinor, currencyCode, createdMs, customerId, cardId } };
+}
+
+/**
+ * استجابة ACK موحّدة لسجل موجود مسبقاً: لا نُرجع خطأ تعارض حتى لا يفشل
+ * التطبيق محلياً في تسجيل الـ ACK بعد انقطاع الاتصال وإعادة المحاولة.
+ * نُرجع دائماً نجاحاً، ونُميّز فقط إن كان المحتوى مطابقاً أم مختلفاً (للتدقيق).
+ */
+export function ackForExistingSale(existingData, payloadHash) {
+  const prev = existingData || {};
+  return {
+    status: 'ALREADY_EXISTS_ACKED',
+    saleUuid: prev.saleUuid || prev.saleId || null,
+    samePayload: prev.payloadHash === payloadHash,
+  };
 }
 
 /**
@@ -125,23 +141,26 @@ export function validateIngestInput(body) {
  * Returns { status: 'created' | 'duplicate' | 'conflict', ... }.
  */
 export async function ingestSale({ db, uid, payload, payloadHash, receipt, commissionRateBps = 500, now = Date.now() }) {
-  const saleRef = db.collection('networks').doc(uid).collection('sales').doc(payload.saleId);
-  const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${payload.saleId}`);
+  const saleRef = db.collection('networks').doc(uid).collection('sales').doc(payload.saleUuid);
+  const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${payload.saleUuid}`);
+  const networkRef = db.collection('networks').doc(uid);
 
   return db.runTransaction(async (transaction) => {
     const existing = await transaction.get(saleRef);
     if (existing.exists) {
       const prev = existing.data() || {};
-      if (prev.payloadHash === payloadHash) return { status: 'duplicate', saleId: payload.saleId, payloadHash: prev.payloadHash };
-      transaction.set(registryRef, {
-        uid,
-        saleId: payload.saleId,
-        reason: 'payload_hash_conflict',
-        previousHash: prev.payloadHash || null,
-        incomingHash: payloadHash,
-        rejectedAt: FieldValue.serverTimestamp(),
-      }, { merge: false });
-      return { status: 'conflict', saleId: payload.saleId, previousHash: prev.payloadHash || null, incomingHash: payloadHash };
+      // محتوى مختلف لنفس المعرّف: يُسجَّل للتدقيق لكن لا نُفشل التطبيق (ACK ناجح).
+      if (prev.payloadHash !== payloadHash) {
+        transaction.set(registryRef, {
+          uid,
+          saleUuid: payload.saleUuid,
+          reason: 'payload_hash_conflict_acked',
+          previousHash: prev.payloadHash || null,
+          incomingHash: payloadHash,
+          recordedAt: FieldValue.serverTimestamp(),
+        }, { merge: false });
+      }
+      return { ...ackForExistingSale(prev, payloadHash), saleId: payload.saleUuid };
     }
 
     // الريال اليمني صحيح بالكامل: لا كسور. العمولة لقطة ثابتة وقت البيع
@@ -149,7 +168,8 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, commi
     const amount = payload.amountMinor;
     const commissionMinor = commissionFromBps(payload.amountMinor, commissionRateBps);
     transaction.set(saleRef, {
-      saleId: payload.saleId,
+      saleId: payload.saleUuid,
+      saleUuid: payload.saleUuid,
       customerId: payload.customerId || null,
       cardId: payload.cardId || null,
       amountMinor: payload.amountMinor,
@@ -175,7 +195,22 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, commi
       verifiedAt: FieldValue.serverTimestamp(),
       ingestedAtMs: now,
     }, { merge: false });
-    return { status: 'created', saleId: payload.saleId, payloadHash, commissionMinor, commissionRateBps };
+
+    // تحديث الرصيد التراكمي للشبكة (المرجع الوحيد لتطبيق الهاتف واللوحة).
+    const networkSnap = await transaction.get(networkRef);
+    const network = networkSnap.exists ? networkSnap.data() : {};
+    const totalSalesAmount = (Number(network.totalSalesAmount) || 0) + amount;
+    const totalCommissionDue = (Number(network.totalCommissionDue) || 0) + commissionMinor;
+    const totalPaidAmount = Number(network.totalPaidAmount) || 0;
+    transaction.set(networkRef, {
+      totalSalesAmount,
+      totalCommissionDue,
+      totalPaidAmount,
+      outstandingBalance: Math.max(0, totalCommissionDue - totalPaidAmount),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { status: 'created', saleId: payload.saleUuid, saleUuid: payload.saleUuid, payloadHash, commissionMinor, commissionRateBps };
   });
 }
 
@@ -244,10 +279,11 @@ export default async function handler(req, res) {
 
   try {
     const result = await ingestSale({ db: getFirestore(), uid, payload, payloadHash, receipt, commissionRateBps });
-    if (result.status === 'conflict') {
-      return res.status(409).json({ success: false, error: 'sale_id_conflict', ...result });
+    if (result.status === 'created') {
+      return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 1, ...result });
     }
-    return res.status(200).json({ success: true, policyVersion: 1, ack: result.status === 'duplicate', ...result });
+    // السجل موجود مسبقاً: نجاح دائماً (ACK) بلا خطأ تعارض، حتى لا يفشل التطبيق محلياً.
+    return res.status(200).json({ success: true, status: 'ALREADY_EXISTS_ACKED', ack: true, policyVersion: 1, ...result });
   } catch (error) {
     console.error('sales/ingest failed', error);
     return res.status(500).json({ success: false, error: 'ingest_failed' });

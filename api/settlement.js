@@ -14,7 +14,8 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { isPositiveRiyal } from './_lib/money.js';
-import { allocateFifo, outstandingBalance, saleOutstanding } from './_lib/settlementLedger.js';
+import { parseNetworkId } from './_lib/networkId.js';
+import { settleNetworkPayment } from './_lib/networkLedger.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -93,12 +94,16 @@ export function settlementNotification(value, settlementId, callerUid) {
 
 export async function approveSettlement({ db, callerUid, value, now = Date.now() }) {
   const settlementId = settlementDocId(value.uid, value.idempotencyKey);
-  const settlementRef = db.collection('networks').doc(value.uid).collection('settlements').doc(settlementId);
-  const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const userRef = db.collection('users').doc(value.uid);
+  const userPre = await userRef.get();
+  if (!userPre.exists) return { status: 'account_not_found', settlementId };
+  // الرصيد التراكمي والتسويات تُخزَّن على مستند الشبكة (NET-xxxxx إن وُجد).
+  const networkId = parseNetworkId(userPre.data()?.networkId) ? userPre.data().networkId : value.uid;
+  const networkRef = db.collection('networks').doc(networkId);
+  const settlementRef = networkRef.collection('settlements').doc(settlementId);
+  const salesQuery = networkRef.collection('sales').orderBy('createdAt', 'asc').limit(MAX_SETTLEMENT_SALES);
+  const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const auditRef = db.collection('admin_audit_logs').doc(`settlement_${settlementId}`);
-  const salesQuery = db.collection('networks').doc(value.uid).collection('sales')
-    .orderBy('createdAt', 'asc').limit(MAX_SETTLEMENT_SALES);
   const fingerprint = createHash('sha256').update(JSON.stringify({
     amountMinor: value.amountMinor,
     month: value.month,
@@ -122,24 +127,15 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     if (!userSnap.exists) return { status: 'account_not_found', settlementId };
     const user = userSnap.data() || {};
 
-    // تسوية FIFO: الأقدم فالأحدث، مع دعم السداد الجزئي.
-    const salesSnap = await transaction.get(salesQuery);
-    const unsettled = salesSnap.docs
-      .map((saleDoc) => ({ id: saleDoc.id, ref: saleDoc.ref, ...saleDoc.data() }))
-      .filter((sale) => saleOutstanding(sale) > 0);
-    const balanceBefore = outstandingBalance(unsettled);
-    const allocation = allocateFifo(unsettled, value.amountMinor);
-    allocation.allocations.forEach((entry) => {
-      const sale = unsettled.find((item) => item.id === entry.id);
-      transaction.update(sale.ref, {
-        settlement_status: entry.fullySettled ? 'SETTLED' : 'PARTIAL',
-        paidMinor: entry.paidAfterMinor,
-        settlementId,
-        settledAt: FieldValue.serverTimestamp(),
-      });
+    // دفتر الرصيد التراكمي الموحّد + تسوية FIFO على مستند الشبكة.
+    const ledger = await settleNetworkPayment(transaction, {
+      networkRef,
+      salesQuery,
+      amountMinor: value.amountMinor,
+      settlementId,
     });
-    const allocatedMinor = value.amountMinor - allocation.remainingMinor;
-    const outstandingAfterMinor = Math.max(0, balanceBefore - allocatedMinor);
+    const allocatedMinor = ledger.allocatedMinor;
+    const outstandingAfterMinor = ledger.outstandingBalance;
 
     const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
     const extensionApplied = value.extensionDays > 0;
@@ -151,9 +147,9 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       uid: value.uid,
       amountMinor: value.amountMinor,
       allocatedMinor,
-      unallocatedMinor: allocation.remainingMinor,
+      unallocatedMinor: ledger.unallocatedMinor,
       outstandingAfterMinor,
-      allocations: allocation.allocations.map((entry) => ({
+      allocations: ledger.allocations.map((entry) => ({
         id: entry.id,
         appliedMinor: entry.appliedMinor,
         fullySettled: entry.fullySettled,
@@ -191,7 +187,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       settlementId,
       amountMinor: value.amountMinor,
       extensionDays: value.extensionDays,
-      settledSales: allocation.allocations.length,
+      settledSales: ledger.settledSales,
       createdAt: FieldValue.serverTimestamp(),
       createdAtMs: now,
     }, { merge: false });
@@ -201,7 +197,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       settlementId,
       extensionApplied,
       subscriptionEndAfter: nextEnd || null,
-      settledSales: allocation.allocations.length,
+      settledSales: ledger.settledSales,
       outstandingAfterMinor,
     };
   });

@@ -18,6 +18,8 @@ import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
+import { parseNetworkId } from './_lib/networkId.js';
+import { settleNetworkPayment } from './_lib/networkLedger.js';
 
 const MAX_AMOUNT = 1_000_000_000_000;
 const MAX_KEY_LENGTH = 128;
@@ -63,28 +65,49 @@ export function paymentDocId(uid, idempotencyKey) {
 }
 
 export async function recordPayment({ db, callerUid, value, now = Date.now() }) {
-  const paymentRef = db.collection('networks').doc(value.uid).collection('payments').doc(paymentDocId(value.uid, value.idempotencyKey));
+  // الرصيد التراكمي يعيش على مستند الشبكة (NET-xxxxx إن وُجد، وإلا uid القديم).
+  const userSnap = await db.collection('users').doc(value.uid).get();
+  const networkId = parseNetworkId(userSnap.data()?.networkId) ? userSnap.data().networkId : value.uid;
+
+  const networkRef = db.collection('networks').doc(networkId);
+  const paymentRef = networkRef.collection('payments').doc(paymentDocId(value.uid, value.idempotencyKey));
+  const salesQuery = networkRef.collection('sales').orderBy('createdAt', 'asc').limit(400);
   const fingerprint = createHash('sha256').update(JSON.stringify({ amount: value.amount, month: value.month })).digest('hex');
 
   return db.runTransaction(async (transaction) => {
     const existing = await transaction.get(paymentRef);
     if (existing.exists) {
       const prev = existing.data() || {};
-      if (prev.fingerprint === fingerprint) return { status: 'duplicate', paymentId: paymentRef.id };
+      if (prev.fingerprint === fingerprint) return { status: 'duplicate', paymentId: paymentRef.id, outstandingBalance: prev.outstandingBalance ?? null };
       return { status: 'conflict', paymentId: paymentRef.id };
     }
+
+    // توحيد الدفعة في الرصيد التراكمي وتسوية المبيعات المعلقة (FIFO).
+    const ledger = await settleNetworkPayment(transaction, {
+      networkRef,
+      salesQuery,
+      amountMinor: value.amount,
+      settlementId: paymentRef.id,
+    });
+
     transaction.set(paymentRef, {
       amount: value.amount,
       month: value.month,
+      networkId,
       timestamp: now,
       source: 'admin_api',
       recordedBy: callerUid,
       idempotencyKey: value.idempotencyKey,
       fingerprint,
       note: value.note || null,
+      allocatedMinor: ledger.allocatedMinor,
+      unallocatedMinor: ledger.unallocatedMinor,
+      outstandingBalance: ledger.outstandingBalance,
+      settledSales: ledger.settledSales,
       createdAt: FieldValue.serverTimestamp(),
     }, { merge: false });
-    return { status: 'created', paymentId: paymentRef.id };
+
+    return { status: 'created', paymentId: paymentRef.id, outstandingBalance: ledger.outstandingBalance, settledSales: ledger.settledSales };
   });
 }
 
@@ -108,7 +131,13 @@ export default async function handler(req, res) {
     if (result.status === 'conflict') {
       return res.status(409).json({ success: false, error: 'payment_conflict', paymentId: result.paymentId });
     }
-    return res.status(200).json({ success: true, ack: result.status === 'duplicate', paymentId: result.paymentId });
+    return res.status(200).json({
+      success: true,
+      ack: result.status === 'duplicate',
+      paymentId: result.paymentId,
+      outstandingBalance: result.outstandingBalance ?? null,
+      settledSales: result.settledSales ?? 0,
+    });
   } catch (error) {
     console.error('record-payment failed', error);
     return res.status(500).json({ success: false, error: 'record_failed' });
