@@ -1,6 +1,4 @@
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
@@ -326,34 +324,9 @@ exports.dispatchNotificationRequest = onDocumentCreated(
   },
 );
 
-// المُجدوِل: يلتقط الطلبات المجدولة التي حان وقتها كل 5 دقائق.
-exports.dispatchScheduledNotifications = onSchedule('every 5 minutes', async () => {
-  const now = Date.now();
-  const [due, processing] = await Promise.all([
-    db.collection('notification_requests')
-      .where('status', '==', 'scheduled')
-      .where('scheduledAt', '<=', now)
-      .limit(25)
-      .get(),
-    // Only stale in-progress claims are recoverable. An uncertain FCM acceptance
-    // is terminal to avoid resending batches that may already have reached users.
-    db.collection('notification_requests').where('status', '==', 'processing').get(),
-  ]);
-  const staleProcessing = processing.docs
-    .filter((doc) => millis(doc.data()?.dispatchLeaseUntil) <= now)
-    .slice(0, 25);
-  const candidates = [...due.docs, ...staleProcessing];
-
-  if (!candidates.length) return;
-
-  for (const doc of candidates) {
-    try {
-      await dispatchRequest(doc);
-    } catch (error) {
-      console.error('dispatchScheduledNotifications failed', doc.id, error);
-    }
-  }
-});
+// ملاحظة (قرار المالك ز1): أُزيلت الدالة المجدولة المكررة `dispatchScheduledNotifications`.
+// المرجع الوحيد للإشعارات المجدولة هو Vercel Cron عبر /api/dispatch-notifications
+// المؤمَّن بـ CRON_SECRET (انظر vercel.json)، لتفادي تنفيذين متوازيين.
 
 // مجاميع لوحة الإدارة: تمنع تنزيل سجل المبيعات التاريخي عند كل فتح للوحة.
 function numeric(value) { return Number.isFinite(Number(value)) ? Number(value) : 0; }

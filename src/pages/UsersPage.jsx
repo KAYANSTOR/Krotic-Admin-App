@@ -26,6 +26,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
+import { renewNetwork, updateNetworkAccess, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import useAppRefresh from '../lib/useAppRefresh';
@@ -128,20 +129,25 @@ export default function UsersPage() {
         ? `هل تريد تفعيل حساب "${user.networkName || user.uid}"؟`
         : `هل تريد حظر "${user.networkName || user.uid}"؟ سيتم طرده من التطبيق فوراً.`,
       action: async () => {
-        try {
-          await updateDoc(doc(db, 'users', user.uid), { is_active: newStatus });
-          invalidateAdminUserData(user.uid);
-          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_active: newStatus } : u)));
-          logAdminAction({
-            action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
-            targetType: 'user',
-            targetId: user.uid,
-            targetLabel: user.networkName || user.phoneNumber || user.uid,
-          });
-          toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
-        } catch (err) {
-          toast.error('حدث خطأ');
+        const result = await updateNetworkAccess({
+          uid: user.uid,
+          accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
+        });
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر تحديث حالة المستخدم'));
+          return;
         }
+        invalidateAdminUserData(user.uid);
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid
+          ? { ...u, accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE', is_active: newStatus }
+          : u)));
+        logAdminAction({
+          action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
+          targetType: 'user',
+          targetId: user.uid,
+          targetLabel: user.networkName || user.phoneNumber || user.uid,
+        });
+        toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
       },
       variant: newStatus ? 'success' : 'danger',
     });
@@ -153,86 +159,77 @@ export default function UsersPage() {
       title: 'تحويل إلى رسمي',
       message: `هل تريد تحويل "${user.networkName || user.uid}" من مستخدم تجريبي إلى رسمي؟`,
       action: async () => {
-        try {
-          await updateDoc(doc(db, 'users', user.uid), { is_trial: false });
-          invalidateAdminUserData(user.uid);
-          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, is_trial: false } : u)));
-          logAdminAction({
-            action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
-            targetType: 'user',
-            targetId: user.uid,
-            targetLabel: user.networkName || user.phoneNumber || user.uid,
-          });
-          toast.success('تم تحويل المستخدم إلى رسمي');
-        } catch (err) {
-          toast.error('حدث خطأ');
+        const result = await updateNetworkAccess({ uid: user.uid, accessStatus: 'ACTIVE_PAID' });
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر تحويل المستخدم إلى رسمي'));
+          return;
         }
+        invalidateAdminUserData(user.uid);
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, accessStatus: 'ACTIVE_PAID', is_trial: false } : u)));
+        logAdminAction({
+          action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
+          targetType: 'user',
+          targetId: user.uid,
+          targetLabel: user.networkName || user.phoneNumber || user.uid,
+        });
+        toast.success('تم تحويل المستخدم إلى رسمي');
       },
       variant: 'primary',
     });
   };
 
-  const handleQuickRenew = async (user) => {
-    const now = new Date();
-    const nextMonth = now.getMonth() + 1;
-    const year = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear();
-    const actualNextMonth = nextMonth % 12;
-    const lastDayOfNextMonth = new Date(year, actualNextMonth + 1, 0);
-    lastDayOfNextMonth.setHours(23, 59, 59, 999);
-
+  const handleQuickRenew = (user) => {
     setConfirmAction({
       user,
       title: 'تجديد سريع',
-      message: `سيتم تحديث تاريخ الانتهاء ليصبح: ${lastDayOfNextMonth.toLocaleDateString('ar-IQ')}. هل أنت متأكد؟`,
+      message: 'سيتم تمديد الوصول 30 يوماً عبر الخادم (يُضاف لتاريخ الانتهاء الحالي إن كان سارياً، وإلا يبدأ من الآن). هل أنت متأكد؟',
       action: async () => {
-        try {
-          const newTimestamp = Timestamp.fromDate(lastDayOfNextMonth);
-          await updateDoc(doc(db, 'users', user.uid), { subscription_end_date: newTimestamp });
-          invalidateAdminUserData(user.uid);
-          setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, subscription_end_date: newTimestamp } : u)));
-          logAdminAction({
-            action: AUDIT_ACTIONS.USER_RENEW,
-            targetType: 'user',
-            targetId: user.uid,
-            targetLabel: user.networkName || user.phoneNumber || user.uid,
-            details: { subscription_end_date: newTimestamp.toDate().toISOString() },
-          });
-          toast.success('تم التجديد بنجاح');
-        } catch (err) {
-          toast.error('حدث خطأ أثناء التجديد');
+        const result = await renewNetwork(user.uid, 30);
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر التجديد'));
+          return;
         }
+        invalidateAdminUserData(user.uid);
+        const endMs = Number(result.data?.subscriptionEndsAt) || null;
+        const newEnd = endMs ? Timestamp.fromMillis(endMs) : null;
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid
+          ? { ...u, accessStatus: 'ACTIVE_PAID', subscriptionEndsAt: newEnd, subscription_end_date: newEnd }
+          : u)));
+        logAdminAction({
+          action: AUDIT_ACTIONS.USER_RENEW,
+          targetType: 'user',
+          targetId: user.uid,
+          targetLabel: user.networkName || user.phoneNumber || user.uid,
+          details: { subscriptionEndsAt: endMs },
+        });
+        toast.success('تم التجديد بنجاح');
       },
       variant: 'success',
     });
   };
 
   const handleSaveEdit = async (uid, updates) => {
-    try {
-      const firestoreUpdates = { ...updates };
-      if (updates.subscription_end_date) {
-        firestoreUpdates.subscription_end_date = Timestamp.fromDate(new Date(updates.subscription_end_date));
-      }
-      await updateDoc(doc(db, 'users', uid), firestoreUpdates);
-      invalidateAdminUserData(uid);
-      setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
-      setEditingUser(null);
-      const edited = users.find((u) => u.uid === uid);
-      logAdminAction({
-        action: AUDIT_ACTIONS.USER_EDIT,
-        targetType: 'user',
-        targetId: uid,
-        targetLabel: edited?.networkName || edited?.phoneNumber || uid,
-        details: {
-          commission_rate: updates.commission_rate ?? null,
-          has_custom_warning: updates.has_custom_warning ?? null,
-          subscription_end_date: updates.subscription_end_date || null,
-        },
-      });
-      toast.success('تم حفظ التعديلات بنجاح');
-    } catch (err) {
-      console.error(err);
-      toast.error('حدث خطأ في حفظ التعديلات');
+    const result = await updateNetworkAccess({ uid, ...updates });
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر حفظ التعديلات'));
+      return;
     }
+    invalidateAdminUserData(uid);
+    setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
+    setEditingUser(null);
+    const edited = users.find((u) => u.uid === uid);
+    logAdminAction({
+      action: AUDIT_ACTIONS.USER_EDIT,
+      targetType: 'user',
+      targetId: uid,
+      targetLabel: edited?.networkName || edited?.phoneNumber || uid,
+      details: {
+        commission_rate: updates.commission_rate ?? null,
+        has_custom_warning: updates.has_custom_warning ?? null,
+        subscriptionEndsAt: updates.subscriptionEndsAt ?? null,
+      },
+    });
+    toast.success('تم حفظ التعديلات بنجاح');
   };
 
   const warningWindowMs = useMemo(() => {

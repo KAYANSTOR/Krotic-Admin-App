@@ -419,6 +419,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
             networkName: meta.networkName,
             faceValue: Number(change.doc.data().faceValue) || 0,
             status: change.doc.data().status || '',
+            commissionMinor: change.doc.data().commissionMinor ?? change.doc.data().commission ?? null,
             commissionRate: resolveCommissionRate(user, defaultCommissionRate),
           }));
         salesByUid.set(uid, snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() })));
