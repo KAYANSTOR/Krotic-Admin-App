@@ -22,6 +22,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
+import { CURRENCY, commissionFromBps } from '../_lib/money.js';
 
 const MAX_SALE_ID_LENGTH = 128;
 const MAX_AMOUNT_MINOR = 1_000_000_000_000;
@@ -108,7 +109,7 @@ export function validateIngestInput(body) {
     return { ok: false, error: 'amount_invalid' };
   }
   const currencyCode = typeof input.currencyCode === 'string' ? input.currencyCode.trim().toUpperCase() : '';
-  if (!currencyCode || currencyCode.length > 8) return { ok: false, error: 'currency_invalid' };
+  if (currencyCode !== CURRENCY) return { ok: false, error: 'currency_invalid' };
 
   const createdMs = Number(input.createdMs);
   if (!Number.isFinite(createdMs) || createdMs <= 0) return { ok: false, error: 'created_at_invalid' };
@@ -143,9 +144,10 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, commi
       return { status: 'conflict', saleId: payload.saleId, previousHash: prev.payloadHash || null, incomingHash: payloadHash };
     }
 
-    const amount = payload.amountMinor / 100;
-    const commissionMinor = Math.floor((payload.amountMinor * commissionRateBps) / 10000);
-    const commissionAmount = commissionMinor / 100;
+    // الريال اليمني صحيح بالكامل: لا كسور. العمولة لقطة ثابتة وقت البيع
+    // (commission_rate_snapshot) تُقرَّب لأقرب ريال، وتُعلَّم غير مسوّاة.
+    const amount = payload.amountMinor;
+    const commissionMinor = commissionFromBps(payload.amountMinor, commissionRateBps);
     transaction.set(saleRef, {
       saleId: payload.saleId,
       customerId: payload.customerId || null,
@@ -156,11 +158,13 @@ export async function ingestSale({ db, uid, payload, payloadHash, receipt, commi
       faceValue: amount,
       face_value: amount,
       netAmount: amount,
-      commission: commissionAmount,
-      commissionAmount,
+      commission: commissionMinor,
+      commissionAmount: commissionMinor,
       commissionMinor,
       commissionRateBps,
-      status: 'PENDING_SETTLEMENT',
+      status: 'COMPLETED',
+      settlement_status: 'PENDING_SETTLEMENT',
+      paidMinor: 0,
       verified: true,
       source: 'admin_api',
       verificationReceipt: receipt,
