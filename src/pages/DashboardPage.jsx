@@ -2,11 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  Activity, AlertTriangle, ArrowUpLeft, Bell, Clock, CreditCard,
-  LayoutDashboard, RefreshCw, Settings, Sparkles,
-  TrendingUp, UserCheck, UserPlus, Users, Wallet,
+  AlertTriangle, ArrowUpLeft, Bell, CreditCard,
+  RefreshCw, Settings, Sparkles,
+  TrendingUp, UserPlus, Users,
 } from 'lucide-react';
-import StatCard from '../components/ui/StatCard';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -14,7 +13,6 @@ import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
-import BarChart from '../components/ui/BarChart';
 import { formatDate, formatNumber, toDate } from '../lib/format';
 import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 
@@ -245,13 +243,6 @@ export default function DashboardPage() {
 
       {stats && (
         <>
-          <section className="grid-kpi" aria-label="المؤشرات الرئيسية">
-            <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.totalUsers)} icon={Users} tone="brand" iconStart />
-            <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" iconStart />
-            <StatCard title="حسابات تجريبية" value={formatNumber(stats.trialUsers)} icon={Activity} tone="warning" iconStart />
-            <StatCard title="حسابات محظورة" value={formatNumber(stats.blockedUsers)} icon={AlertTriangle} tone="danger" iconStart />
-          </section>
-
           <section className="dash-finance" aria-label="الملخص المالي">
             <article className="dash-finance__primary">
               <header className="dash-finance__head">
@@ -271,73 +262,6 @@ export default function DashboardPage() {
             </article>
 
           </section>
-
-          <section className="grid-kpi" aria-label="المؤشرات المالية والتشغيلية">
-            <StatCard title="عدد عمليات البيع" value={formatNumber(stats.totalTransactions)} icon={Wallet} tone="brand" subtitle="كل العمليات المسجلة" iconStart />
-            <StatCard title="إجمالي العمولة" value={formatNumber(stats.totalCommission)} icon={CreditCard} tone="gold" subtitle="حسب نسب الشبكات" iconStart />
-            <StatCard title="المستخدمون النشطون" value={formatNumber(stats.activeUsers)} icon={UserCheck} tone="success" subtitle="حسابات متاحة" iconStart />
-            <StatCard title="تحتاج انتباهًا" value={formatNumber((alerts?.expiredUsers || 0) + (alerts?.expiringSoonUsers || 0))} icon={AlertTriangle} tone="warning" subtitle="منتهية أو قريبة الانتهاء" iconStart />
-          </section>
-
-          <Section
-            eyebrow="الاتجاه"
-            title="إجمالي المبيعات في آخر 6 أشهر"
-            description="إجمالي القيم وعدد العمليات لجميع حالات البيع، مع تحديث مباشر."
-            aria-label="مخطط المبيعات"
-          >
-            <Card>
-              <BarChart
-                data={monthlySales.map((month) => ({
-                  label: month.label,
-                  value: Math.round(month.face),
-                  hint: `${month.label}: ${formatNumber(month.face)} ريال • ${formatNumber(month.count)} عملية`,
-                }))}
-                valueFormatter={formatNumber}
-              />
-            </Card>
-          </Section>
-
-          {alerts && (alerts.expiredUsers > 0 || alerts.expiringSoonUsers > 0) && (
-            <Section
-              eyebrow="تحتاج انتباهك"
-              title="تنبيهات ذكية"
-              description={`مبنية على تواريخ الاشتراك ونافذة التحذير (${alerts.warningDays} أيام).`}
-              aria-label="تنبيهات"
-            >
-              <div className="alert-grid">
-                {alerts.expiredUsers > 0 && (
-                  <Link to="/users?filter=expired" className="alert-card alert-card--danger">
-                    <span className="alert-card__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
-                    <span className="alert-card__body">
-                      <span className="alert-card__value">{formatNumber(alerts.expiredUsers)}</span>
-                      <span className="alert-card__label">اشتراك منتهي</span>
-                    </span>
-                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
-                  </Link>
-                )}
-                {alerts.expiringSoonUsers > 0 && (
-                  <Link to="/users?filter=expiring" className="alert-card alert-card--warning">
-                    <span className="alert-card__icon" aria-hidden="true"><Clock className="w-5 h-5" /></span>
-                    <span className="alert-card__body">
-                      <span className="alert-card__value">{formatNumber(alerts.expiringSoonUsers)}</span>
-                      <span className="alert-card__label">ينتهي خلال {alerts.warningDays} أيام</span>
-                    </span>
-                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
-                  </Link>
-                )}
-                {alerts.trialExpiringSoonUsers > 0 && (
-                  <Link to="/users?filter=expiring" className="alert-card alert-card--brand">
-                    <span className="alert-card__icon" aria-hidden="true"><Activity className="w-5 h-5" /></span>
-                    <span className="alert-card__body">
-                      <span className="alert-card__value">{formatNumber(alerts.trialExpiringSoonUsers)}</span>
-                      <span className="alert-card__label">تجريبي ينتهي قريباً</span>
-                    </span>
-                    <ArrowUpLeft className="alert-card__arrow" aria-hidden="true" />
-                  </Link>
-                )}
-              </div>
-            </Section>
-          )}
 
           <Section eyebrow="تنقل سريع" title="إجراءات سريعة" aria-label="إجراءات سريعة">
             <div className="dash-actions">
@@ -383,30 +307,6 @@ export default function DashboardPage() {
             )}
           </Section>
 
-          <Section title="حالة النظام" aria-label="حالة النظام">
-            <article className="dash-status">
-              <div className="dash-status__main">
-                <span
-                  className={`dash-status__dot ${maintenance ? 'is-warning' : 'is-ok'}`}
-                  aria-hidden="true"
-                />
-                <div>
-                  <p className="dash-status__title">
-                    {maintenance ? 'وضع الصيانة مفعّل' : 'التطبيق يعمل بشكل طبيعي'}
-                  </p>
-                  <p className="dash-status__sub">
-                    {maintenance
-                      ? 'المستخدمون يرون رسالة الصيانة عند فتح التطبيق.'
-                      : 'لا توجد أعطال معلنة، وجميع الخدمات متاحة.'}
-                  </p>
-                </div>
-              </div>
-              <Link to="/settings" className="dash-status__link">
-                <LayoutDashboard className="w-4 h-4" aria-hidden="true" />
-                إدارة الحالة
-              </Link>
-            </article>
-          </Section>
         </>
       )}
 

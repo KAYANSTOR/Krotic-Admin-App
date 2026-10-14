@@ -7,8 +7,14 @@ import { Field, Input, Select, Textarea } from './ui/Field';
 import { adminApiError, approveSettlement, createAdminIdempotencyKey } from '../lib/adminApi';
 import { formatNumber } from '../lib/format';
 
+function currentMonthInput() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function SettlementModal({ isOpen, onClose, network, amountMinor, onSuccess }) {
   const [amount, setAmount] = useState('');
+  const [month, setMonth] = useState(currentMonthInput);
   const [extensionDays, setExtensionDays] = useState('0');
   const [note, setNote] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState('');
@@ -17,6 +23,7 @@ export default function SettlementModal({ isOpen, onClose, network, amountMinor,
   useEffect(() => {
     if (!isOpen) return;
     setAmount(String(Math.round(Number(amountMinor) || 0)));
+    setMonth(currentMonthInput());
     setExtensionDays('0');
     setNote('');
     setIdempotencyKey(createAdminIdempotencyKey(`settlement-${network?.uid || 'network'}`));
@@ -33,6 +40,7 @@ export default function SettlementModal({ isOpen, onClose, network, amountMinor,
     const result = await approveSettlement({
       uid: network.uid,
       amountMinor: parsedAmount,
+      month,
       extensionDays: Number(extensionDays),
       note: note.trim(),
       idempotencyKey,
@@ -69,6 +77,9 @@ export default function SettlementModal({ isOpen, onClose, network, amountMinor,
         <Field label="مبلغ التسوية (ريال)" required htmlFor="settlement-amount">
           <Input id="settlement-amount" type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} required />
         </Field>
+        <Field label="شهر العمولة" required htmlFor="settlement-month" hint="سيظهر هذا الشهر في إشعار المستخدم داخل التطبيق.">
+          <Input id="settlement-month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} required />
+        </Field>
         <Field label="تمديد الاشتراك" htmlFor="settlement-extension" hint="التمديد إداري وصريح؛ يبدأ من الآن إن كان الاشتراك منتهياً.">
           <Select id="settlement-extension" value={extensionDays} onChange={(event) => setExtensionDays(event.target.value)}>
             <option value="0">بدون تمديد</option>
@@ -80,7 +91,7 @@ export default function SettlementModal({ isOpen, onClose, network, amountMinor,
         </Field>
         <div className="flex items-start gap-2 text-xs text-ink-tertiary">
           <CalendarPlus className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>لن يتم تعديل أو حذف أي عملية بيع سابقة. الطلب قابل لإعادة المحاولة بأمان.</span>
+          <span>سيصل للمستخدم إشعار بسداد عمولة الشهر المحدد. لن يتم تعديل أو حذف أي عملية بيع سابقة.</span>
         </div>
       </form>
     </Modal>

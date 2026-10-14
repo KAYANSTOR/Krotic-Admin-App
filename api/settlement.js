@@ -8,6 +8,7 @@ import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js'
 
 const MAX_AMOUNT_MINOR = 1_000_000_000_000;
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -34,12 +35,15 @@ export function validateSettlementInput(body) {
   const idempotencyKey = typeof input.idempotencyKey === 'string' ? input.idempotencyKey.trim() : '';
   if (!KEY_PATTERN.test(idempotencyKey)) return { ok: false, error: 'idempotency_key_invalid' };
 
+  const month = typeof input.month === 'string' ? input.month.trim() : '';
+  if (!MONTH_PATTERN.test(month)) return { ok: false, error: 'month_invalid' };
+
   const extendAccess = input.extendAccess === true;
   const extensionDays = input.extensionDays === undefined ? (extendAccess ? 30 : 0) : Number(input.extensionDays);
   if (![0, 30].includes(extensionDays)) return { ok: false, error: 'extension_days_invalid' };
 
   const note = typeof input.note === 'string' ? input.note.slice(0, 200) : '';
-  return { ok: true, value: { uid, amountMinor, idempotencyKey, extensionDays, note } };
+  return { ok: true, value: { uid, amountMinor, month, idempotencyKey, extensionDays, note } };
 }
 
 export function settlementDocId(uid, idempotencyKey) {
@@ -54,13 +58,39 @@ function toMillis(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatMonth(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Intl.DateTimeFormat('ar-YE', { month: 'long', year: 'numeric' })
+    .format(new Date(year, monthNumber - 1, 1));
+}
+
+export function settlementNotification(value, settlementId, callerUid) {
+  const amount = new Intl.NumberFormat('ar-YE').format(value.amountMinor);
+  const message = `تم سداد عمولة ${formatMonth(value.month)} بمبلغ ${amount} ريال.`;
+  return {
+    type: 'settlement_approved',
+    title: 'تم اعتماد تسوية العمولة',
+    message,
+    body: message,
+    settlementId,
+    amountMinor: value.amountMinor,
+    month: value.month,
+    is_read: false,
+    createdBy: callerUid,
+    timestamp: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
+  };
+}
+
 export async function approveSettlement({ db, callerUid, value, now = Date.now() }) {
   const settlementId = settlementDocId(value.uid, value.idempotencyKey);
   const settlementRef = db.collection('networks').doc(value.uid).collection('settlements').doc(settlementId);
+  const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const userRef = db.collection('users').doc(value.uid);
   const auditRef = db.collection('admin_audit_logs').doc(`settlement_${settlementId}`);
   const fingerprint = createHash('sha256').update(JSON.stringify({
     amountMinor: value.amountMinor,
+    month: value.month,
     extensionDays: value.extensionDays,
     note: value.note,
   })).digest('hex');
@@ -69,7 +99,11 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     const existing = await transaction.get(settlementRef);
     if (existing.exists) {
       const previous = existing.data() || {};
-      if (previous.fingerprint === fingerprint) return { status: 'duplicate', settlementId };
+      if (previous.fingerprint === fingerprint) {
+        const notification = await transaction.get(notificationRef);
+        if (!notification.exists) transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid));
+        return { status: 'duplicate', settlementId };
+      }
       return { status: 'conflict', settlementId };
     }
 
@@ -85,6 +119,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       settlementId,
       uid: value.uid,
       amountMinor: value.amountMinor,
+      month: value.month,
       status: 'APPROVED',
       extensionDays: value.extensionDays,
       extensionApplied,
@@ -97,6 +132,8 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       approvedAt: FieldValue.serverTimestamp(),
       recordedAtMs: now,
     }, { merge: false });
+
+    transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid), { merge: false });
 
     if (extensionApplied) {
       transaction.update(userRef, {
