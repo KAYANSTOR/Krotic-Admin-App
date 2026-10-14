@@ -59,7 +59,36 @@ cd functions && npm ci && npm test && node --check index.js
 - **أُزيل** البايباس المضمّن `isPrimaryAdmin()` من القواعد.
 - أول مدير يُنشأ خارج النطاق (out-of-band) بمفاتيح موثوقة؛ بقية المدراء يُنشأون من اللوحة.
 
-## 6. ملاحظات المهاجرة (مؤجلة، قرار ي)
+## 7. خطوات التفعيل (ماذا تفعل في Firebase وVercel)
 
-- تصنيف الحسابات القديمة (تجريبي/رسمي) وإعادة بناء `admin_aggregates` والرصيد التراكمي للشبكات القديمة خطوة لاحقة restartable، ولا تُشغَّل تلقائياً.
-- المبيعات القديمة (قبل الاستقبال الخادمي) تُعرض «غير متحقق» ولا تُحتسب ضمن العمولة حتى تصالحها.
+### أ) Firebase Console
+1. **Firestore Rules:** انسخ محتوى `firestore.rules` والصقه في Console → Firestore → Rules، أو انشر بالأمر:
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+   القواعد الجديدة تمنع كتابة العميل على حقول الصلاحية/التسويات/الدفعات/`app_settings`/`Admins`، وتزيل المشرف المضمّن.
+2. **Firestore Indexes:** انشر الفهارس: `firebase deploy --only firestore:indexes` (يحتوي `firestore.indexes.json`).
+3. **Authentication:** تأكد من تفعيل **Email/Password**. أنشئ أول مدير يدويًا (Out-of-band): Add user بالبريد/كلمة المرور، ثم أنشئ مستندًا في مجموعة `Admins` بمعرّف = UID الحساب مع الحقول `{ uid, name, email, phone, createdAt }`. بعدها تُدار بقية المدراء من اللوحة عبر `/api/admins`.
+4. **Cloud Functions:** انشر الوظائف (اختياري حسب الباقة):
+   ```bash
+   firebase deploy --only functions
+   ```
+   لاحظ أن الإشعارات المجدولة تعمل عبر **Vercel Cron** لا عبر الدوال (أُزيلت الدالة المكررة).
+
+### ب) Vercel (المشروع المرتبط)
+1. **متغيّرات البيئة** (Settings → Environment Variables) لكل البيئات (Production/Preview):
+   - `VITE_FIREBASE_*` (إعدادات الويب من Firebase Console → Project settings → Web app).
+   - `FIREBASE_SERVICE_ACCOUNT` = محتوى ملف Service Account JSON كاملًا أو base64 له.
+   - `KROTAK_HMAC_SECRET` = سرّ عشوائي طويل لتوقيع طلبات `/api/sales/ingest`.
+   - `CRON_SECRET` = سرّ عشوائي لحماية `/api/dispatch-notifications`.
+2. **Cron:** `vercel.json` يعرّف Cron يوميًا لـ `/api/dispatch-notifications`؛ تأكد أن `CRON_SECRET` مضبوط فيكتمل الإرسال المجدول.
+3. **أعِد النشر (Redeploy)** بعد ضبط المتغيّرات، ثم تحقّق:
+   - دخول اللوحة يعمل.
+   - إرسال إشعار (اختبار) يعمل.
+   - اعتماد تسوية/تسجيل دفعة يعمل ويحدّث الرصيد.
+
+### ج) المهاجرة (تُشغَّل يدويًا بعد الموافقة فقط)
+بعد ضبط الخادم، استدعِ `POST /api/migrate` برمز مدير موثّق:
+1. `{ "action": "classify-users", "limit": 100 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true`.
+2. `{ "action": "rebuild-all", "limit": 50 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true` (يعيد بناء أرصدة الشبكات و`admin_aggregates`).
+

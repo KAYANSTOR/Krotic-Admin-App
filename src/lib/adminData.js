@@ -324,9 +324,9 @@ export async function fetchDashboardStats(options) {
     const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
     const { values: rawAggregates, errors } = await mapUsersSoft(users, 'Dashboard aggregate', (user) => fetchAggregate(user.uid, childOptions));
     const aggregates = rawAggregates.map((aggregate) => aggregate ?? { monthly: {}, monthlyAvailable: true });
-    const totals = { totalSales: 0, totalTransactions: 0 }; const buckets = {};
+    const totals = { totalSales: 0, totalTransactions: 0, totalCommission: 0 }; const buckets = {};
     aggregates.forEach((aggregate) => {
-      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0;
+      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0; totals.totalCommission += Number(aggregate.totalCommissionDue) || 0;
       Object.entries(aggregate.monthly || {}).forEach(([key, value]) => { const b = buckets[key] || { face: 0, count: 0 }; b.face += Number(value.face) || 0; b.count += Number(value.count) || 0; buckets[key] = b; });
     });
     const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5; const now = Date.now(); let expiredUsers = 0; let expiringSoonUsers = 0; let trialExpiringSoonUsers = 0;

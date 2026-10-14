@@ -341,15 +341,18 @@ function monthKey(value) {
   return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : null;
 }
 function saleContribution(sale) {
-  if (!sale || sale.status !== 'COMPLETED') return { face: 0, count: 0, month: null };
+  if (!sale || sale.status !== 'COMPLETED') return { face: 0, count: 0, commission: 0, month: null };
   const face = numeric(sale.faceValue);
-  return { face, count: 1, month: monthKey(sale.createdAt) };
+  // العمولة الخادمية (لقطة وقت البيع) تُجمَّع أيضاً (قرار ي3).
+  const commission = numeric(sale.commissionMinor ?? sale.commission ?? sale.commissionAmount);
+  return { face, count: 1, commission, month: monthKey(sale.createdAt) };
 }
 function hasSameSaleAggregateContribution(before, after) {
   const oldPart = saleContribution(before);
   const newPart = saleContribution(after);
   return oldPart.face === newPart.face
     && oldPart.count === newPart.count
+    && oldPart.commission === newPart.commission
     && oldPart.month === newPart.month;
 }
 function applySaleDelta(summary, before, after) {
@@ -358,6 +361,7 @@ function applySaleDelta(summary, before, after) {
   const newPart = saleContribution(after);
   next.totalFaceValue = numeric(summary.totalFaceValue) - oldPart.face + newPart.face;
   next.totalTransactions = numeric(summary.totalTransactions) - oldPart.count + newPart.count;
+  next.totalCommissionDue = numeric(summary.totalCommissionDue) - oldPart.commission + newPart.commission;
   [oldPart, newPart].forEach((part, index) => {
     if (!part.month) return;
     const sign = index === 0 ? -1 : 1;
@@ -373,7 +377,7 @@ const PROCESSED_AGGREGATE_EVENT_COLLECTIONS = {
   sale: 'processed_sale_aggregate_events',
   payment: 'processed_payment_aggregate_events',
 };
-const EMPTY_AGGREGATE = { totalFaceValue: 0, totalTransactions: 0, totalPaid: 0, monthly: {} };
+const EMPTY_AGGREGATE = { totalFaceValue: 0, totalTransactions: 0, totalCommissionDue: 0, totalPaid: 0, monthly: {} };
 
 function hashEventId(eventId) {
   return crypto.createHash('sha256').update(String(eventId)).digest('hex');

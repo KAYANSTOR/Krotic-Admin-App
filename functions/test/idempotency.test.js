@@ -128,6 +128,7 @@ test('the same sale event is applied once even when delivered twice', async () =
   assert.deepEqual(firestore.read('admin_aggregates/user-1'), {
     totalFaceValue: 100,
     totalTransactions: 1,
+    totalCommissionDue: 0,
     totalPaid: 0,
     monthly: { '2026-01': { face: 100, count: 1 } },
     updatedAt: 'SERVER_TIMESTAMP',
@@ -147,12 +148,16 @@ test('different sale event ids both apply their deltas', async () => {
   assert.equal(aggregate.monthly['2026-02'].count, 1);
 });
 
-test('aggregate keeps reported face value but does not infer commission without an approved policy', () => {
-  const next = __test.applySaleDelta({}, null, sale(100));
-  assert.equal(next.totalFaceValue, 100);
-  assert.equal(next.totalTransactions, 1);
-  assert.deepEqual(next.monthly['2026-01'], { face: 100, count: 1 });
-  assert.equal(Object.hasOwn(next, 'totalAdminEarnings'), false);
+test('aggregate sums server commission snapshots without inventing one', () => {
+  const noCommission = __test.applySaleDelta({}, null, sale(100));
+  assert.equal(noCommission.totalFaceValue, 100);
+  assert.equal(noCommission.totalTransactions, 1);
+  assert.equal(noCommission.totalCommissionDue, 0);
+  assert.deepEqual(noCommission.monthly['2026-01'], { face: 100, count: 1 });
+  assert.equal(Object.hasOwn(noCommission, 'totalAdminEarnings'), false);
+
+  const withCommission = __test.applySaleDelta({}, null, { ...sale(100), commissionMinor: 5 });
+  assert.equal(withCommission.totalCommissionDue, 5);
 });
 
 test('unchanged sale contribution is recognized before any aggregate transaction', () => {
