@@ -8,7 +8,8 @@ import {
   AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
+import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -361,7 +362,7 @@ export default function NotificationsPage() {
     return (
       <div className="notifications-page">
         <SkeletonPageHeader />
-        <div className="notif-grid">
+        <div className="grid-kpi">
           <SkeletonCard lines={4} />
           <SkeletonCard lines={5} />
         </div>
@@ -371,10 +372,10 @@ export default function NotificationsPage() {
 
   return (
     <div className="notifications-page">
-      <PageHeader
+      <PageHero
         icon={Bell}
         title="الإشعارات"
-        description="إرسال إشعارات فورية عبر FCM إلى جميع الأجهزة أو إلى مستخدم محدد، مع سجل كامل للإشعارات العامة."
+        subtitle="إرسال إشعارات فورية عبر FCM إلى جميع الأجهزة أو إلى مستخدم محدد، مع سجل كامل للإشعارات العامة."
         meta={`${users.length} مستخدم متاح • ${recentNotifications.length} إشعار عام في السجل`}
         actions={
           <DataFreshness
@@ -399,7 +400,7 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      <div className="notif-grid">
+      <Section eyebrow="الإرسال" aria-label="إرسال إشعار">
         {/* ====== نموذج الإرسال ====== */}
         <Card className="notif-compose">
           <CardHeader
@@ -587,7 +588,9 @@ export default function NotificationsPage() {
             </p>
           </form>
         </Card>
+      </Section>
 
+      <Section eyebrow="السجل" aria-label="سجل الإشعارات">
         {/* ====== سجل الإشعارات ====== */}
         <Card className="notif-history">
           <CardHeader
@@ -652,7 +655,7 @@ export default function NotificationsPage() {
             </ul>
           )}
         </Card>
-      </div>
+      </Section>
 
       <ConfirmDialog
         isOpen={!!deleteTarget}

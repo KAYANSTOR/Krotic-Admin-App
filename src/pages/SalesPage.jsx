@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
 import { Card } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
@@ -269,10 +269,10 @@ export default function SalesPage() {
 
   return (
     <div className="sales-page">
-      <PageHeader
+      <PageHero
         icon={DollarSign}
         title="سجل المبيعات والعمولات"
-        description="جميع السجلات والعمولات، مع تحديث تلقائي عند تسجيل عملية بيع جديدة"
+        subtitle="جميع السجلات والعمولات، مع تحديث تلقائي عند تسجيل عملية بيع جديدة"
         actions={
           <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => load({ force: true })} />
         }

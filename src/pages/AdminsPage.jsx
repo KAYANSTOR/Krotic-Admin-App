@@ -7,7 +7,8 @@ import {
   Mail, Phone, User, Users, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
+import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -143,10 +144,10 @@ export default function AdminsPage() {
 
   return (
     <div className="admins-page">
-      <PageHeader
+      <PageHero
         icon={ShieldCheck}
         title="إدارة المدراء"
-        description="إضافة وحذف حسابات المدراء الذين يمكنهم الوصول إلى لوحة التحكم."
+        subtitle="إضافة وحذف حسابات المدراء الذين يمكنهم الوصول إلى لوحة التحكم."
         meta={`${admins.length} مدير مسجل`}
         actions={
           <>
@@ -163,6 +164,7 @@ export default function AdminsPage() {
       />
 
       {showForm && (
+        <Section eyebrow="إنشاء" aria-label="إنشاء حساب مدير">
         <Card className="mb-6">
           <CardHeader
             icon={UserPlus}
@@ -230,6 +232,7 @@ export default function AdminsPage() {
             </div>
           </form>
         </Card>
+        </Section>
       )}
 
       {admins.length === 0 ? (
@@ -246,6 +249,7 @@ export default function AdminsPage() {
           />
         </Card>
       ) : (
+        <Section eyebrow="الفريق" title="حسابات المدراء" aria-label="حسابات المدراء">
         <div className="admins-grid">
           {admins.map((admin) => (
             <Card key={admin.id} className="admin-card">
@@ -286,6 +290,7 @@ export default function AdminsPage() {
             </Card>
           ))}
         </div>
+        </Section>
       )}
 
       <ConfirmDialog

@@ -13,7 +13,7 @@ import {
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
 import { Card } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -336,10 +336,10 @@ export default function UsersPage() {
 
   return (
     <div className="users-page">
-      <PageHeader
+      <PageHero
         icon={Users}
         title="إدارة المستخدمين والفوترة"
-        description={`${users.length} مستخدم مسجل`}
+        subtitle={`${users.length} مستخدم مسجل`}
         actions={
           <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
         }

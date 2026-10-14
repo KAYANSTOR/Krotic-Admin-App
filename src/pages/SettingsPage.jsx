@@ -10,7 +10,8 @@ import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
   ShieldCheck, AlertTriangle, Users,
 } from 'lucide-react';
-import PageHeader from '../components/ui/PageHeader';
+import PageHero from '../components/ui/PageHero';
+import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -192,10 +193,10 @@ export default function SettingsPage() {
 
   return (
     <div className="settings-page">
-      <PageHeader
+      <PageHero
         icon={Settings}
         title="الإعدادات العامة"
-        description="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
+        subtitle="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
         actions={
           <>
             <DataFreshness
@@ -211,7 +212,7 @@ export default function SettingsPage() {
         }
       />
 
-      <div className="settings-grid">
+      <Section eyebrow="الإعدادات العامة" aria-label="إعدادات التطبيق">
         {/* ===== حالة التطبيق ===== */}
         <Card>
           <CardHeader
@@ -338,7 +339,7 @@ export default function SettingsPage() {
             </Field>
           </div>
         </Card>
-      </div>
+      </Section>
 
       {/* ===== شريط الحفظ ===== */}
       <div className="settings-savebar">
@@ -351,6 +352,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ===== العمليات المجمعة ===== */}
+      <Section eyebrow="العمليات المجمّعة" aria-label="إدارة تواريخ الانتهاء المجمّعة">
       <Card className="settings-batch">
         <CardHeader
           icon={Calendar}
@@ -388,6 +390,7 @@ export default function SettingsPage() {
           يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ الحسابات التجريبية.
         </p>
       </Card>
+      </Section>
 
       {/* ===== نوافذ التأكيد ===== */}
       <ConfirmDialog
