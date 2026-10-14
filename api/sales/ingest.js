@@ -10,10 +10,12 @@
 //   4) يعالج التكرار: نفس saleId + نفس الهاش => يعيد ACK السابق.
 //      نفس saleId + هاش مختلف => تعارض مسجّل، بلا كتابة صامتة.
 //   5) يكتب سجلاً معتمداً: status=COMPLETED, verified=true, source='admin_api'.
+//   6) يتحقق من HMAC بمفتاح networkSecret الخاص بالشبكة، بعد فك تشفيره خادمياً.
 //
 // ملاحظة أمنية صريحة: الخادم لا يمنح اعتماداً مالياً إلا بعد إثبات عملية
 // خارجي. لحين توفيره (قرار المالك)، يُشترط هيدر `x-verification-receipt`
-// ليكون السجل `verified: true`؛ بدونه يُرفض الطلب (412).
+// ليكون السجل `verified: true`؛ بدونه يُرفض الطلب (401). يسترد التطبيق مفتاحه
+// عبر POST /api/network-secret بعد التحقق من Firebase ID Token؛ الـ Master Secret خادمي فقط.
 //
 // يتطلب FIREBASE_SERVICE_ACCOUNT. لا يحتاج أي كتابة عميل في Firestore.
 // ============================================================
@@ -23,6 +25,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../_lib/money.js';
+import { decryptNetworkSecret } from '../_lib/networkSecret.js';
 
 const MAX_SALE_ID_LENGTH = 128;
 const MAX_AMOUNT_MINOR = 1_000_000_000_000;
@@ -262,15 +265,44 @@ export default async function handler(req, res) {
   }
 
   const receipt = String(req.headers['x-verification-receipt'] || '').trim();
-  const hmacSecret = process.env.KROTAK_HMAC_SECRET || '';
-  if (!hmacSecret) return res.status(503).json({ success: false, error: 'hmac_not_configured' });
-  const receiptCheck = verifyInternalReceipt({ token: receipt, payload, secret: hmacSecret });
+  const db = getFirestore();
+  let userSnapshot;
+  let networkSecret;
+  try {
+    userSnapshot = await db.collection('users').doc(uid).get();
+    if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
+    const user = userSnapshot.data() || {};
+    const networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : uid;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(networkId)) {
+      return res.status(409).json({ success: false, error: 'network_mapping_invalid' });
+    }
+    const networkSnapshot = await db.collection('networks').doc(networkId).get();
+    if (!networkSnapshot.exists) return res.status(409).json({ success: false, error: 'network_not_provisioned' });
+    const network = networkSnapshot.data() || {};
+    if ((network.owner_uid && network.owner_uid !== uid) || (!network.owner_uid && networkId !== uid)) {
+      return res.status(403).json({ success: false, error: 'network_owner_mismatch' });
+    }
+    if (!network.networkSecretEncrypted) {
+      return res.status(409).json({ success: false, error: 'network_secret_not_provisioned' });
+    }
+    networkSecret = decryptNetworkSecret(network.networkSecretEncrypted);
+  } catch (error) {
+    if (error?.message === 'network_secret_master_not_configured') {
+      return res.status(503).json({ success: false, error: 'hmac_not_configured' });
+    }
+    if (error?.message === 'network_secret_decryption_failed' || error?.message === 'network_secret_envelope_invalid') {
+      console.error('sales/ingest: network key unavailable', { uid });
+      return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
+    }
+    console.error('sales/ingest: network key lookup failed', { uid, error });
+    return res.status(500).json({ success: false, error: 'network_secret_lookup_failed' });
+  }
+  const receiptCheck = verifyInternalReceipt({ token: receipt, payload, secret: networkSecret });
   if (!receiptCheck.ok) return res.status(401).json({ success: false, error: receiptCheck.error });
 
   let commissionRateBps = 500;
   try {
-    const userSnap = await getFirestore().collection('users').doc(uid).get();
-    const rawRate = Number(userSnap.data()?.commission_rate);
+    const rawRate = Number(userSnapshot.data()?.commission_rate);
     if (Number.isFinite(rawRate) && rawRate >= 0 && rawRate <= 100) commissionRateBps = Math.round(rawRate * 100);
   } catch (error) {
     console.error('sales/ingest: commission lookup failed', error);
@@ -278,7 +310,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await ingestSale({ db: getFirestore(), uid, payload, payloadHash, receipt, commissionRateBps });
+    const result = await ingestSale({ db, uid, payload, payloadHash, receipt, commissionRateBps });
     if (result.status === 'created') {
       return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 1, ...result });
     }

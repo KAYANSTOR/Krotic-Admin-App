@@ -78,3 +78,11 @@ test('internal HMAC receipt verifies the exact sale payload and expires', () => 
     now: timestamp + 6 * 60 * 1000,
   }).error, 'hmac_expired_or_malformed');
 });
+
+test('an HMAC receipt from another network key is rejected', () => {
+  const payload = { ...validBody, uid: 'user-1', currencyCode: 'YER' };
+  const timestamp = 1_700_000_000_000;
+  const receipt = createInternalReceipt({ payload, timestamp, secret: 'network-secret-one' });
+  assert.equal(verifyInternalReceipt({ token: receipt, payload, secret: 'network-secret-one', now: timestamp }).ok, true);
+  assert.equal(verifyInternalReceipt({ token: receipt, payload, secret: 'network-secret-two', now: timestamp }).error, 'hmac_invalid');
+});
