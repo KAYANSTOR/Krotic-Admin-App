@@ -135,7 +135,7 @@ export default function BottomNav() {
         ref={navRef}
         className="bottom-nav bottom-nav--meniscus lg:hidden"
         aria-label="التنقل الرئيسي"
-        style={{ '--meniscus-index': visualIndex }}
+        style={{ '--meniscus-index': activeIndex }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
