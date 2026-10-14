@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
   DollarSign,
@@ -33,12 +33,55 @@ function preloadRoute(path) {
 
 export default function BottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState(null);
+  const navRef = useRef(null);
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // إغلاق لوحة «المزيد» تلقائياً عند التنقل.
   useEffect(() => { setMoreOpen(false); }, [location.pathname]);
 
   const isMoreActive = moreItems.some((item) => item.path === location.pathname);
+  const activeIndex = isMoreActive ? 4 : Math.max(0, primaryItems.findIndex((item) => (
+    item.path === location.pathname || (item.path === '/' && location.pathname === '/')
+  )));
+  const visualIndex = dragIndex ?? activeIndex;
+
+  const indexFromPointer = (event) => {
+    const element = navRef.current;
+    if (!element) return 0;
+    const rect = element.getBoundingClientRect();
+    // The project is RTL, so the first tab is on the right.
+    const fromRight = rect.right - event.clientX;
+    return Math.max(0, Math.min(4, Math.floor((fromRight / rect.width) * 5)));
+  };
+
+  const selectIndex = (index) => {
+    setDragIndex(null);
+    if (index === 4) {
+      setMoreOpen((open) => !open);
+      return;
+    }
+    const item = primaryItems[index];
+    if (item) navigate(item.path);
+  };
+
+  const handlePointerDown = (event) => {
+    if (event.target.closest('a, button')) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragIndex(indexFromPointer(event));
+  };
+
+  const handlePointerMove = (event) => {
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    setDragIndex(indexFromPointer(event));
+  };
+
+  const handlePointerUp = (event) => {
+    if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    const index = indexFromPointer(event);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    selectIndex(index);
+  };
 
   return (
     <>
@@ -75,9 +118,19 @@ export default function BottomNav() {
         </div>
       </div>
 
-      <nav className="bottom-nav lg:hidden" aria-label="التنقل الرئيسي">
+      <nav
+        ref={navRef}
+        className="bottom-nav bottom-nav--meniscus lg:hidden"
+        aria-label="التنقل الرئيسي"
+        style={{ '--meniscus-index': visualIndex }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => setDragIndex(null)}
+      >
+        <span className="meniscus-bead" aria-hidden="true" />
         <div className="bottom-nav-row">
-          {primaryItems.map(({ path, label, icon: Icon }) => (
+          {primaryItems.map(({ path, label, icon: Icon }, index) => (
             <NavLink
               key={path}
               to={path}
@@ -90,11 +143,12 @@ export default function BottomNav() {
             >
               <Icon className="bottom-nav-icon" aria-hidden="true" />
               <span className="bottom-nav-label">{label}</span>
+              {index === activeIndex && <span className="sr-only">القسم الحالي</span>}
             </NavLink>
           ))}
           <button
             type="button"
-            onClick={() => setMoreOpen((open) => !open)}
+            onClick={() => selectIndex(4)}
             className={`bottom-nav-item ${isMoreActive || moreOpen ? 'is-active' : ''}`}
             aria-expanded={moreOpen}
             aria-haspopup="dialog"
