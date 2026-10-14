@@ -503,9 +503,12 @@
     .app-main .responsive-data-table tbody td > * { min-width: 0; max-width: 61%; overflow-wrap: anywhere; }
     .app-main .responsive-data-table tbody td[dir="ltr"]::before { order: 1; text-align: right; }
     .app-main .responsive-data-table tbody td[dir="ltr"] { text-align: left; }
-    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"] { display: block; border-bottom: 0; }
-    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"]::before { display: block; margin-bottom: 0.55rem; }
-    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"] > div { max-width: 100%; gap: 0.4rem; }
+    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"],
+    .app-main .responsive-data-table tbody td[data-label="الإجراء"] { display: block; border-bottom: 0; }
+    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"]::before,
+    .app-main .responsive-data-table tbody td[data-label="الإجراء"]::before { display: block; margin-bottom: 0.55rem; }
+    .app-main .responsive-data-table tbody td[data-label="الإجراءات السريعة"] > div,
+    .app-main .responsive-data-table tbody td[data-label="الإجراء"] > div { max-width: 100%; gap: 0.4rem; }
     .app-main .responsive-data-table tbody td[colspan] { display: block; min-height: 72px; padding-block: 1.4rem; border: 0; text-align: center; }
     .app-main .responsive-data-table tbody td[colspan]::before { content: none; }
   }
@@ -1229,6 +1232,10 @@
 .sales-network__toggle:hover .sales-network__chevron {
   background: var(--ui-brand-soft); color: var(--ui-brand-deep);
 }
+.sales-network__actions {
+  display: flex; justify-content: flex-start;
+  padding: 0 1.5rem .85rem;
+}
 
 /* جسم الشبكة الموسّع */
 .sales-network__body {
@@ -1285,6 +1292,7 @@
 }
 @media (max-width: 640px) {
   .sales-network__toggle { padding: 1rem 1.125rem; }
+  .sales-network__actions { padding: 0 1.125rem .75rem; }
   .sales-network__stats { gap: 1rem; }
   .sales-network__stat-label { font-size: .625rem; }
   .sales-network__stat-value { font-size: .8125rem; }

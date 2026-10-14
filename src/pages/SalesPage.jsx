@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DollarSign, Filter, Download,
+  DollarSign, Filter, Download, Ban, CheckCircle2,
   ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -15,6 +15,9 @@ import useAppRefresh from '../lib/useAppRefresh';
 import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { invalidateAdminUserData } from '../lib/adminData';
+import SettlementModal from '../components/SettlementModal';
+import CancelSaleModal from '../components/CancelSaleModal';
 
 const NETWORK_PAGE_SIZE = 10;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v2';
@@ -62,6 +65,8 @@ export default function SalesPage() {
   const [newSaleNotice, setNewSaleNotice] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
+  const [settlementTarget, setSettlementTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
   const latestRequestId = useRef(0);
   const hasRealtimeSnapshot = useRef(false);
   const saleNoticeTimer = useRef(null);
@@ -224,7 +229,13 @@ export default function SalesPage() {
     COMPLETED: { text: 'مكتمل', class: 'badge-success' },
     ROLLED_BACK: { text: 'مسترجع', class: 'badge-warning' },
     SMS_PENDING: { text: 'بانتظار SMS', class: 'badge-info' },
+    CANCELLED: { text: 'ملغى', class: 'badge-danger' },
   };
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateAdminUserData();
+    load({ force: true });
+  }, [load]);
 
   const handleExportSales = useCallback(() => {
     const rows = networkSales.flatMap((network) => {
@@ -464,6 +475,18 @@ export default function SalesPage() {
                   </div>
                 </button>
 
+                <div className="sales-network__actions">
+                  <Button
+                    variant="success"
+                    size="sm"
+                    icon={CheckCircle2}
+                    disabled={stats.totalCommission <= 0}
+                    onClick={() => setSettlementTarget({ network, amountMinor: stats.totalCommission })}
+                  >
+                    اعتماد التسوية
+                  </Button>
+                </div>
+
                 {isExpanded && (
                   <div className="sales-network__body">
                     <div className="sales-network__mobile-stats">
@@ -496,6 +519,7 @@ export default function SalesPage() {
                               <th className="text-right px-6 py-3">قيمة البيع</th>
                               <th className="text-right px-6 py-3">العمولة</th>
                               <th className="text-right px-6 py-3">الحالة</th>
+                              <th className="text-right px-6 py-3">الإجراء</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-line">
@@ -517,6 +541,21 @@ export default function SalesPage() {
                                   <span className={statusLabel[sale.status]?.class || 'badge-info'}>
                                     {statusLabel[sale.status]?.text || sale.status}
                                   </span>
+                                </td>
+                                <td className="px-6 py-3" data-label="الإجراء">
+                                  {sale.status === 'CANCELLED' ? (
+                                    <span className="text-xs text-ink-tertiary">ملغى</span>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="xs"
+                                      icon={Ban}
+                                      className="text-danger-ink"
+                                      onClick={() => setCancelTarget({ network, sale })}
+                                    >
+                                      إلغاء البيع
+                                    </Button>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -562,6 +601,21 @@ export default function SalesPage() {
         </div>
       )}
       </Section>
+
+      <SettlementModal
+        isOpen={Boolean(settlementTarget)}
+        onClose={() => setSettlementTarget(null)}
+        network={settlementTarget?.network}
+        amountMinor={settlementTarget?.amountMinor}
+        onSuccess={refreshAfterMutation}
+      />
+      <CancelSaleModal
+        isOpen={Boolean(cancelTarget)}
+        onClose={() => setCancelTarget(null)}
+        network={cancelTarget?.network}
+        sale={cancelTarget?.sale}
+        onSuccess={refreshAfterMutation}
+      />
     </div>
   );
 }
