@@ -11,6 +11,11 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 export function ensureFirebaseAdmin() {
   if (getApps().length > 0) return { ok: true };
 
+  if (process.env.FIREBASE_EMULATOR === 'true') {
+    initializeApp({ projectId: process.env.GCLOUD_PROJECT || 'demo-krotic-local' });
+    return { ok: true };
+  }
+
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw || !raw.trim()) return { ok: false, error: 'server_not_configured' };
 

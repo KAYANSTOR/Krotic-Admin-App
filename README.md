@@ -159,7 +159,32 @@ node --check index.js
 
 هذه الخطوات كما هي في `.github/workflows/ci.yml`؛ لا يعرّف المستودع script مستقلّاً داخل `functions/package.json`.
 
-لا يوجد أمر Emulator أو أمر تشغيل محلي آخر معرف في manifests أو workflow؛ لذلك: «غير موثّق في المستودع».
+### الاختبار المحلي للتكامل
+
+لا نحتاج إنشاء مشروع Firebase تجريبي. يستخدم الاختبار المحلي Firebase Emulator مع مشروع وهمي محلي:
+
+```bash
+# الطرفية الأولى
+npm run emulators
+
+# الطرفية الثانية
+FIREBASE_EMULATOR=true \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
+npx vercel dev
+```
+
+ولتوصيل واجهة الإدارة مباشرة بالـ Emulator، أنشئ `.env.local` من `.env.example` واضبط:
+
+```text
+VITE_USE_FIREBASE_EMULATORS=true
+VITE_FIRESTORE_EMULATOR_HOST=127.0.0.1
+VITE_FIRESTORE_EMULATOR_PORT=8080
+VITE_AUTH_EMULATOR_HOST=127.0.0.1
+VITE_AUTH_EMULATOR_PORT=9099
+```
+
+تظل بيانات الاختبار محلية ولا تلمس Firebase الإنتاجي. بعد نجاح الاختبار المحلي فقط نراجع نشر النسخة الحالية على المشاريع الأصلية.
 
 ## 🔐 متغيرات البيئة
 

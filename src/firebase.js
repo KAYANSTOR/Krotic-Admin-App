@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
   getFirestore,
+  connectFirestoreEmulator,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
@@ -28,6 +29,10 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+const useEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
+if (useEmulators) {
+  connectAuthEmulator(auth, `http://${import.meta.env.VITE_AUTH_EMULATOR_HOST || '127.0.0.1'}:${import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099}`, { disableWarnings: true });
+}
 // Keep Firestore documents in IndexedDB. The dashboard can render its last
 // known state immediately, while Firestore revalidates only what is missing.
 // Some embedded/private browser contexts do not support persistence, so the
@@ -48,5 +53,13 @@ export { db };
 // Secondary app instance for creating new admin users without signing out the current admin
 const secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
 export const secondaryAuth = getAuth(secondaryApp);
+if (useEmulators) {
+  connectFirestoreEmulator(
+    db,
+    import.meta.env.VITE_FIRESTORE_EMULATOR_HOST || '127.0.0.1',
+    Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080),
+  );
+  connectAuthEmulator(secondaryAuth, `http://${import.meta.env.VITE_AUTH_EMULATOR_HOST || '127.0.0.1'}:${import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099}`, { disableWarnings: true });
+}
 
 export default app;
