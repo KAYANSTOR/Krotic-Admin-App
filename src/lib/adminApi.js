@@ -30,20 +30,14 @@ export const ADMIN_API_ERRORS = {
   endpoint_unavailable:
     'دالة الخادم غير متاحة في هذه البيئة. تعمل دوال api/ على استضافة Vercel فقط.',
   uid_invalid: 'معرّف المستخدم غير صالح.',
-  sale_id_invalid: 'معرّف البيع غير صالح.',
   amount_invalid: 'المبلغ غير صالح.',
-  month_invalid: 'شهر العمولة غير صالح.',
   month_invalid: 'الشهر غير صالح (الصيغة المطلوبة YYYY-MM).',
   extension_days_invalid: 'مدة التمديد يجب أن تكون 0 أو 30 يوماً.',
   idempotency_key_invalid: 'مفتاح العملية غير صالح.',
   payment_conflict: 'توجد دفعة أخرى بنفس مفتاح العملية وبمحتوى مختلف. أعد تحميل السجل.',
   settlement_conflict: 'يوجد اعتماد تسوية بنفس مفتاح العملية وببيانات مختلفة.',
-  sale_not_found: 'لم يتم العثور على عملية البيع المطلوبة.',
-  sale_already_cancelled: 'عملية البيع ملغاة مسبقاً.',
-  reason_required: 'سبب الإلغاء مطلوب.',
   record_failed: 'تعذر تسجيل الدفعة على الخادم.',
   settlement_failed: 'تعذر اعتماد التسوية على الخادم.',
-  cancellation_failed: 'تعذر إلغاء البيع على الخادم.',
 };
 
 /** يسجّل دفعة/تسوية عبر الخادم الآمن idempotent. */
@@ -84,15 +78,6 @@ export async function approveSettlement({ uid, amountMinor, month, extensionDays
     extensionDays,
     note,
     idempotencyKey: idempotencyKey || newIdempotencyKey(`settlement-${uid}`),
-  });
-}
-
-export async function cancelSale({ uid, saleId, reason, idempotencyKey }) {
-  return callAdminApi('/api/sale/cancel', {
-    uid,
-    saleId,
-    reason,
-    idempotencyKey: idempotencyKey || newIdempotencyKey(`cancel-${saleId}`),
   });
 }
 

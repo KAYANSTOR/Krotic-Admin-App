@@ -227,7 +227,6 @@ export default function SalesPage() {
     COMPLETED: { text: 'مكتمل', class: 'badge-success' },
     ROLLED_BACK: { text: 'مسترجع', class: 'badge-warning' },
     SMS_PENDING: { text: 'بانتظار SMS', class: 'badge-info' },
-    CANCELLED: { text: 'ملغى', class: 'badge-danger' },
   };
 
   const refreshAfterMutation = useCallback(() => {
