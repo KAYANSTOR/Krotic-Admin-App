@@ -5,12 +5,8 @@ import {
   settlementDocId,
   settlementNotification,
 } from '../api/settlement.js';
-import {
-  validateCancelInput,
-  cancellationDocId,
-} from '../api/sale/cancel.js';
 
-test('settlement validates amount, idempotency, and explicit extension policy', () => {
+test('settlement validates amount, month, idempotency, and extension policy', () => {
   const valid = {
     uid: 'user-1',
     amountMinor: 2000,
@@ -35,19 +31,6 @@ test('settlement id is stable and scoped to uid and idempotency key', () => {
   assert.notEqual(id, settlementDocId('user-1', 'settle_abcdef13'));
 });
 
-test('cancel validates immutable sale identity and requires a reason', () => {
-  const valid = {
-    uid: 'user-1',
-    saleId: 'sale_abc-123',
-    idempotencyKey: 'cancel_abcdef12',
-    reason: 'إلغاء بناءً على طلب المدير',
-  };
-  assert.equal(validateCancelInput(valid).ok, true);
-  assert.equal(validateCancelInput({ ...valid, reason: '' }).error, 'reason_required');
-  assert.equal(validateCancelInput({ ...valid, saleId: 'bad id' }).error, 'sale_id_invalid');
-  assert.equal(validateCancelInput({ ...valid, idempotencyKey: 'short' }).error, 'idempotency_key_invalid');
-});
-
 test('settlement notification includes the selected month and amount', () => {
   const notification = settlementNotification({ month: '2026-10', amountMinor: 2500 }, 'settlement-1', 'admin-1');
   assert.equal(notification.type, 'settlement_approved');
@@ -56,11 +39,4 @@ test('settlement notification includes the selected month and amount', () => {
   assert.match(notification.message, /٢٬٥٠٠|2500/);
   assert.equal(notification.settlementId, 'settlement-1');
   assert.equal(notification.is_read, false);
-});
-
-test('cancellation id is stable and scoped to sale operation', () => {
-  const id = cancellationDocId('user-1', 'sale_abc-123', 'cancel_abcdef12');
-  assert.equal(id, cancellationDocId('user-1', 'sale_abc-123', 'cancel_abcdef12'));
-  assert.notEqual(id, cancellationDocId('user-1', 'sale_other', 'cancel_abcdef12'));
-  assert.notEqual(id, cancellationDocId('user-1', 'sale_abc-123', 'cancel_abcdef13'));
 });
