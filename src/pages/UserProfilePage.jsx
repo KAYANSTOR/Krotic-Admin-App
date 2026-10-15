@@ -238,17 +238,19 @@ export default function UserProfilePage() {
           </dl>
 
           <div className="user-card__actions" style={{ marginTop: '1rem' }}>
-            <button onClick={() => setBilling(true)} className="row-action row-action--success">
+            <button type="button" onClick={() => setBilling(true)} className="row-action row-action--success" aria-label="الفوترة والدفعات">
               <DollarSign className="w-4 h-4" /><span className="text-xs font-medium">الفوترة والدفعات</span>
             </button>
-            <button onClick={handleRenew} className="row-action row-action--brand" title="تجديد"><CalendarPlus className="w-4 h-4" /></button>
-            <button onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل"><Edit className="w-4 h-4" /></button>
-            <button onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول"><KeyRound className="w-4 h-4" /></button>
+            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك"><CalendarPlus className="w-4 h-4" /></button>
+            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم"><Edit className="w-4 h-4" /></button>
+            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول"><KeyRound className="w-4 h-4" /></button>
             {user.is_trial && (
               <button
                 onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}
+                type="button"
                 className="row-action row-action--brand-soft"
                 title="تحويل لرسمي"
+                aria-label="تحويل المستخدم إلى رسمي"
               >
                 <CheckCircle className="w-4 h-4" />
               </button>
@@ -258,8 +260,10 @@ export default function UserProfilePage() {
                 { accessStatus: user.is_active === false ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE' },
                 { successMessage: user.is_active === false ? 'تم إلغاء الحظر' : 'تم الحظر', auditAction: user.is_active === false ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK },
               )}
+              type="button"
               className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
               title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+              aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
             >
               {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
             </button>
