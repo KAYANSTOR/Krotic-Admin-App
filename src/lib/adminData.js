@@ -187,13 +187,13 @@ export async function fetchUserBillingHistory(uid, options) {
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const salesRef = collection(db, 'networks', networkId, 'sales');
     const paymentsRef = collection(db, 'networks', networkId, 'payments');
-    const salesCursor = Number(cachedValue?.salesCursor?.millis);
     const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
-    const incrementalSales = !force && Array.isArray(cachedValue?.sales) && Number.isFinite(salesCursor);
+    // Offline sales may arrive after a newer sale while carrying an older
+    // createdAt. A createdAt cursor would silently omit those late-arriving
+    // records, so the customer's full history is re-read on each load.
     const incrementalPayments = !force && Array.isArray(cachedValue?.payments) && Number.isFinite(paymentsCursor);
     const salesConstraints = [where('status', '==', 'COMPLETED'), orderBy('createdAt', 'asc')];
     const paymentConstraints = [orderBy('timestamp', 'asc')];
-    if (incrementalSales) salesConstraints.push(startAt(Timestamp.fromMillis(salesCursor)));
     if (incrementalPayments) paymentConstraints.push(startAt(Timestamp.fromMillis(paymentsCursor)));
     const readQuery = (firestoreQuery) => (force
       ? getDocsFromServer(firestoreQuery)
@@ -204,7 +204,7 @@ export async function fetchUserBillingHistory(uid, options) {
     ]);
     const incomingSales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
     const incomingPayments = paymentsSnapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() }));
-    const sales = mergeByDocumentId(incrementalSales ? cachedValue.sales : [], incomingSales);
+    const sales = incomingSales;
     const payments = mergeByDocumentId(incrementalPayments ? cachedValue.payments : [], incomingPayments);
     const history = {
       sales,
@@ -401,7 +401,6 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
     && [...initialNetworkIds].every((uid) => initialSalesSnapshots.has(uid));
   const publish = (newSales = []) => {
     if (!active) return;
-    if (!readyCalled && initialNetworkIds !== null && !isReady()) return;
     const networks = [];
     usersByUid.forEach((user, uid) => {
       const sales = salesByUid.get(uid) || [];
@@ -416,8 +415,14 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
       });
     });
     const fromCache = [...usersByUid.keys()].some((uid) => salesCacheByUid.get(uid) !== false);
-    onUpdate(networks, { fromCache }, newSales);
-    if (!readyCalled && isReady()) {
+    const expectedCount = initialNetworkIds?.size ?? null;
+    const initialSnapshotsCount = initialSalesSnapshots.size;
+    const ready = isReady();
+    // Publish each network as soon as its first snapshot arrives instead of
+    // blocking all reports behind the slowest network. Consumers get readiness
+    // metadata and can label totals as partial until all snapshots are loaded.
+    onUpdate(networks, { fromCache, ready, expectedCount, initialSnapshotsCount }, newSales);
+    if (!readyCalled && ready) {
       readyCalled = true;
       onReady?.();
     }
@@ -456,9 +461,9 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
         publish(newSales);
       },
       (error) => {
+        reportError(error, uid);
         initialSalesSnapshots.add(uid);
         publish();
-        reportError(error, uid);
       },
     );
     salesUnsubscribers.set(uid, unsubscribe);
