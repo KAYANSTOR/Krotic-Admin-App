@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: krotak-admin-ci
+  # Keep main and each PR branch isolated; one branch must not cancel another branch's validation.
+  group: krotak-admin-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
