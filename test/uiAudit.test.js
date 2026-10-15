@@ -66,3 +66,15 @@ test('mobile action and modal close controls have comfortable tap targets', asyn
   assert.match(css, /\.modal__close\s*\{[^}]*width:44px; height:44px;/);
   assert.match(css, /\.user-card__actions \.row-action\s*\{\s*min-height:44px;/);
 });
+
+test('application status audit is written only after the server confirms settings were saved', async () => {
+  const settings = await read('src/pages/SettingsPage.jsx');
+  assert.match(settings, /if \(previousAppStatus !== patch\.is_app_active\)/);
+  assert.match(settings, /savedAppStatus\.current = patch\.is_app_active/);
+  const confirmHandler = settings.slice(
+    settings.indexOf('const confirmDisableApp = () => {'),
+    settings.indexOf('\n  };', settings.indexOf('const confirmDisableApp = () => {')) + 5,
+  );
+  assert.doesNotMatch(confirmHandler, /logAdminAction/);
+  assert.match(settings, /لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على/);
+});
