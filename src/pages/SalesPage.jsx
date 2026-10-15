@@ -259,7 +259,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
+      { label: 'العمولة غير المسوّاة', value: (r) => r.sale.status !== 'COMPLETED' || saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
