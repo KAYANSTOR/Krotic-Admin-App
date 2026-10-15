@@ -76,3 +76,40 @@ test('migrate input validates actions, cursor and limit', () => {
   assert.equal(validateMigrateInput({ action: 'rebuild-network', uid: 'user_1' }).ok, true);
   assert.equal(validateMigrateInput({ action: 'nope' }).error, 'unknown_action');
 });
+
+
+test('modern server access status wins over stale legacy booleans during migration', () => {
+  assert.equal(classifyAccessStatus({
+    accessStatus: 'SUSPENDED_GRACE',
+    is_active: true,
+    is_trial: true,
+    subscriptionEndMs: NOW + DAY,
+  }, NOW), 'SUSPENDED_GRACE');
+
+  assert.equal(classifyAccessStatus({
+    accessStatus: 'ACTIVE_PAID',
+    is_active: false,
+    is_trial: true,
+    subscriptionEndMs: NOW + DAY,
+  }, NOW), 'ACTIVE_PAID');
+
+  assert.equal(classifyAccessStatus({
+    accessStatus: 'unknown_future_status',
+    is_active: true,
+    is_trial: true,
+    subscriptionEndMs: NOW + DAY,
+  }, NOW), 'SUSPENDED_GRACE');
+});
+
+test('migration plan keeps an existing server suspension and stale expiry unchanged', () => {
+  const plan = planUserMigration({
+    uid: 'user-suspended',
+    accessStatus: 'SUSPENDED_GRACE',
+    is_active: true,
+    is_trial: true,
+    subscriptionEndMs: NOW + DAY,
+  }, { now: NOW });
+
+  assert.equal(plan.accessStatus, 'SUSPENDED_GRACE');
+  assert.equal(plan.subscriptionEndsAt, NOW + DAY);
+});
