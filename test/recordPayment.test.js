@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePaymentInput, paymentDocId } from '../api/record-payment.js';
+import { validatePaymentInput, paymentDocId } from '../api/_lib/recordPayment.js';
 
 const valid = { uid: 'user-1', amount: 5000, month: '2026-10', idempotencyKey: 'key_abcdef12' };
 
