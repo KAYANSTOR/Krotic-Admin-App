@@ -110,13 +110,14 @@ export default function SalesPage() {
           fromCache: freshness?.fromCache ?? false,
           lastSyncedAt: freshness?.fromCache ? previous?.lastSyncedAt : Date.now(),
         }));
-        if (addedSales.length) {
-          const totalFaceValue = addedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-          const totalCommission = sumOutstanding(addedSales);
-          const networkNames = [...new Set(addedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
+        const completedAddedSales = addedSales.filter((sale) => sale.status === 'COMPLETED');
+        if (completedAddedSales.length) {
+          const totalFaceValue = completedAddedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+          const totalCommission = sumOutstanding(completedAddedSales);
+          const networkNames = [...new Set(completedAddedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
           setNewSaleNotice({
             id: Date.now(),
-            count: addedSales.length,
+            count: completedAddedSales.length,
             totalFaceValue,
             totalCommission,
             networkName: networkNames.length === 1 ? networkNames[0] : 'عدة شبكات',
@@ -258,7 +259,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : Math.max(0, (saleCommission(r.sale) || 0) - (Number(r.sale.paidRiyal ?? r.sale.paidMinor) || 0)) },
+      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
