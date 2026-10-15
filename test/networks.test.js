@@ -4,6 +4,7 @@ import {
   validateNetworkInput,
   computeRenewalEnd,
   ACCESS_STATUSES,
+  legacyAccessFields,
   TRIAL_DAYS,
   RENEWAL_DAYS,
 } from '../api/networks.js';
@@ -48,4 +49,33 @@ test('renewal adds 30 days to the later of the current end and now', () => {
   // لاشتراك سارٍ: يُضاف إلى تاريخ الانتهاء الحالي.
   assert.equal(computeRenewalEnd(now + 10 * DAY_MS, now), now + 40 * DAY_MS);
   assert.equal(computeRenewalEnd(0, now), now + 30 * DAY_MS);
+});
+
+
+test('legacy access fields mirror all supported access statuses', () => {
+  assert.deepEqual(legacyAccessFields('TRIAL'), {
+    is_active: true,
+    is_trial: true,
+  });
+  assert.deepEqual(legacyAccessFields('ACTIVE_PAID'), {
+    is_active: true,
+    is_trial: false,
+  });
+  assert.deepEqual(legacyAccessFields('SUSPENDED_GRACE'), {
+    is_active: false,
+    is_trial: false,
+  });
+  assert.deepEqual(legacyAccessFields('LOCKED_EXPIRED'), {
+    is_active: false,
+    is_trial: false,
+  });
+});
+
+test('legacy subscription end is kept in sync when access dates change', () => {
+  const endAt = { timestampFixture: true };
+  assert.deepEqual(legacyAccessFields('ACTIVE_PAID', endAt), {
+    is_active: true,
+    is_trial: false,
+    subscription_end_date: endAt,
+  });
 });
