@@ -971,7 +971,7 @@
 .empty-state__icon { margin-bottom: .25rem; }
 
 @media (max-width: 640px) {
-  .user-card__actions .row-action { min-height:44px; }
+  .user-card__actions .row-action { min-height:48px; min-width:48px; }
   .users-stat { padding: .875rem 1rem; border-radius: 16px; }
   .users-stat__value { font-size: 1.25rem; }
   .user-card { padding: 1rem; border-radius: 18px; }
