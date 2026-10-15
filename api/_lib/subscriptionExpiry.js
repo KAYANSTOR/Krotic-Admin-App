@@ -16,10 +16,12 @@ export function expiryMillis(value) {
 /** Supports current and legacy expiry fields; manual suspensions are not reclassified. */
 export function shouldLockExpiredAccount(user, now = Date.now()) {
   if (!user || typeof user !== 'object') return false;
-  const status = typeof user.accessStatus === 'string' ? user.accessStatus : '';
+  const status = typeof user.accessStatus === 'string' ? user.accessStatus.trim().toUpperCase() : '';
   if (status === 'LOCKED_EXPIRED' || status === 'SUSPENDED_GRACE') return false;
   if (status && !ELIGIBLE_STATUSES.has(status)) return false;
-  if (user.is_active === false) return false;
+  // When the server-owned status exists, do not let a stale legacy boolean
+  // suppress expiry processing. Legacy-only records retain the old fallback.
+  if (!status && user.is_active === false) return false;
   const end = expiryMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
   return end > 0 && end <= now;
 }
@@ -86,7 +88,8 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
         const networkSnapshot = byPath.get(entry.networkRef.path);
         if (!networkSnapshot?.exists) continue;
         const network = networkSnapshot.data() || {};
-        const ownershipMatches = network.owner_uid === entry.uid || entry.networkId === entry.uid;
+        const ownershipMatches = network.owner_uid === entry.uid
+          || (!network.owner_uid && entry.networkId === entry.uid);
         if (!ownershipMatches) continue;
         transaction.set(entry.networkRef, patch, { merge: true });
         currentNetworksUpdated += 1;
