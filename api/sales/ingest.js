@@ -28,9 +28,9 @@ import { CURRENCY, commissionFromBps } from '../_lib/money.js';
 import { decryptNetworkSecret } from '../_lib/networkSecret.js';
 
 const MAX_SALE_ID_LENGTH = 128;
-const MAX_AMOUNT_MINOR = 1_000_000_000_000;
-// Compatibility naming: YER amounts are whole Riyals; do not divide by 100.
-const MAX_AMOUNT_RIYAL = MAX_AMOUNT_MINOR;
+const MINOR_UNITS_PER_RIYAL = 100;
+const MAX_AMOUNT_RIYAL = 1_000_000_000_000;
+const MAX_AMOUNT_MINOR = MAX_AMOUNT_RIYAL * MINOR_UNITS_PER_RIYAL;
 const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 
@@ -111,14 +111,20 @@ export function validateIngestInput(body) {
   if (!saleUuid) return { ok: false, error: 'sale_id_required' };
   if (saleUuid.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleUuid)) return { ok: false, error: 'sale_id_invalid' };
 
-  // YER is stored in whole Riyals; the app uses integer Money values without /100 conversion.
+  // Money.minorUnits is scaled by 100; YER values must be whole Riyals.
   const amountMinor = Number(input.amountMinor);
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
     return { ok: false, error: 'amount_invalid' };
   }
   const currencyCode = typeof input.currencyCode === 'string' ? input.currencyCode.trim().toUpperCase() : '';
   if (currencyCode !== CURRENCY) return { ok: false, error: 'currency_invalid' };
-  const amountRiyal = amountMinor;
+  if (amountMinor % MINOR_UNITS_PER_RIYAL !== 0) {
+    return { ok: false, error: 'amount_not_whole_riyal' };
+  }
+  const amountRiyal = amountMinor / MINOR_UNITS_PER_RIYAL;
+  if (!Number.isSafeInteger(amountRiyal) || amountRiyal <= 0 || amountRiyal > MAX_AMOUNT_RIYAL) {
+    return { ok: false, error: 'amount_invalid' };
+  }
 
 
   const createdMs = Number(input.createdMs);
@@ -185,10 +191,10 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
 
     // Firestore requires every transaction read before the first write.
     const networkSnap = await transaction.get(networkRef);
-    // The app's integer YER amount equals whole Riyals; field names are retained for compatibility.
+    // Android sends fixed-point currency minor units; financial ledgers use whole Riyals.
     const amount = payload.amountRiyal;
     const commissionRiyal = commissionFromBps(amount, commissionRateBps);
-    const commissionMinor = commissionRiyal;
+    const commissionMinor = commissionRiyal * MINOR_UNITS_PER_RIYAL;
     transaction.set(saleRef, {
       saleId: payload.saleUuid, saleUuid: payload.saleUuid,
       customerId: payload.customerId || null, cardId: payload.cardId || null,
