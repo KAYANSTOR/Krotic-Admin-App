@@ -42,7 +42,7 @@ export function allocateFifo(sales = [], amountMinor) {
       id: sale.id,
       appliedMinor,
       fullySettled: appliedMinor >= outstanding,
-      paidAfterMinor: isMoneyPolicyV2 ? paidAfterRiyal * 100 : paidAfterRiyal,
+      paidAfterMinor: paidAfterRiyal,
       paidAfterRiyal,
     });
     remaining -= appliedMinor;
