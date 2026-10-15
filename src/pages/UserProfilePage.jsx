@@ -60,9 +60,28 @@ export default function UserProfilePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const sales = history.sales || [];
-  const payments = history.payments || [];
-  const commissionDue = user?.commissionDue ?? sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
+  const allSales = history.sales || [];
+  const allPayments = history.payments || [];
+  const monthOptions = [...new Set([
+    getCurrentMonthKey(),
+    ...allSales.map((sale) => monthKeyFromDate(sale.createdAt)),
+    ...allPayments.map((payment) => (
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
+        ? payment.month
+        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
+    )),
+  ].filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  const sales = historyMonth === 'all'
+    ? allSales
+    : allSales.filter((sale) => monthKeyFromDate(sale.createdAt) === historyMonth);
+  const payments = historyMonth === 'all'
+    ? allPayments
+    : allPayments.filter((payment) => (
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
+        ? payment.month
+        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
+    ) === historyMonth);
+  const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   const outstanding = Math.max(0, commissionDue - totalPaid);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
