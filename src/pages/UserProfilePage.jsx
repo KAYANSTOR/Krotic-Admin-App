@@ -88,9 +88,6 @@ export default function UserProfilePage() {
     );
     return unsubscribe;
   }, [uid]);
-
-
-
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
   const monthOptions = [...new Set([
@@ -191,7 +188,6 @@ export default function UserProfilePage() {
           تعذّر تحديث سجل المبيعات مباشرة؛ يُعرض آخر سجل متاح. حدّث الصفحة بعد التحقق من الاتصال.
         </div>
       )}
-
       <div className="mb-4 max-w-xs">
         <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
         <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
