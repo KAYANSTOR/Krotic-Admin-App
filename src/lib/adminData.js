@@ -6,6 +6,7 @@ import { toDate } from './format';
 import { mapWithConcurrency } from './mapWithConcurrency';
 import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
 import { normalizeUserAccess } from './accessStatus';
+import { summarizeCompletedSales } from './commission';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
 const FAN_OUT_CONCURRENCY = 5;
@@ -239,52 +240,47 @@ function sixMonthsAgo() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() - 5, 1);
 }
-async function fetchAggregateFromFirestore(uid) {
+async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
   const userSnapshot = await getDoc(doc(db, 'users', uid));
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
   const salesRef = collection(db, 'networks', networkId, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
   const paymentsRef = collection(db, 'networks', networkId, 'payments');
-  const [salesAggregate, paymentsAggregate] = await Promise.all([
-    getAggregateFromServer(completedQuery, {
-      totalFaceValue: sum('faceValue'),
-      totalTransactions: count(),
-    }),
+
+  // This path is used only when the server aggregate document is absent.
+  // Reading the completed sales once lets us report verified server commission
+  // snapshots rather than silently setting the due amount to zero.
+  const [salesSnapshot, paymentsAggregate] = await Promise.all([
+    force ? getDocsFromServer(completedQuery) : getDocs(completedQuery),
     getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
   ]);
-  const totalFaceValue = Number(salesAggregate.data().totalFaceValue) || 0;
-  const totalTransactions = Number(salesAggregate.data().totalTransactions) || 0;
+  const sales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  const totals = summarizeCompletedSales(sales);
   const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
-  let monthly = {};
-  let monthlyAvailable = true;
-  try {
-    const recentSalesSnapshot = await getDocs(query(
-      completedQuery,
-      where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo())),
-      orderBy('createdAt', 'asc'),
-    ));
-    const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
-    monthly = buildMonthlyBuckets(recentSales);
-  } catch (error) {
-    // Keep all-time totals usable, but explicitly mark the monthly chart incomplete.
-    monthlyAvailable = false;
-    console.warn(`تعذر تحميل مبيعات الأشهر الأخيرة للشبكة ${uid}:`, error);
-  }
+  const minRecentDate = sixMonthsAgo();
+  const monthly = buildMonthlyBuckets(sales.filter((sale) => {
+    const date = toDate(sale.createdAt);
+    return date && !Number.isNaN(date.getTime()) && date >= minRecentDate;
+  }));
+
   return {
-    totalFaceValue,
-    totalTransactions,
+    totalFaceValue: totals.reportedSalesValue,
+    totalTransactions: totals.reportedTransactions,
+    totalCommissionDue: totals.commissionDue,
     totalPaid,
     monthly,
-    monthlyAvailable,
-    source: 'aggregation',
+    monthlyAvailable: true,
+    source: 'aggregation-fallback',
   };
 }
 async function fetchAggregate(uid, options) {
-  return readCached(`aggregate:${uid}`, async () => {
-    const snap = await getDoc(doc(db, 'admin_aggregates', uid));
+  return readCached(`aggregate:${uid}`, async ({ force = false } = {}) => {
+    const snap = force
+      ? await getDoc(doc(db, 'admin_aggregates', uid))
+      : await getDoc(doc(db, 'admin_aggregates', uid));
     const aggregate = snap.exists()
       ? { ...snap.data(), monthlyAvailable: Object.hasOwn(snap.data(), 'monthly'), source: 'aggregate' }
-      : await fetchAggregateFromFirestore(uid);
+      : await fetchAggregateFromFirestore(uid, { force });
     const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {}).map(([month, bucket]) => [
       month,
       { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
