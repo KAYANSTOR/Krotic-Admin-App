@@ -125,7 +125,8 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
     const networkSnapshot = networksByPath.get(networkRef.path);
     if (!networkSnapshot?.exists) continue;
     const network = networkSnapshot.data() || {};
-    const belongsToUser = network.owner_uid === docSnap.id || networkId === docSnap.id;
+    const belongsToUser = network.owner_uid === docSnap.id
+      || (!network.owner_uid && networkId === docSnap.id);
     if (!belongsToUser) continue;
     batch.set(networkRef, {
       accessStatus: plan.accessStatus,
