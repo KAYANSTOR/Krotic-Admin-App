@@ -91,7 +91,6 @@ export default function UsersPage() {
   const [liveBillingByUid, setLiveBillingByUid] = useState({});
   const [liveSalesReady, setLiveSalesReady] = useState(false);
   const [liveSalesErrors, setLiveSalesErrors] = useState({});
-  const [liveSalesUpdatedAt, setLiveSalesUpdatedAt] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
@@ -138,10 +137,12 @@ export default function UsersPage() {
       (networks, freshness) => {
         const next = Object.fromEntries(networks.map((network) => [
           network.uid,
-          summarizeCompletedSales(network.sales || []),
+          {
+            ...summarizeCompletedSales(network.sales || []),
+            recordedPayments: Number(network.recordedPayments) || 0,
+          },
         ]));
         setLiveBillingByUid(next);
-        setLiveSalesUpdatedAt(Date.now());
         if (freshness?.ready) setLiveSalesReady(true);
       },
       (listenerError, uid) => {
