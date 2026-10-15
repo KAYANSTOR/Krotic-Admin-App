@@ -407,8 +407,8 @@ export default function SettingsPage() {
         onClose={() => setShowConfirm(false)}
         onConfirm={confirmDisableApp}
         title="إيقاف التطبيق"
-        message="هل أنت متأكد من إيقاف التطبيق؟ سيتم إغلاقه عند جميع المستخدمين فوراً."
-        confirmText="نعم، أوقف التطبيق"
+        message="سيتم تحديد حالة التطبيق كمتوقف في نموذج الإعدادات. لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على «حفظ التغييرات» بنجاح."
+        confirmText="تأكيد حالة الإيقاف"
         variant="danger"
       />
 
