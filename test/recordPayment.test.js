@@ -8,6 +8,7 @@ test('accepts a valid payment and rejects invalid fields', () => {
   assert.equal(validatePaymentInput(valid).ok, true);
   assert.equal(validatePaymentInput({ ...valid, uid: 'bad uid!' }).error, 'uid_invalid');
   assert.equal(validatePaymentInput({ ...valid, amount: 0 }).error, 'amount_invalid');
+  assert.equal(validatePaymentInput({ ...valid, amount: 1.5 }).error, 'amount_invalid');
   assert.equal(validatePaymentInput({ ...valid, month: '2026-13' }).error, 'month_invalid');
   assert.equal(validatePaymentInput({ ...valid, month: '10-2026' }).error, 'month_invalid');
   assert.equal(validatePaymentInput({ ...valid, idempotencyKey: 'short' }).error, 'idempotency_key_invalid');

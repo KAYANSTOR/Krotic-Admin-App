@@ -5,6 +5,9 @@ import {
   PENDING_SETTLEMENT,
   SETTLED,
   PARTIAL,
+  monthBounds,
+  monthlySalesQuery,
+  settleNetworkPayment,
 } from '../api/_lib/networkLedger.js';
 
 test('running balance is totalCommissionDue minus totalPaidAmount, never negative', () => {
@@ -18,4 +21,61 @@ test('ledger settlement statuses are explicit', () => {
   assert.equal(PENDING_SETTLEMENT, 'PENDING_SETTLEMENT');
   assert.equal(SETTLED, 'SETTLED');
   assert.equal(PARTIAL, 'PARTIAL');
+});
+
+test('calendar month bounds use Yemen local time and a half-open interval', () => {
+  const bounds = monthBounds('2026-10');
+  assert.equal(bounds.start.toISOString(), '2026-09-30T21:00:00.000Z');
+  assert.equal(bounds.end.toISOString(), '2026-10-31T21:00:00.000Z');
+  assert.equal(monthBounds('2026-13'), null);
+  assert.equal(monthBounds('2026-00'), null);
+  assert.equal(monthBounds('202610'), null);
+});
+
+test('monthly sales query scopes FIFO candidates to only the selected month', () => {
+  const calls = [];
+  const query = {
+    where(...args) { calls.push(['where', ...args]); return this; },
+    orderBy(...args) { calls.push(['orderBy', ...args]); return this; },
+    limit(...args) { calls.push(['limit', ...args]); return this; },
+  };
+  const ref = { collection(name) { calls.push(['collection', name]); return query; } };
+  assert.equal(monthlySalesQuery(ref, '2026-10', 400), query);
+  assert.deepEqual(calls.map((call) => call[0]), ['collection', 'where', 'where', 'orderBy', 'limit']);
+  assert.equal(calls[0][1], 'sales');
+  assert.deepEqual(calls[1].slice(1, 3), ['createdAt', '>=']);
+  assert.deepEqual(calls[2].slice(1, 3), ['createdAt', '<']);
+  assert.equal(calls[3][1], 'createdAt');
+  assert.equal(calls[4][1], 400);
+  assert.throws(() => monthlySalesQuery(ref, '2026-13'), /month_invalid/);
+});
+
+test('a monthly payment above the selected month balance is rejected without writes', async () => {
+  const networkRef = {};
+  const salesQuery = {};
+  const writes = [];
+  const docs = [
+    { id: 'oct-sale-1', ref: { id: 'oct-sale-1' }, data: () => ({ commissionRiyal: 60, paidRiyal: 0 }) },
+    { id: 'oct-sale-2', ref: { id: 'oct-sale-2' }, data: () => ({ commissionRiyal: 40, paidRiyal: 0 }) },
+    { id: 'oct-sale-3', ref: { id: 'oct-sale-3' }, data: () => ({ commissionRiyal: 250, paidRiyal: 0, status: 'ROLLED_BACK' }) },
+  ];
+  const transaction = {
+    async get(ref) {
+      if (ref === networkRef) return { exists: true, data: () => ({ totalCommissionDue: 300, totalPaidAmount: 100 }) };
+      return { docs };
+    },
+    update(...args) { writes.push(['update', ...args]); },
+    set(...args) { writes.push(['set', ...args]); },
+  };
+  const result = await settleNetworkPayment(transaction, {
+    networkRef,
+    salesQuery,
+    amountMinor: 101,
+    settlementId: 'oct-payment-1',
+    month: '2026-10',
+  });
+  assert.equal(result.status, 'month_balance_exceeded');
+  assert.equal(result.monthlyOutstanding, 100);
+  assert.equal(result.requestedAmount, 101);
+  assert.deepEqual(writes, []);
 });

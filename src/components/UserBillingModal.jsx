@@ -226,9 +226,9 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
                   placeholder="0"
                 />
               </Field>
-              <Field label="الشهر (YYYY-MM)">
+              <Field label="شهر التسوية">
                 <Input
-                  type="text"
+                  type="month"
                   dir="ltr"
                   value={payMonth}
                   onChange={(e) => setPayMonth(e.target.value)}

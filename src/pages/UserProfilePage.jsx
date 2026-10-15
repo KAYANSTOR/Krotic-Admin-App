@@ -16,6 +16,7 @@ import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
 import { saleCommission } from '../lib/commission';
+import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
   fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
 } from '../lib/adminData';
@@ -34,6 +35,7 @@ export default function UserProfilePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [history, setHistory] = useState({ sales: [], payments: [] });
+  const [historyMonth, setHistoryMonth] = useState(() => getCurrentMonthKey());
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -58,9 +60,28 @@ export default function UserProfilePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const sales = history.sales || [];
-  const payments = history.payments || [];
-  const commissionDue = user?.commissionDue ?? sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
+  const allSales = history.sales || [];
+  const allPayments = history.payments || [];
+  const monthOptions = [...new Set([
+    getCurrentMonthKey(),
+    ...allSales.map((sale) => monthKeyFromDate(sale.createdAt)),
+    ...allPayments.map((payment) => (
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
+        ? payment.month
+        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
+    )),
+  ].filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  const sales = historyMonth === 'all'
+    ? allSales
+    : allSales.filter((sale) => monthKeyFromDate(sale.createdAt) === historyMonth);
+  const payments = historyMonth === 'all'
+    ? allPayments
+    : allPayments.filter((payment) => (
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
+        ? payment.month
+        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
+    ) === historyMonth);
+  const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   const outstanding = Math.max(0, commissionDue - totalPaid);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
@@ -125,7 +146,7 @@ export default function UserProfilePage() {
         kicker="ملف العميل"
         title={user.networkName || uid}
         subtitle={`${user.phoneNumber || '—'} • ${user.networkId || uid}`}
-        meta={`${sales.length} عملية بيع • ${payments.length} دفعة`}
+        meta={`${sales.length} عملية بيع • ${payments.length} دفعة • ${historyMonth === 'all' ? 'كل الأشهر' : historyMonth}`}
         actions={
           <>
             <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => load({ force: true })} />
@@ -134,11 +155,19 @@ export default function UserProfilePage() {
         }
       />
 
+      <div className="mb-4 max-w-xs">
+        <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
+        <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
+          <option value="all">كل الأشهر</option>
+          {monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}
+        </select>
+      </div>
+
       <div className="grid-kpi">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
-        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle="كل العمولات" />
-        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle="المتبقي على العميل" />
-        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle="إجمالي الدفعات" />
+        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
+        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle={historyMonth === "all" ? "كل العمولات" : "عمولة الشهر المحدد"} />
+        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle={historyMonth === "all" ? "المتبقي على العميل" : "المتبقي في الشهر المحدد"} />
+        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
       </div>
 
       <Section

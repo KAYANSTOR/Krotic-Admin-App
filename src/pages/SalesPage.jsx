@@ -19,7 +19,7 @@ import { invalidateAdminUserData } from '../lib/adminData';
 import { saleCommission, sumOutstanding, hasUnverifiedCommission } from '../lib/commission';
 
 const NETWORK_PAGE_SIZE = 10;
-const FILTER_STORAGE_KEY = 'krotak:sales-filters:v2';
+const FILTER_STORAGE_KEY = 'krotak:sales-filters:v3';
 
 function toDateInput(date) {
   const pad = (value) => String(value).padStart(2, '0');
@@ -55,9 +55,16 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const savedFilters = useMemo(loadSavedFilters, []);
+  const defaultMonthRange = useMemo(() => {
+    const now = new Date();
+    return [
+      toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
+      toDateInput(now),
+    ];
+  }, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
-  const [dateFrom, setDateFrom] = useState(savedFilters?.dateFrom || '');
-  const [dateTo, setDateTo] = useState(savedFilters?.dateTo || '');
+  const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : defaultMonthRange[0]);
+  const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : defaultMonthRange[1]);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);

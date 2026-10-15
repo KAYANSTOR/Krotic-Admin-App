@@ -5,7 +5,7 @@
 // قرارات المالك (ج، هـ):
 //   - الريال اليمني صحيح بالكامل: كل المبالغ أعداد صحيحة.
 //   - مسار واحد للتسوية والمدفوعات؛ الكتابة من الخادم فقط (القواعد تمنع العميل).
-//   - رصيد تراكمي وتسوية المبيعات غير المسوّاة بنظام الأقدم فالأحدث (FIFO).
+//   - تخصيص التسوية لمبيعات الشهر المختار فقط، مع FIFO داخل الشهر دون ترحيل لدورة أخرى.
 //   - لا تعديل أو حذف لأي سجل بيع سابق؛ التمديد إجراء إداري صريح (30 يوماً).
 // ============================================================
 
@@ -15,7 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { isPositiveRiyal } from './_lib/money.js';
 import { parseNetworkId } from './_lib/networkId.js';
-import { settleNetworkPayment } from './_lib/networkLedger.js';
+import { monthlySalesQuery, settleNetworkPayment } from './_lib/networkLedger.js';
 import { legacyAccessFields } from './_lib/accessStatus.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
@@ -102,7 +102,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
   const networkId = parseNetworkId(userPre.data()?.networkId) ? userPre.data().networkId : value.uid;
   const networkRef = db.collection('networks').doc(networkId);
   const settlementRef = networkRef.collection('settlements').doc(settlementId);
-  const salesQuery = networkRef.collection('sales').orderBy('createdAt', 'asc').limit(MAX_SETTLEMENT_SALES);
+  const salesQuery = monthlySalesQuery(networkRef, value.month, MAX_SETTLEMENT_SALES);
   const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const auditRef = db.collection('admin_audit_logs').doc(`settlement_${settlementId}`);
   const fingerprint = createHash('sha256').update(JSON.stringify({
@@ -147,8 +147,18 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       salesQuery,
       amountMinor: value.amountMinor,
       settlementId,
+      month: value.month,
       networkAccessPatch: accessPatch,
     });
+    if (ledger.status === 'month_balance_exceeded') {
+      return {
+        status: ledger.status,
+        settlementId,
+        month: value.month,
+        monthlyOutstanding: ledger.monthlyOutstanding,
+        requestedAmount: ledger.requestedAmount,
+      };
+    }
     const allocatedMinor = ledger.allocatedMinor;
     const outstandingAfterMinor = ledger.outstandingBalance;
 
@@ -227,6 +237,16 @@ export default async function handler(req, res) {
     const result = await approveSettlement({ db: getFirestore(), callerUid: caller.callerUid, value: parsed.value });
     if (result.status === 'conflict') return res.status(409).json({ success: false, error: 'settlement_conflict', settlementId: result.settlementId });
     if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });
+    if (result.status === 'month_balance_exceeded') {
+      return res.status(409).json({
+        success: false,
+        error: 'month_balance_exceeded',
+        settlementId: result.settlementId,
+        month: result.month,
+        monthlyOutstanding: result.monthlyOutstanding,
+        requestedAmount: result.requestedAmount,
+      });
+    }
     return res.status(200).json({ success: true, ack: result.status === 'duplicate', ...result });
   } catch (error) {
     console.error('settlement failed', error);
