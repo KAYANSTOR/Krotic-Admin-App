@@ -15,7 +15,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
-import { saleCommission } from '../lib/commission';
+import { saleCommission, saleOutstanding } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
   fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
@@ -255,8 +255,7 @@ export default function UserProfilePage() {
                 <tbody className="divide-y divide-line">
                   {sales.slice().reverse().map((sale) => {
                     const commission = saleCommission(sale);
-                    const paid = Number(sale.paidMinor) || 0;
-                    const settled = commission !== null && paid >= commission;
+                    const settled = commission !== null && saleOutstanding(sale) === 0;
                     return (
                       <tr key={sale.id}>
                         <td className="px-6 py-3 text-sm text-ink-soft" data-label="التاريخ">{formatDate(sale.createdAt, { withTime: true })}</td>
