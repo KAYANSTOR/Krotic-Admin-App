@@ -4,7 +4,7 @@
  * تُرجع null للسجلات القديمة غير المتحقق منها خادمياً.
  */
 export function saleCommission(sale) {
-  const raw = sale?.commissionMinor ?? sale?.commissionAmount ?? sale?.commission;
+  const raw = sale?.commissionRiyal ?? sale?.commissionMinor ?? sale?.commissionAmount ?? sale?.commission;
   if (raw === null || raw === undefined || raw === '') return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
@@ -22,7 +22,7 @@ export function hasUnverifiedCommission(sales = []) {
 export function saleOutstanding(sale) {
   const commission = saleCommission(sale);
   if (commission === null) return 0;
-  const paid = Number(sale?.paidMinor) || 0;
+  const paid = Number(sale?.paidRiyal ?? sale?.paidMinor) || 0;
   return Math.max(0, commission - paid);
 }
 

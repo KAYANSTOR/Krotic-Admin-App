@@ -445,6 +445,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
             networkName: meta.networkName,
             faceValue: Number(change.doc.data().faceValue) || 0,
             status: change.doc.data().status || '',
+            commissionRiyal: change.doc.data().commissionRiyal ?? change.doc.data().commission ?? change.doc.data().commissionAmount ?? change.doc.data().commissionMinor ?? null,
             commissionMinor: change.doc.data().commissionMinor ?? change.doc.data().commission ?? null,
             commissionRate: resolveCommissionRate(user, defaultCommissionRate),
           }));

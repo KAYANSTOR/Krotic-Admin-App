@@ -158,6 +158,10 @@ test('aggregate sums server commission snapshots without inventing one', () => {
 
   const withCommission = __test.applySaleDelta({}, null, { ...sale(100), commissionMinor: 5 });
   assert.equal(withCommission.totalCommissionDue, 5);
+  const v2Commission = __test.applySaleDelta({}, null, {
+    ...sale(100), moneyPolicyVersion: 2, commissionMinor: 25, commissionRiyal: 25,
+  });
+  assert.equal(v2Commission.totalCommissionDue, 25);
 });
 
 test('unchanged sale contribution is recognized before any aggregate transaction', () => {

@@ -11,8 +11,9 @@ function whole(value) {
 
 /** المتبقي على بيع واحد = عمولته − ما سُدّد منه. */
 export function saleOutstanding(sale) {
-  const commission = whole(sale?.commissionMinor);
-  const paid = whole(sale?.paidMinor);
+  // V2 has explicit whole-Riyal values; legacy aliases remain the fallback.
+  const commission = whole(sale?.commissionRiyal ?? sale?.commissionMinor);
+  const paid = whole(sale?.paidRiyal ?? sale?.paidMinor);
   return Math.max(0, commission - paid);
 }
 
@@ -34,11 +35,15 @@ export function allocateFifo(sales = [], amountMinor) {
     const outstanding = saleOutstanding(sale);
     if (outstanding <= 0) continue;
     const appliedMinor = Math.min(outstanding, remaining);
+    const paidAfterRiyal = whole(sale?.paidRiyal ?? sale?.paidMinor) + appliedMinor;
+    const isMoneyPolicyV2 = Number(sale?.moneyPolicyVersion) === 2
+      || sale?.commissionRiyal !== undefined;
     allocations.push({
       id: sale.id,
       appliedMinor,
       fullySettled: appliedMinor >= outstanding,
-      paidAfterMinor: whole(sale?.paidMinor) + appliedMinor,
+      paidAfterMinor: paidAfterRiyal,
+      paidAfterRiyal,
     });
     remaining -= appliedMinor;
   }

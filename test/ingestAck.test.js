@@ -28,9 +28,9 @@ test('an existing sale always returns a successful ACK (never a conflict error)'
   assert.equal(same.saleUuid, 'sale_uuid_1');
   assert.equal(same.samePayload, true);
 
-  // نفس المعرّف بمحتوى مختلف: يبقى ACK ناجحاً، ويُعلَّم فقط أنه مختلف للتدقيق.
+  // استخدام معرّف قائم لحمولة مختلفة تعارض، وليس نجاح مزامنة.
   const different = ackForExistingSale(existing, 'hash-b');
-  assert.equal(different.status, 'ALREADY_EXISTS_ACKED');
+  assert.equal(different.status, 'PAYLOAD_CONFLICT');
   assert.equal(different.samePayload, false);
 
   // توافق مع السجلات القديمة التي تحمل saleId فقط.

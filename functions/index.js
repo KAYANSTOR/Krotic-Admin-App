@@ -344,7 +344,7 @@ function saleContribution(sale) {
   if (!sale || sale.status !== 'COMPLETED') return { face: 0, count: 0, commission: 0, month: null };
   const face = numeric(sale.faceValue);
   // العمولة الخادمية (لقطة وقت البيع) تُجمَّع أيضاً (قرار ي3).
-  const commission = numeric(sale.commissionMinor ?? sale.commission ?? sale.commissionAmount);
+  const commission = numeric(sale.commissionRiyal ?? sale.commissionMinor ?? sale.commission ?? sale.commissionAmount);
   return { face, count: 1, commission, month: monthKey(sale.createdAt) };
 }
 function hasSameSaleAggregateContribution(before, after) {

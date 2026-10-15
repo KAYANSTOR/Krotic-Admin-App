@@ -15,6 +15,20 @@ test('outstanding balance accounts for partial payments', () => {
   assert.equal(outstandingBalance([sale('a', 100, 40), sale('b', 50)]), 110);
 });
 
+test('V2 settlement reads whole-Riyal balance and preserves minor-unit paid value', () => {
+  const currentSale = {
+    id: 'v2', moneyPolicyVersion: 2, commissionMinor: 25, commissionRiyal: 25,
+    paidMinor: 10, paidRiyal: 10,
+  };
+  assert.equal(saleOutstanding(currentSale), 15);
+  const allocation = allocateFifo([{
+    id: 'v2', moneyPolicyVersion: 2, commissionMinor: 25, commissionRiyal: 25,
+    paidMinor: 0, paidRiyal: 0,
+  }], 10);
+  assert.equal(allocation.allocations[0].paidAfterRiyal, 10);
+  assert.equal(allocation.allocations[0].paidAfterMinor, 10);
+});
+
 test('FIFO settles the oldest sales first', () => {
   const sales = [sale('old', 50), sale('mid', 50), sale('new', 50)];
   const result = allocateFifo(sales, 120);

@@ -29,6 +29,8 @@ import { decryptNetworkSecret } from '../_lib/networkSecret.js';
 
 const MAX_SALE_ID_LENGTH = 128;
 const MAX_AMOUNT_MINOR = 1_000_000_000_000;
+// Compatibility naming: YER amounts are whole Riyals; do not divide by 100.
+const MAX_AMOUNT_RIYAL = MAX_AMOUNT_MINOR;
 const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 
@@ -109,12 +111,15 @@ export function validateIngestInput(body) {
   if (!saleUuid) return { ok: false, error: 'sale_id_required' };
   if (saleUuid.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleUuid)) return { ok: false, error: 'sale_id_invalid' };
 
+  // YER is stored in whole Riyals; the app uses integer Money values without /100 conversion.
   const amountMinor = Number(input.amountMinor);
-  if (!Number.isInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
     return { ok: false, error: 'amount_invalid' };
   }
   const currencyCode = typeof input.currencyCode === 'string' ? input.currencyCode.trim().toUpperCase() : '';
   if (currencyCode !== CURRENCY) return { ok: false, error: 'currency_invalid' };
+  const amountRiyal = amountMinor;
+
 
   const createdMs = Number(input.createdMs);
   if (!Number.isFinite(createdMs) || createdMs <= 0) return { ok: false, error: 'created_at_invalid' };
@@ -122,20 +127,20 @@ export function validateIngestInput(body) {
   const customerId = typeof input.customerId === 'string' ? input.customerId.slice(0, 128) : '';
   const cardId = typeof input.cardId === 'string' ? input.cardId.slice(0, 128) : '';
 
-  return { ok: true, value: { saleId: saleUuid, saleUuid, amountMinor, currencyCode, createdMs, customerId, cardId } };
+  return { ok: true, value: { saleId: saleUuid, saleUuid, amountMinor, amountRiyal, currencyCode, createdMs, customerId, cardId } };
 }
 
 /**
- * استجابة ACK موحّدة لسجل موجود مسبقاً: لا نُرجع خطأ تعارض حتى لا يفشل
- * التطبيق محلياً في تسجيل الـ ACK بعد انقطاع الاتصال وإعادة المحاولة.
- * نُرجع دائماً نجاحاً، ونُميّز فقط إن كان المحتوى مطابقاً أم مختلفاً (للتدقيق).
+ * ACK is successful only when the stored payload hash matches exactly.
+ * Reusing a sale ID with different content is a conflict, never a successful sync.
  */
 export function ackForExistingSale(existingData, payloadHash) {
   const prev = existingData || {};
+  const samePayload = prev.payloadHash === payloadHash;
   return {
-    status: 'ALREADY_EXISTS_ACKED',
+    status: samePayload ? 'ALREADY_EXISTS_ACKED' : 'PAYLOAD_CONFLICT',
     saleUuid: prev.saleUuid || prev.saleId || null,
-    samePayload: prev.payloadHash === payloadHash,
+    samePayload,
   };
 }
 
@@ -154,68 +159,65 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
     const existing = await transaction.get(saleRef);
     if (existing.exists) {
       const prev = existing.data() || {};
-      // محتوى مختلف لنفس المعرّف: يُسجَّل للتدقيق لكن لا نُفشل التطبيق (ACK ناجح).
-      if (prev.payloadHash !== payloadHash) {
+      const ack = ackForExistingSale(prev, payloadHash);
+      const currentMoneyPolicy = Number(prev.moneyPolicyVersion) === 2
+        && prev.amountRiyal !== null && prev.amountRiyal !== undefined
+        && Number.isFinite(Number(prev.amountRiyal))
+        && prev.commissionRiyal !== null && prev.commissionRiyal !== undefined
+        && Number.isFinite(Number(prev.commissionRiyal));
+      if (ack.status !== 'ALREADY_EXISTS_ACKED' || !currentMoneyPolicy) {
+        const conflictCode = ack.samePayload
+          ? 'legacy_sale_schema_requires_reconciliation'
+          : 'sale_id_payload_conflict';
         transaction.set(registryRef, {
           uid,
           saleUuid: payload.saleUuid,
-          reason: 'payload_hash_conflict_acked',
+          reason: conflictCode,
           previousHash: prev.payloadHash || null,
           incomingHash: payloadHash,
+          samePayload: ack.samePayload,
           recordedAt: FieldValue.serverTimestamp(),
         }, { merge: false });
+        return { status: 'conflict', error: conflictCode, saleId: payload.saleUuid, samePayload: ack.samePayload };
       }
-      return { ...ackForExistingSale(prev, payloadHash), saleId: payload.saleUuid };
+      return { ...ack, saleId: payload.saleUuid };
     }
 
-    // الريال اليمني صحيح بالكامل: لا كسور. العمولة لقطة ثابتة وقت البيع
-    // (commission_rate_snapshot) تُقرَّب لأقرب ريال، وتُعلَّم غير مسوّاة.
-    const amount = payload.amountMinor;
-    const commissionMinor = commissionFromBps(payload.amountMinor, commissionRateBps);
+    // Firestore requires every transaction read before the first write.
+    const networkSnap = await transaction.get(networkRef);
+    // The app's integer YER amount equals whole Riyals; field names are retained for compatibility.
+    const amount = payload.amountRiyal;
+    const commissionRiyal = commissionFromBps(amount, commissionRateBps);
+    const commissionMinor = commissionRiyal;
     transaction.set(saleRef, {
-      saleId: payload.saleUuid,
-      saleUuid: payload.saleUuid,
-      customerId: payload.customerId || null,
-      cardId: payload.cardId || null,
-      amountMinor: payload.amountMinor,
-      currencyCode: payload.currencyCode,
-      amount,
-      faceValue: amount,
-      face_value: amount,
-      netAmount: amount,
-      commission: commissionMinor,
-      commissionAmount: commissionMinor,
-      commissionMinor,
-      commissionRateBps,
-      status: 'COMPLETED',
-      settlement_status: 'PENDING_SETTLEMENT',
-      paidMinor: 0,
-      verified: true,
-      source: 'admin_api',
-      verificationReceipt: receipt,
-      payloadHash,
-      payloadPolicyVersion: 1,
-      createdAt: new Date(payload.createdMs),
-      created_at: new Date(payload.createdMs),
-      verifiedAt: FieldValue.serverTimestamp(),
-      ingestedAtMs: now,
+      saleId: payload.saleUuid, saleUuid: payload.saleUuid,
+      customerId: payload.customerId || null, cardId: payload.cardId || null,
+      amountMinor: payload.amountMinor, amountRiyal: amount, currencyCode: payload.currencyCode,
+      amount, faceValue: amount, face_value: amount,
+      netAmount: amount - commissionRiyal, netAmountMinor: payload.amountMinor - commissionMinor,
+      commission: commissionRiyal, commissionAmount: commissionRiyal, commissionMinor, commissionRiyal,
+      commissionRateBps, status: 'COMPLETED', settlement_status: 'PENDING_SETTLEMENT',
+      paidMinor: 0, paidRiyal: 0, verified: true, source: 'admin_api',
+      verificationReceipt: receipt, payloadHash, payloadPolicyVersion: 2, moneyPolicyVersion: 2,
+      createdAt: new Date(payload.createdMs), created_at: new Date(payload.createdMs),
+      verifiedAt: FieldValue.serverTimestamp(), ingestedAtMs: now,
     }, { merge: false });
 
-    // تحديث الرصيد التراكمي للشبكة (المرجع الوحيد لتطبيق الهاتف واللوحة).
-    const networkSnap = await transaction.get(networkRef);
     const network = networkSnap.exists ? networkSnap.data() : {};
     const totalSalesAmount = (Number(network.totalSalesAmount) || 0) + amount;
-    const totalCommissionDue = (Number(network.totalCommissionDue) || 0) + commissionMinor;
+    const totalCommissionDue = (Number(network.totalCommissionDue) || 0) + commissionRiyal;
     const totalPaidAmount = Number(network.totalPaidAmount) || 0;
     transaction.set(networkRef, {
-      totalSalesAmount,
-      totalCommissionDue,
-      totalPaidAmount,
+      totalSalesAmount, totalCommissionDue, totalPaidAmount,
       outstandingBalance: Math.max(0, totalCommissionDue - totalPaidAmount),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    return { status: 'created', saleId: payload.saleUuid, saleUuid: payload.saleUuid, payloadHash, commissionMinor, commissionRateBps };
+    return {
+      status: 'created', saleId: payload.saleUuid, saleUuid: payload.saleUuid,
+      payloadHash, amountMinor: payload.amountMinor, amountRiyal: amount,
+      commissionMinor, commissionRiyal, commissionRateBps,
+    };
   });
 }
 
@@ -315,10 +317,12 @@ export default async function handler(req, res) {
   try {
     const result = await ingestSale({ db, uid, networkId, payload, payloadHash, receipt, commissionRateBps });
     if (result.status === 'created') {
-      return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 1, ...result });
+      return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 2, ...result });
     }
-    // السجل موجود مسبقاً: نجاح دائماً (ACK) بلا خطأ تعارض، حتى لا يفشل التطبيق محلياً.
-    return res.status(200).json({ success: true, status: 'ALREADY_EXISTS_ACKED', ack: true, policyVersion: 1, ...result });
+    if (result.status === 'conflict') {
+      return res.status(409).json({ success: false, error: result.error, ...result });
+    }
+    return res.status(200).json({ success: true, status: 'ALREADY_EXISTS_ACKED', ack: true, policyVersion: 2, ...result });
   } catch (error) {
     console.error('sales/ingest failed', error);
     return res.status(500).json({ success: false, error: 'ingest_failed' });
