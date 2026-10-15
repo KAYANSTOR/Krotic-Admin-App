@@ -23,7 +23,7 @@ test('sales history is not silently restricted to the current month by default',
   assert.match(sales, /krotak:sales-filters:v4/);
   assert.match(sales, /useState\(savedFilters \? savedFilters\.dateFrom : ''\)/);
   assert.match(sales, /useState\(savedFilters \? savedFilters\.dateTo : ''\)/);
-  assert.match(sales, /label="هذا الشهر"/);
+  assert.match(sales, /label: 'هذا الشهر'/);
 });
 
 test('customer history refresh cannot miss late offline sales with older createdAt', async () => {
