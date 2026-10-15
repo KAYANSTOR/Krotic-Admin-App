@@ -36,6 +36,7 @@ export const ADMIN_API_ERRORS = {
   idempotency_key_invalid: 'مفتاح العملية غير صالح.',
   payment_conflict: 'توجد دفعة أخرى بنفس مفتاح العملية وبمحتوى مختلف. أعد تحميل السجل.',
   settlement_conflict: 'يوجد اعتماد تسوية بنفس مفتاح العملية وببيانات مختلفة.',
+  month_balance_exceeded: 'مبلغ التسوية أكبر من العمولة المتبقية للشهر المحدد. اختر الشهر الصحيح أو خفّض المبلغ.',
   record_failed: 'تعذر تسجيل الدفعة على الخادم.',
   settlement_failed: 'تعذر اعتماد التسوية على الخادم.',
   settings_failed: 'تعذر حفظ الإعدادات على الخادم.',
