@@ -463,7 +463,7 @@ export default function SalesPage() {
 
                   <div className="sales-network__stats">
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">إجمالي المبيعات</span>
+                      <span className="sales-network__stat-label">المبيعات المكتملة</span>
                       <span className="sales-network__stat-value">
                         {formatNumber(stats.totalFaceValue)}
                       </span>
@@ -494,7 +494,7 @@ export default function SalesPage() {
                   <div className="sales-network__body">
                     <div className="sales-network__mobile-stats">
                       <div className="sales-network__mobile-stat">
-                        <span>إجمالي المبيعات</span>
+                        <span>المبيعات المكتملة</span>
                         <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
