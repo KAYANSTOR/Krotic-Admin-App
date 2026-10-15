@@ -61,10 +61,41 @@ test('app navigation links point to declared route loaders', async () => {
   for (const match of paths) assert.ok(declared.has(match[1]), `Navigation target has no route loader: ${match[1]}`);
 });
 
-test('mobile action and modal close controls have comfortable tap targets', async () => {
-  const css = await read('src/index.css');
+test('mobile action buttons are visible, distinct, labelled and easy to tap', async () => {
+  const [css, users, profile] = await Promise.all([
+    read('src/index.css'),
+    read('src/pages/UsersPage.jsx'),
+    read('src/pages/UserProfilePage.jsx'),
+  ]);
+  assert.match(css, /\.row-action\s*\{[^}]*min-height:\s*44px/);
+  assert.match(css, /\.row-action--danger[^}]*background:\s*var\(--ui-danger-soft\)/);
+  assert.match(css, /\.row-action--success[^}]*background:\s*var\(--ui-success-soft\)/);
+  assert.match(css, /\.row-action:focus-visible/);
+  assert.match(css, /\.user-card__actions \.row-action\s*\{[^}]*min-height:\s*48px/);
+  assert.match(users, /<span>تجديد<\/span>/);
+  assert.match(users, /<span>تعديل<\/span>/);
+  assert.match(users, /<span>الدخول<\/span>/);
+  assert.match(users, /aria-label=\{user\.is_active === false \? 'إلغاء حظر المستخدم' : 'حظر المستخدم'\}/);
+  assert.match(profile, /<span>تجديد<\/span>/);
+  assert.match(profile, /<span>تعديل<\/span>/);
+  assert.match(profile, /<span>الدخول<\/span>/);
   assert.match(css, /\.modal__close\s*\{[^}]*width:44px; height:44px;/);
-  assert.match(css, /\.user-card__actions \.row-action\s*\{\s*min-height:44px;/);
+});
+
+test('confirmation dialogs wait for async actions and expose failures', async () => {
+  const [dialog, users, profile, billing] = await Promise.all([
+    read('src/components/ConfirmDialog.jsx'),
+    read('src/pages/UsersPage.jsx'),
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/components/UserBillingModal.jsx'),
+  ]);
+  assert.match(dialog, /await onConfirm\?\.\(\)/);
+  assert.match(dialog, /loading=\{submitting\}/);
+  assert.match(dialog, /تعذر تنفيذ الإجراء/);
+  assert.match(users, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
+  assert.match(profile, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
+  assert.match(billing, /finally \{\s*setSavingPayment\(false\)/);
+  assert.match(billing, /Payment submission failed/);
 });
 
 test('application status audit is written only after the server confirms settings were saved', async () => {
