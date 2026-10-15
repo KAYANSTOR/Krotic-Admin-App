@@ -112,3 +112,25 @@ test('application status audit is written only after the server confirms setting
   assert.doesNotMatch(confirmHandler, /logAdminAction/);
   assert.match(settings, /لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على/);
 });
+
+
+test('failed admin actions leave confirmation open and always release loading states', async () => {
+  const [users, profile, admins, notifications, settings] = await Promise.all([
+    read('src/pages/UsersPage.jsx'),
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/pages/AdminsPage.jsx'),
+    read('src/pages/NotificationsPage.jsx'),
+    read('src/pages/SettingsPage.jsx'),
+  ]);
+  assert.match(users, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(profile, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(admins, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(notifications, /catch \(error\) \{[\s\S]*?return false;\s*\} finally \{\s*setDeleting\(false\)/);
+  assert.match(settings, /if \(!result\.ok\) \{\s*toast\.error\(adminApiError\(result\.error, 'تعذر تحديث تواريخ الانتهاء'\)\);\s*return false;/);
+  assert.match(settings, /finally \{\s*setUpdatingBatch\(false\)/);
+  const batchHandler = settings.slice(
+    settings.indexOf('const handleBatchUpdateExpiry = async () => {'),
+    settings.indexOf('const update = (patch)', settings.indexOf('const handleBatchUpdateExpiry = async () => {')),
+  );
+  assert.ok(batchHandler.indexOf('if (!result.ok)') < batchHandler.indexOf('setShowBatchConfirm(false)'));
+});
