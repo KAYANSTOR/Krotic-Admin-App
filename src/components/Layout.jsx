@@ -48,9 +48,16 @@ export default function Layout({ children }) {
 
   const handleInstall = async () => {
     if (!installPrompt) return;
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
+    try {
+      await installPrompt.prompt();
+      await installPrompt.userChoice;
+      toast.success('يمكنك فتح التطبيق من جهازك مباشرة');
+    } catch (error) {
+      console.error('[v0] Install prompt failed:', error);
+      toast.error('تعذر تثبيت التطبيق الآن');
+    } finally {
+      setInstallPrompt(null);
+    }
   };
 
   const handleLogout = async () => {

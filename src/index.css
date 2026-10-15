@@ -293,6 +293,12 @@
   .skip-link:focus { top:.75rem; }
   .app-main:focus { outline:none; }
   .app-main { min-height:calc(100vh - 73px); min-height:calc(100dvh - 73px); padding:1rem 1rem 7rem; }
+  .app-error { min-height:100dvh; display:grid; place-items:center; padding:1.25rem; background:var(--ui-paper); }
+  .app-error__card { width:min(100%, 30rem); max-width:30rem; display:flex; flex-direction:column; align-items:center; gap:1rem; padding:2rem 1.25rem; text-align:center; background:var(--ui-surface); border:1px solid var(--ui-line); border-radius:22px; box-shadow:var(--ui-shadow-soft); }
+  .app-error__title { margin:0; font-size:1.25rem; font-weight:800; }
+  .app-error__message { margin:0; color:var(--ui-muted); line-height:1.7; }
+  .app-error__actions { display:flex; flex-wrap:wrap; justify-content:center; gap:.625rem; }
+  @media (max-width:640px) { .app-error__actions { width:100%; } .app-error__actions .btn { flex:1; } }
   .app-main > div:not(.dashboard-page) { width:100%; max-width:1500px; margin-inline:auto; }
   @media (min-width:1024px) { .app-main { padding:2rem 2rem 2rem; } }
 
