@@ -44,7 +44,7 @@ export default function UserProfilePage() {
   const load = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     try {
-      const users = await fetchUsersWithBilling({ force });
+      const { users = [] } = await fetchUsersWithBilling({ force });
       setUser(users.find((item) => item.uid === uid) || null);
       const billingHistory = await fetchUserBillingHistory(uid, { force });
       setHistory({ sales: billingHistory.sales || [], payments: billingHistory.payments || [] });
@@ -306,4 +306,3 @@ export default function UserProfilePage() {
     </div>
   );
 }
-
