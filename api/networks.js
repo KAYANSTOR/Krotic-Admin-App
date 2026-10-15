@@ -298,7 +298,7 @@ export async function repairLegacyAccess(db, { value, actorUid, now }) {
       const networkSnap = await transaction.get(networkRef);
       const network = networkSnap.exists ? (networkSnap.data() || {}) : null;
       const networkBelongsToUser = Boolean(network)
-        && (network.owner_uid === entry.id || networkIdCandidate === entry.id);
+        && (network.owner_uid === entry.id || (!network.owner_uid && networkIdCandidate === entry.id));
       const networkNeedsUpdate = networkBelongsToUser
         && !accessFieldsMatch(network, accessStatus, endAt);
 
