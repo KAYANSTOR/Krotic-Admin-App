@@ -19,7 +19,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { parseNetworkId } from './_lib/networkId.js';
-import { settleNetworkPayment } from './_lib/networkLedger.js';
+import { monthlySalesQuery, settleNetworkPayment } from './_lib/networkLedger.js';
 
 const MAX_AMOUNT = 1_000_000_000_000;
 const MAX_KEY_LENGTH = 128;
@@ -71,7 +71,7 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
 
   const networkRef = db.collection('networks').doc(networkId);
   const paymentRef = networkRef.collection('payments').doc(paymentDocId(value.uid, value.idempotencyKey));
-  const salesQuery = networkRef.collection('sales').orderBy('createdAt', 'asc').limit(400);
+  const salesQuery = monthlySalesQuery(networkRef, value.month, 400);
   const fingerprint = createHash('sha256').update(JSON.stringify({ amount: value.amount, month: value.month })).digest('hex');
 
   return db.runTransaction(async (transaction) => {
@@ -88,7 +88,17 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
       salesQuery,
       amountMinor: value.amount,
       settlementId: paymentRef.id,
+      month: value.month,
     });
+    if (ledger.status === 'month_balance_exceeded') {
+      return {
+        status: ledger.status,
+        paymentId: paymentRef.id,
+        month: value.month,
+        monthlyOutstanding: ledger.monthlyOutstanding,
+        requestedAmount: ledger.requestedAmount,
+      };
+    }
 
     transaction.set(paymentRef, {
       amount: value.amount,
@@ -130,6 +140,15 @@ export default async function handler(req, res) {
     const result = await recordPayment({ db: getFirestore(), callerUid: caller.callerUid, value: parsed.value });
     if (result.status === 'conflict') {
       return res.status(409).json({ success: false, error: 'payment_conflict', paymentId: result.paymentId });
+    }
+    if (result.status === 'month_balance_exceeded') {
+      return res.status(409).json({
+        success: false,
+        error: 'month_balance_exceeded',
+        month: result.month,
+        monthlyOutstanding: result.monthlyOutstanding,
+        requestedAmount: result.requestedAmount,
+      });
     }
     return res.status(200).json({
       success: true,
