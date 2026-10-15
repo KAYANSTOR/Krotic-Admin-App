@@ -22,7 +22,7 @@ export function saleFaceValue(sale) {
     return Number.isFinite(value) && value > 0 ? value : 0;
   }
   const raw = Number(sale?.amountMinor);
-  const value = raw;
+  const value = Number(sale?.moneyPolicyVersion) === 2 ? raw / 100 : raw;
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
