@@ -11,37 +11,58 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [validationErrors, setValidationErrors] = useState({ email: '', password: '' });
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;
+    const emailInput = form.elements.email;
+    const passwordInput = form.elements.password;
+    const errors = {
+      email: !email.trim()
+        ? 'أدخل البريد الإلكتروني.'
+        : (!emailInput?.validity.valid ? 'أدخل بريدًا إلكترونيًا صحيحًا.' : ''),
+      password: !password ? 'أدخل كلمة المرور.' : '',
+    };
+    setValidationErrors(errors);
+    if (errors.email || errors.password) {
+      setFormError('تحقق من الحقول المحددة ثم حاول مرة أخرى.');
+      form.querySelector(':invalid')?.focus();
+      return;
+    }
+
+    setFormError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       toast.success('تم تسجيل الدخول بنجاح');
       navigate('/');
     } catch (error) {
-      console.error(error);
-      if (error.message.includes('ليس مسجلاً كمدير')) {
-        toast.error(error.message);
-      } else if (error.code === 'permission-denied') {
-        toast.error('قواعد Firestore تمنع قراءة مستند المدير. تأكد من أن Document ID يطابق UID للحساب.');
-      } else if (error.code === 'auth/network-request-failed') {
-        toast.error('تعذر الاتصال بخدمة Firebase. تحقق من الإنترنت ثم حاول مرة أخرى.');
+      console.error('Admin sign-in failed:', error);
+      const message = String(error?.message || '');
+      if (message.includes('ليس مسجلاً كمدير')) {
+        toast.error(message);
+      } else if (error?.code === 'permission-denied') {
+        toast.error('تعذر التحقق من صلاحيات المدير. تواصل مع مسؤول النظام.');
+      } else if (error?.code === 'auth/network-request-failed') {
+        toast.error('تعذر الاتصال بخدمة تسجيل الدخول. تحقق من الإنترنت ثم حاول مرة أخرى.');
       } else if (
-        error.code === 'auth/invalid-credential' ||
-        error.code === 'auth/wrong-password' ||
-        error.code === 'auth/user-not-found'
+        error?.code === 'auth/invalid-credential' ||
+        error?.code === 'auth/wrong-password' ||
+        error?.code === 'auth/user-not-found'
       ) {
         toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
-      } else if (error.code === 'auth/too-many-requests') {
+      } else if (error?.code === 'auth/too-many-requests') {
         toast.error('محاولات كثيرة. الرجاء الانتظار قليلاً.');
       } else {
         toast.error('حدث خطأ أثناء تسجيل الدخول');
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -66,18 +87,34 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            <Field label="البريد الإلكتروني">
+          <form onSubmit={handleLogin} className="space-y-5" noValidate>
+            {formError && <p id="login-form-error" className="field-error" role="alert" aria-live="assertive">{formError}</p>}
+            <Field label="البريد الإلكتروني" htmlFor="login-email">
               <Input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                id="login-email" name="email" type="email" value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setValidationErrors((current) => ({ ...current, email: '' }));
+                  setFormError('');
+                }}
+                aria-invalid={Boolean(validationErrors.email)}
+                aria-describedby={validationErrors.email ? 'login-email-error' : undefined}
                 placeholder="admin@example.com" required autoComplete="email"
               />
+              {validationErrors.email && <p id="login-email-error" className="field-error" role="alert">{validationErrors.email}</p>}
             </Field>
 
-            <Field label="كلمة المرور">
+            <Field label="كلمة المرور" htmlFor="login-password">
               <Input
-                type={showPassword ? 'text' : 'password'}
-                value={password} onChange={(e) => setPassword(e.target.value)}
+                id="login-password" name="password" type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setValidationErrors((current) => ({ ...current, password: '' }));
+                  setFormError('');
+                }}
+                aria-invalid={Boolean(validationErrors.password)}
+                aria-describedby={validationErrors.password ? 'login-password-error' : undefined}
                 placeholder="••••••••" required autoComplete="current-password"
                 endAdornment={
                   <button
@@ -90,6 +127,7 @@ export default function LoginPage() {
                   </button>
                 }
               />
+              {validationErrors.password && <p id="login-password-error" className="field-error" role="alert">{validationErrors.password}</p>}
             </Field>
 
             <Button type="submit" variant="primary" block size="lg" loading={loading} icon={!loading ? LogIn : null}>
