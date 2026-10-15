@@ -383,7 +383,7 @@ export async function fetchNetworkSales(options) {
  * scoped to one network's sales collection, so Firestore rules can authorize
  * the same path the admin already reads for the initial page load.
  */
-export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
+export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePayments = false } = {}) {
   let active = true;
   let defaultCommissionRate = 5;
   let usersUnsubscribe = null;
@@ -406,7 +406,8 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
   };
   const isReady = () => initialNetworkIds !== null
     && [...initialNetworkIds].every((uid) => (
-      initialSalesSnapshots.has(uid) && initialPaymentSnapshots.has(uid)
+      initialSalesSnapshots.has(uid)
+      && (!includePayments || initialPaymentSnapshots.has(uid))
     ));
 
   const publish = (newSales = []) => {
@@ -416,7 +417,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
       const sales = salesByUid.get(uid) || [];
       if (!sales.length) return;
       const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
-      const payments = paymentsByUid.get(uid) || [];
+      const payments = includePayments ? (paymentsByUid.get(uid) || []) : [];
       networks.push({
         uid,
         networkName: meta.networkName,
@@ -433,7 +434,8 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
 
     const allUids = [...usersByUid.keys()];
     const fromCache = allUids.some((uid) => (
-      salesCacheByUid.get(uid) !== false || paymentsCacheByUid.get(uid) !== false
+      salesCacheByUid.get(uid) !== false
+      || (includePayments && paymentsCacheByUid.get(uid) !== false)
     ));
     const expectedCount = initialNetworkIds?.size ?? null;
     const initialSnapshotsCount = initialSalesSnapshots.size;
@@ -447,7 +449,8 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
       ready,
       expectedCount,
       initialSnapshotsCount,
-      initialPaymentSnapshotsCount,
+      initialPaymentSnapshotsCount: includePayments ? initialPaymentSnapshotsCount : null,
+      includesPaymentLedger: includePayments,
     }, newSales);
 
     if (!readyCalled && ready) {
@@ -551,7 +554,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
       usersByUid.set(userDoc.id, user);
       const networkId = networkDocumentId(user);
       startSalesSubscription(userDoc.id, networkId);
-      startPaymentsSubscription(userDoc.id, networkId);
+      if (includePayments) startPaymentsSubscription(userDoc.id, networkId);
     });
     publish();
   }, (error) => {
