@@ -393,15 +393,22 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
   const usersByUid = new Map();
   const metadataByUid = new Map();
   const salesByUid = new Map();
+  const paymentsByUid = new Map();
   const salesCacheByUid = new Map();
+  const paymentsCacheByUid = new Map();
   const salesUnsubscribers = new Map();
+  const paymentsUnsubscribers = new Map();
   const initialSalesSnapshots = new Set();
+  const initialPaymentSnapshots = new Set();
 
   const reportError = (error, uid = '') => {
     if (active) onError?.(error, uid);
   };
   const isReady = () => initialNetworkIds !== null
-    && [...initialNetworkIds].every((uid) => initialSalesSnapshots.has(uid));
+    && [...initialNetworkIds].every((uid) => (
+      initialSalesSnapshots.has(uid) && initialPaymentSnapshots.has(uid)
+    ));
+
   const publish = (newSales = []) => {
     if (!active) return;
     const networks = [];
@@ -409,43 +416,62 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
       const sales = salesByUid.get(uid) || [];
       if (!sales.length) return;
       const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
+      const payments = paymentsByUid.get(uid) || [];
       networks.push({
         uid,
         networkName: meta.networkName,
         phoneNumber: meta.phoneNumber,
         sales,
         commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+        // The payment collection is the reporting source for actual recorded
+        // payments. Do not infer this figure solely from sale-level allocation.
+        recordedPayments: payments.reduce((sum, payment) => (
+          sum + (Number(payment.amount ?? payment.amountRiyal) || 0)
+        ), 0),
       });
     });
-    const fromCache = [...usersByUid.keys()].some((uid) => salesCacheByUid.get(uid) !== false);
+
+    const allUids = [...usersByUid.keys()];
+    const fromCache = allUids.some((uid) => (
+      salesCacheByUid.get(uid) !== false || paymentsCacheByUid.get(uid) !== false
+    ));
     const expectedCount = initialNetworkIds?.size ?? null;
     const initialSnapshotsCount = initialSalesSnapshots.size;
+    const initialPaymentSnapshotsCount = initialPaymentSnapshots.size;
     const ready = isReady();
-    // Publish each network as soon as its first snapshot arrives instead of
-    // blocking all reports behind the slowest network. Consumers get readiness
-    // metadata and can label totals as partial until all snapshots are loaded.
-    onUpdate(networks, { fromCache, ready, expectedCount, initialSnapshotsCount }, newSales);
+
+    // Publish loaded networks progressively; readiness now includes both the
+    // sale history and the payment ledger used by customer financial counters.
+    onUpdate(networks, {
+      fromCache,
+      ready,
+      expectedCount,
+      initialSnapshotsCount,
+      initialPaymentSnapshotsCount,
+    }, newSales);
+
     if (!readyCalled && ready) {
       readyCalled = true;
       onReady?.();
     }
   };
-  const startSalesSubscription = (uid) => {
+
+  const startSalesSubscription = (uid, networkId) => {
     if (salesUnsubscribers.has(uid)) return;
     const user = usersByUid.get(uid);
-    const networkId = networkDocumentId(user);
     fetchNetworkMeta(uid).then((meta) => {
       if (!active || !usersByUid.has(uid)) return;
       metadataByUid.set(uid, meta);
       publish();
     }).catch((error) => reportError(error, uid));
+
     const unsubscribe = onSnapshot(
       collection(db, 'networks', networkId, 'sales'),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
         const isInitialSnapshot = !initialSalesSnapshots.has(uid);
-        const user = usersByUid.get(uid);
+        const latestUser = usersByUid.get(uid);
         const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
         const newSales = isInitialSnapshot ? [] : snapshot.docChanges()
           .filter((change) => change.type === 'added')
@@ -456,7 +482,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
             status: change.doc.data().status || '',
             commissionRiyal: change.doc.data().commissionRiyal ?? change.doc.data().commission ?? change.doc.data().commissionAmount ?? change.doc.data().commissionMinor ?? null,
             commissionMinor: change.doc.data().commissionMinor ?? change.doc.data().commission ?? null,
-            commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+            commissionRate: resolveCommissionRate(latestUser, defaultCommissionRate),
           }));
         salesByUid.set(uid, snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() })));
         salesCacheByUid.set(uid, snapshot.metadata.fromCache);
@@ -472,23 +498,60 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
     salesUnsubscribers.set(uid, unsubscribe);
   };
 
+  const startPaymentsSubscription = (uid, networkId) => {
+    if (paymentsUnsubscribers.has(uid)) return;
+    const unsubscribe = onSnapshot(
+      collection(db, 'networks', networkId, 'payments'),
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (!active || !usersByUid.has(uid)) return;
+        paymentsByUid.set(uid, snapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() })));
+        paymentsCacheByUid.set(uid, snapshot.metadata.fromCache);
+        initialPaymentSnapshots.add(uid);
+        publish();
+      },
+      (error) => {
+        reportError(error, uid);
+        initialPaymentSnapshots.add(uid);
+        publish();
+      },
+    );
+    paymentsUnsubscribers.set(uid, unsubscribe);
+  };
+
   usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
     if (!active) return;
     const currentUids = new Set(snapshot.docs.map((userDoc) => userDoc.id));
     if (initialNetworkIds === null || !readyCalled) initialNetworkIds = new Set(currentUids);
+
     for (const [uid, unsubscribe] of salesUnsubscribers) {
       if (currentUids.has(uid)) continue;
       unsubscribe();
       salesUnsubscribers.delete(uid);
-      usersByUid.delete(uid);
-      metadataByUid.delete(uid);
       salesByUid.delete(uid);
       salesCacheByUid.delete(uid);
       initialSalesSnapshots.delete(uid);
     }
+    for (const [uid, unsubscribe] of paymentsUnsubscribers) {
+      if (currentUids.has(uid)) continue;
+      unsubscribe();
+      paymentsUnsubscribers.delete(uid);
+      paymentsByUid.delete(uid);
+      paymentsCacheByUid.delete(uid);
+      initialPaymentSnapshots.delete(uid);
+    }
+    for (const uid of [...usersByUid.keys()]) {
+      if (currentUids.has(uid)) continue;
+      usersByUid.delete(uid);
+      metadataByUid.delete(uid);
+    }
+
     snapshot.docs.forEach((userDoc) => {
-      usersByUid.set(userDoc.id, { uid: userDoc.id, ...userDoc.data() });
-      startSalesSubscription(userDoc.id);
+      const user = { uid: userDoc.id, ...userDoc.data() };
+      usersByUid.set(userDoc.id, user);
+      const networkId = networkDocumentId(user);
+      startSalesSubscription(userDoc.id, networkId);
+      startPaymentsSubscription(userDoc.id, networkId);
     });
     publish();
   }, (error) => {
@@ -512,8 +575,11 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
     usersUnsubscribe?.();
     configUnsubscribe?.();
     salesUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    paymentsUnsubscribers.forEach((unsubscribe) => unsubscribe());
     salesUnsubscribers.clear();
+    paymentsUnsubscribers.clear();
     salesCacheByUid.clear();
+    paymentsCacheByUid.clear();
   };
 }
 export async function fetchUsersForSelect(options) {
