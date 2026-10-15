@@ -641,6 +641,9 @@ export default function UsersPage() {
                   tabIndex={0}
                   onClick={() => navigate(`/users/${user.uid}`)}
                   onKeyDown={(event) => {
+                    // Nested action buttons are independent controls; do not
+                    // treat their Enter/Space keys as activation of the card.
+                    if (event.target !== event.currentTarget) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       navigate(`/users/${user.uid}`);
