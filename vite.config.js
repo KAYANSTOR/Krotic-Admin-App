@@ -23,6 +23,6 @@ export default defineConfig({
   server: {
     port: 3000,
     open: true,
-    allowedHosts: ['.manus.computer'],
+    allowedHosts: ['.manus.computer', '.vercel.run'],
   }
 })

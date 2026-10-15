@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute } from './lib/routeLoaders';
 
 const DashboardPage = lazy(() => loadRoute('/'));
@@ -36,7 +37,8 @@ function AppRoutes() {
         </div>
       }
     >
-      <Routes>
+      <AppErrorBoundary>
+        <Routes>
       <Route
         path="/login"
         element={currentUser ? <Navigate to="/" replace /> : <LoginPage />}
@@ -122,7 +124,8 @@ function AppRoutes() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </AppErrorBoundary>
     </Suspense>
   );
 }
