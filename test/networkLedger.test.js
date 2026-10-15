@@ -7,6 +7,7 @@ import {
   PARTIAL,
   monthBounds,
   monthlySalesQuery,
+  settleNetworkPayment,
 } from '../api/_lib/networkLedger.js';
 
 test('running balance is totalCommissionDue minus totalPaidAmount, never negative', () => {
@@ -47,4 +48,33 @@ test('monthly sales query scopes FIFO candidates to only the selected month', ()
   assert.equal(calls[3][1], 'createdAt');
   assert.equal(calls[4][1], 400);
   assert.throws(() => monthlySalesQuery(ref, '2026-13'), /month_invalid/);
+});
+
+test('a monthly payment above the selected month balance is rejected without writes', async () => {
+  const networkRef = {};
+  const salesQuery = {};
+  const writes = [];
+  const docs = [
+    { id: 'oct-sale-1', ref: { id: 'oct-sale-1' }, data: () => ({ commissionRiyal: 60, paidRiyal: 0 }) },
+    { id: 'oct-sale-2', ref: { id: 'oct-sale-2' }, data: () => ({ commissionRiyal: 40, paidRiyal: 0 }) },
+  ];
+  const transaction = {
+    async get(ref) {
+      if (ref === networkRef) return { exists: true, data: () => ({ totalCommissionDue: 300, totalPaidAmount: 100 }) };
+      return { docs };
+    },
+    update(...args) { writes.push(['update', ...args]); },
+    set(...args) { writes.push(['set', ...args]); },
+  };
+  const result = await settleNetworkPayment(transaction, {
+    networkRef,
+    salesQuery,
+    amountMinor: 101,
+    settlementId: 'oct-payment-1',
+    month: '2026-10',
+  });
+  assert.equal(result.status, 'month_balance_exceeded');
+  assert.equal(result.monthlyOutstanding, 100);
+  assert.equal(result.requestedAmount, 101);
+  assert.deepEqual(writes, []);
 });
