@@ -69,7 +69,7 @@ x-verification-receipt: <TIMESTAMP_MS>.<LOWERCASE_HEX_HMAC>
 لا يتم توقيع Raw JSON body كما أرسله Flutter، ولا ترتيب حقول JSON العام. الخادم يبني تمثيلاً canonical ثابتاً بالترتيب التالي:
 
 ```json
-{"saleId":"<SALE_UUID>","uid":"<FIREBASE_UID>","amountMinor":150000,"currencyCode":"YER","customerId":"<CUSTOMER_ID_OR_NULL>","cardId":"<CARD_ID_OR_NULL>","createdMs":1700000000000}
+{"saleId":"<SALE_UUID>","uid":"<FIREBASE_UID>","amountMinor":1500,"currencyCode":"YER","customerId":"<CUSTOMER_ID_OR_NULL>","cardId":"<CARD_ID_OR_NULL>","createdMs":1700000000000}
 ```
 
 القواعد الدقيقة:
@@ -114,7 +114,7 @@ SHA-256(CANONICAL_JSON)
 
 بـ lowercase hex. إذا كان غير مطابق، يعاد `400 payload_hash_mismatch`.
 
-> **وحدة المال عند حدود API:** يرسل Flutter `amountMinor` بوحدات العملة الصغرى، بينما يعتمد دفتر الشبكة والتقارير أعدادًا صحيحة من الريالات اليمنية. يحوّل الخادم المبلغ بقسمة صحيحة على 100 بعد التحقق من عدم وجود كسور. `amountRiyal` و`commissionRiyal` هما الحقلان الماليان المرجعيان في مخطط V2؛ لا تغيّر أسماء أو ترتيب حقول canonical الموقعة.
+> **وحدة المال:** الريال اليمني يُمثَّل بعدد صحيح من الريالات دون كسور. يستخدم التطبيق `Money.minorUnits` بهذا المعنى رغم اسم الحقل، لذلك لا تُقسَم قيمة `amountMinor` على 100. حقلا `amountRiyal` و`commissionRiyal` يوضّحان الوحدة صراحة في مخطط V2، بينما تبقى أسماء الحقول القديمة كما هي للتوافق مع التوقيع.
 
 ## 3. جسم طلب رفع البيع
 
@@ -123,7 +123,7 @@ SHA-256(CANONICAL_JSON)
 | الحقل | النوع | مطلوب | القاعدة |
 |---|---|---:|---|
 | `saleUuid` | string | نعم | من 1 إلى 128 حرفاً، النمط `[A-Za-z0-9_-]+` |
-| `amountMinor` | integer | نعم | وحدات Android الصغرى؛ يجب أن يقبل القسمة على 100، والحد `100000000000000` |
+| `amountMinor` | integer | نعم | عدد صحيح موجب من الريالات اليمنية؛ لا قسمة على 100، والحد `1000000000000` |
 | `currencyCode` | string | نعم | `YER` فقط، ويُحوّل الخادم إلى uppercase |
 | `createdMs` | integer/number | نعم | وقت Unix بالميلي ثانية، أكبر من صفر |
 | `customerId` | string | لا | حتى 128 حرفاً |
