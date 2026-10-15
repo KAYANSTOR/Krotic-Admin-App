@@ -143,10 +143,12 @@ export function ackForExistingSale(existingData, payloadHash) {
  * Persists a verified sale idempotently.
  * Returns { status: 'created' | 'duplicate' | 'conflict', ... }.
  */
-export async function ingestSale({ db, uid, payload, payloadHash, receipt, commissionRateBps = 500, now = Date.now() }) {
-  const saleRef = db.collection('networks').doc(uid).collection('sales').doc(payload.saleUuid);
+export async function ingestSale({ db, uid, networkId = uid, payload, payloadHash, receipt, commissionRateBps = 500, now = Date.now() }) {
+  // الشبكات الجديدة تستخدم NET-xxxxx كمفتاح المستند، بينما الحسابات القديمة
+  // تستخدم UID مباشرة؛ يمرر المستدعي المعرّف المحسوب من users/{uid}.networkId.
+  const networkRef = db.collection('networks').doc(networkId);
+  const saleRef = networkRef.collection('sales').doc(payload.saleUuid);
   const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${payload.saleUuid}`);
-  const networkRef = db.collection('networks').doc(uid);
 
   return db.runTransaction(async (transaction) => {
     const existing = await transaction.get(saleRef);
@@ -268,11 +270,12 @@ export default async function handler(req, res) {
   const db = getFirestore();
   let userSnapshot;
   let networkSecret;
+  let networkId;
   try {
     userSnapshot = await db.collection('users').doc(uid).get();
     if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
     const user = userSnapshot.data() || {};
-    const networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : uid;
+    networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : uid;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(networkId)) {
       return res.status(409).json({ success: false, error: 'network_mapping_invalid' });
     }
@@ -310,7 +313,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await ingestSale({ db, uid, payload, payloadHash, receipt, commissionRateBps });
+    const result = await ingestSale({ db, uid, networkId, payload, payloadHash, receipt, commissionRateBps });
     if (result.status === 'created') {
       return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 1, ...result });
     }

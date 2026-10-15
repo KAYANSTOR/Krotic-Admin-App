@@ -146,15 +146,22 @@ function nestedReadOptions(options, loaderContext) {
 async function fetchNetworkMeta(uid, options) {
   return readCached(`network-meta:${uid}`, async () => {
     try {
-      const snap = await getDoc(doc(db, 'networks', uid, '_metadata', 'info'));
+      const userSnapshot = await getDoc(doc(db, 'users', uid));
+      const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+      const snap = await getDoc(doc(db, 'networks', networkId, '_metadata', 'info'));
       if (snap.exists()) { const data = snap.data(); return { networkName: data.name || '', phoneNumber: data.phoneNumber || '' }; }
     } catch { /* optional */ }
     return { networkName: '', phoneNumber: '' };
   }, options);
 }
+function networkDocumentId(user) {
+  return typeof user?.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : user.uid;
+}
 async function fetchSalesForUser(uid, recentOnly = false, options) {
   return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async () => {
-    const ref = collection(db, 'networks', uid, 'sales');
+    const userSnapshot = await getDoc(doc(db, 'users', uid));
+    const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+    const ref = collection(db, 'networks', networkId, 'sales');
     const snap = await getDocs(recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref);
     return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
   }, options);
@@ -175,8 +182,10 @@ function latestTimestampCursor(records, field) {
 }
 export async function fetchUserBillingHistory(uid, options) {
   return readCached(`billing-history:${uid}`, async ({ cachedValue, force } = {}) => {
-    const salesRef = collection(db, 'networks', uid, 'sales');
-    const paymentsRef = collection(db, 'networks', uid, 'payments');
+    const userSnapshot = await getDoc(doc(db, 'users', uid));
+    const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+    const salesRef = collection(db, 'networks', networkId, 'sales');
+    const paymentsRef = collection(db, 'networks', networkId, 'payments');
     const salesCursor = Number(cachedValue?.salesCursor?.millis);
     const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
     const incrementalSales = !force && Array.isArray(cachedValue?.sales) && Number.isFinite(salesCursor);
@@ -230,9 +239,11 @@ function sixMonthsAgo() {
   return new Date(now.getFullYear(), now.getMonth() - 5, 1);
 }
 async function fetchAggregateFromFirestore(uid) {
-  const salesRef = collection(db, 'networks', uid, 'sales');
+  const userSnapshot = await getDoc(doc(db, 'users', uid));
+  const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+  const salesRef = collection(db, 'networks', networkId, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
-  const paymentsRef = collection(db, 'networks', uid, 'payments');
+  const paymentsRef = collection(db, 'networks', networkId, 'payments');
   const [salesAggregate, paymentsAggregate] = await Promise.all([
     getAggregateFromServer(completedQuery, {
       totalFaceValue: sum('faceValue'),
@@ -412,13 +423,15 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
   };
   const startSalesSubscription = (uid) => {
     if (salesUnsubscribers.has(uid)) return;
+    const user = usersByUid.get(uid);
+    const networkId = networkDocumentId(user);
     fetchNetworkMeta(uid).then((meta) => {
       if (!active || !usersByUid.has(uid)) return;
       metadataByUid.set(uid, meta);
       publish();
     }).catch((error) => reportError(error, uid));
     const unsubscribe = onSnapshot(
-      collection(db, 'networks', uid, 'sales'),
+      collection(db, 'networks', networkId, 'sales'),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
