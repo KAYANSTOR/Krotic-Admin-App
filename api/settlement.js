@@ -128,20 +128,29 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     if (!userSnap.exists) return { status: 'account_not_found', settlementId };
     const user = userSnap.data() || {};
 
-    // دفتر الرصيد التراكمي الموحّد + تسوية FIFO على مستند الشبكة.
+    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+    const extensionApplied = value.extensionDays > 0;
+    const base = Math.max(previousEnd, now);
+    const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
+    const endAt = extensionApplied ? new Date(nextEnd) : null;
+    const accessPatch = extensionApplied
+      ? {
+          accessStatus: 'ACTIVE_PAID',
+          ...legacyAccessFields('ACTIVE_PAID', endAt),
+          subscriptionEndsAt: endAt,
+        }
+      : {};
+
+    // دفتر الرصيد والتجديد يُكتبان على مستند الشبكة مرة واحدة داخل المعاملة.
     const ledger = await settleNetworkPayment(transaction, {
       networkRef,
       salesQuery,
       amountMinor: value.amountMinor,
       settlementId,
+      networkAccessPatch: accessPatch,
     });
     const allocatedMinor = ledger.allocatedMinor;
     const outstandingAfterMinor = ledger.outstandingBalance;
-
-    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-    const extensionApplied = value.extensionDays > 0;
-    const base = Math.max(previousEnd, now);
-    const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
 
     transaction.set(settlementRef, {
       settlementId,
@@ -172,23 +181,10 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid), { merge: false });
 
     if (extensionApplied) {
-      const endAt = new Date(nextEnd);
-      const accessPatch = {
-        accessStatus: 'ACTIVE_PAID',
-        ...legacyAccessFields('ACTIVE_PAID', endAt),
-        subscriptionEndsAt: endAt,
-      };
       transaction.update(userRef, {
         ...accessPatch,
         updated_at: FieldValue.serverTimestamp(),
       });
-      // settleNetworkPayment already reads and updates this network in the
-      // same transaction; merge the renewed access state rather than leaving
-      // a stale suspended status on the network document.
-      transaction.set(networkRef, {
-        ...accessPatch,
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
     }
 
     transaction.set(auditRef, {
