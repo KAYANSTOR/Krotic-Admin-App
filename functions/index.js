@@ -414,27 +414,54 @@ async function updateAggregateForEvent({ firestore = db, fieldValue = FieldValue
     return true;
   });
 }
-exports.updateSaleAggregate = onDocumentWritten('networks/{uid}/sales/{saleId}', async (event) => {
+/**
+ * Firestore trigger path IDs are network IDs, not necessarily user UIDs.
+ * Admin screens read admin_aggregates/{userUid}; resolving owner_uid here keeps
+ * sales and payment events in that same canonical document.
+ */
+async function resolveAggregateOwnerUid(networkId, firestore = db) {
+  const networkSnapshot = await firestore.collection('networks').doc(networkId).get();
+  const ownerUid = networkSnapshot.exists ? networkSnapshot.data()?.owner_uid : null;
+  if (typeof ownerUid === 'string' && ownerUid.trim()) return ownerUid.trim();
+
+  // Legacy networks use the user's UID as their network document ID.
+  const directUser = await firestore.collection('users').doc(networkId).get();
+  if (directUser.exists) return networkId;
+
+  // A few transitional records may have a networkId on the user but no
+  // owner_uid yet. Resolve only an unambiguous single owner; never guess.
+  const matches = await firestore.collection('users')
+    .where('networkId', '==', networkId)
+    .limit(2)
+    .get();
+  if (matches.docs.length === 1) return matches.docs[0].id;
+  if (matches.docs.length > 1) throw new Error('ambiguous_network_owner');
+  return networkId;
+}
+
+exports.updateSaleAggregate = onDocumentWritten('networks/{networkId}/sales/{saleId}', async (event) => {
   const before = event.data?.before.exists ? event.data.before.data() : null;
   const after = event.data?.after.exists ? event.data.after.data() : null;
   // Android currently upserts every completed local sale on session start.
   // Ignore writes whose financial contribution is unchanged before reading any
   // rate/aggregate documents or creating an event marker.
   if ((!before && !after) || hasSameSaleAggregateContribution(before, after)) return;
+  const ownerUid = await resolveAggregateOwnerUid(event.params.networkId);
   await updateAggregateForEvent({
-    uid: event.params.uid,
+    uid: ownerUid,
     eventType: 'sale',
     eventId: event.id,
     updater: (summary) => applySaleDelta(summary, before, after),
   });
 });
-exports.updatePaymentAggregate = onDocumentWritten('networks/{uid}/payments/{paymentId}', async (event) => {
+exports.updatePaymentAggregate = onDocumentWritten('networks/{networkId}/payments/{paymentId}', async (event) => {
   const before = event.data?.before.exists ? event.data.before.data() : null;
   const after = event.data?.after.exists ? event.data.after.data() : null;
   const delta = numeric(after?.amount) - numeric(before?.amount);
   if (delta === 0) return;
+  const ownerUid = await resolveAggregateOwnerUid(event.params.networkId);
   await updateAggregateForEvent({
-    uid: event.params.uid,
+    uid: ownerUid,
     eventType: 'payment',
     eventId: event.id,
     updater: (summary) => ({ ...summary, totalPaid: numeric(summary.totalPaid) + delta }),
@@ -450,6 +477,7 @@ exports.__test = {
   claimDispatchRequest,
   chunksOf,
   hasSameSaleAggregateContribution,
+  resolveAggregateOwnerUid,
   sendTokensInBatches,
   updateAggregateForEvent,
   millis,
