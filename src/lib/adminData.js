@@ -5,6 +5,7 @@ import { auth, db } from '../firebase';
 import { toDate } from './format';
 import { mapWithConcurrency } from './mapWithConcurrency';
 import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
+import { normalizeUserAccess } from './accessStatus';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
 const FAN_OUT_CONCURRENCY = 5;
@@ -217,7 +218,7 @@ export async function fetchUserBillingHistory(uid, options) {
 export async function fetchAllUsers(options) {
   return readCached('all-users', async () => {
     const snap = await getDocs(collection(db, 'users'));
-    return snap.docs.map((userDoc) => ({ uid: userDoc.id, ...userDoc.data() }));
+    return snap.docs.map((userDoc) => normalizeUserAccess({ uid: userDoc.id, ...userDoc.data() }));
   }, options);
 }
 function monthKey(input) {
