@@ -16,8 +16,8 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  // Keep the newest handler without re-running the scroll lock when parents
-  // create a new inline onClose callback on every render.
+  // Keep the newest close handler without re-running the body scroll lock
+  // when parents create an inline onClose callback on every render.
   onCloseRef.current = onClose;
 
   useEffect(() => {
@@ -75,10 +75,10 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
     else setDragY(0);
   };
 
-  // PullToRefresh uses will-change: transform. Fixed descendants inside that
-  // container can be positioned against the full page instead of the viewport,
-  // leaving only the backdrop visible on mobile. Portal the modal to body to
-  // escape that containing block and keep every action dialog in view.
+  // PullToRefresh uses will-change: transform. A fixed descendant inside it
+  // can be positioned against the full page instead of the viewport on mobile.
+  // Portal the modal to body to escape that containing block and keep every
+  // action dialog in view.
   return createPortal(
     <div className="modal-root" role="presentation">
       <div className="overlay" onClick={onClose} aria-hidden="true" />
