@@ -335,5 +335,12 @@ if (!emulatorAddress) {
       saleId: 'server-commission',
       commissionMinor: 500,
     }));
+    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-riyal-fields'), {
+      ...sale,
+      saleId: 'server-riyal-fields',
+      amountRiyal: 100,
+      commissionRiyal: 5,
+      moneyPolicyVersion: 2,
+    }));
   });
 }

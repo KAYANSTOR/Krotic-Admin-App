@@ -72,7 +72,8 @@ service cloud.firestore {
         ])
         && !request.resource.data.keys().hasAny([
           'settlement_status', 'is_settled', 'settled', 'settlementId', 'settledAt',
-          'settledBy', 'commissionRateBps', 'commissionMinor', 'verified'
+          'settledBy', 'commissionRateBps', 'commissionMinor', 'commissionRiyal',
+          'amountRiyal', 'paidRiyal', 'moneyPolicyVersion', 'payloadPolicyVersion', 'verified'
         ])
         && request.resource.data.saleId == saleId
         && request.resource.data.status == 'COMPLETED'
