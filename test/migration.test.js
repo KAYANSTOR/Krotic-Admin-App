@@ -34,6 +34,19 @@ test('network totals recompute commission server-side and honour payments', () =
   });
 });
 
+test('V2 migration prefers explicit whole-Riyal values, including zero commission', () => {
+  const totals = computeNetworkTotals([{
+    status: 'COMPLETED', amountMinor: 50000, amountRiyal: 500, faceValue: 500,
+    moneyPolicyVersion: 2, commissionMinor: 2500, commissionRiyal: 25,
+  }], [], 5);
+  assert.equal(totals.totalSalesAmount, 500);
+  assert.equal(totals.totalCommissionDue, 25);
+  assert.equal(computeNetworkTotals([{
+    status: 'COMPLETED', faceValue: 100, moneyPolicyVersion: 2,
+    commissionMinor: 0, commissionRiyal: 0,
+  }], [], 5).totalCommissionDue, 0);
+});
+
 test('aggregate mirrors the panel schema and never goes negative', () => {
   const aggregate = computeAggregate([
     { status: 'COMPLETED', faceValue: 100, createdAt: '2026-01-10T00:00:00.000Z' },

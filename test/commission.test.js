@@ -12,6 +12,14 @@ test('panel commission is read from server fields only', () => {
   assert.equal(saleCommission({ commissionMinor: 'x' }), null);
 });
 
+test('V2 commission reads whole Riyal fields before legacy minor-unit aliases', () => {
+  assert.equal(saleCommission({ commissionRiyal: 25, commissionMinor: 2500, commission: 25 }), 25);
+  assert.equal(saleOutstanding({
+    moneyPolicyVersion: 2, commissionRiyal: 25, commissionMinor: 2500,
+    paidRiyal: 10, paidMinor: 1000,
+  }), 15);
+});
+
 test('summing and unverified detection never invent a local commission', () => {
   assert.equal(sumCommission([{ commissionMinor: 50 }, { commission: 30 }]), 80);
   assert.equal(sumCommission([{ faceValue: 100 }]), 0);
