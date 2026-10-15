@@ -218,6 +218,13 @@ if (!emulatorAddress) {
     }));
   });
 
+  test('phone registration index is not accessible to clients', async () => {
+    const db = testEnv.authenticatedContext('user-1').firestore();
+    const phoneIndex = doc(db, 'network_registration_phone_index/opaque-hash');
+    await assertFails(getDoc(phoneIndex));
+    await assertFails(setDoc(phoneIndex, { uid: 'user-1' }));
+  });
+
   test('users cannot read other users or admin notification history', async () => {
     const db = testEnv.authenticatedContext('user-1').firestore();
     await assertFails(getDoc(doc(db, 'users/user-2')));
@@ -330,4 +337,3 @@ if (!emulatorAddress) {
     }));
   });
 }
-
