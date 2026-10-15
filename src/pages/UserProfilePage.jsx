@@ -164,10 +164,10 @@ export default function UserProfilePage() {
       </div>
 
       <div className="grid-kpi">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
-        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle="كل العمولات" />
-        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle="المتبقي على العميل" />
-        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle="إجمالي الدفعات" />
+        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
+        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle={historyMonth === "all" ? "كل العمولات" : "عمولة الشهر المحدد"} />
+        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle={historyMonth === "all" ? "المتبقي على العميل" : "المتبقي في الشهر المحدد"} />
+        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
       </div>
 
       <Section
