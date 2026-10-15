@@ -23,7 +23,7 @@ export function computeOutstanding(totalCommissionDue, totalPaidAmount) {
  * إرجاع حد نهاية حصري يمنع خلط مبيعات آخر يوم مع الشهر التالي.
  */
 export function monthBounds(month) {
-  const match = /^(\\d{4})-(0[1-9]|1[0-2])$/.exec(String(month ?? ''));
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(String(month ?? ''));
   if (!match) return null;
   const year = Number(match[1]);
   const monthNumber = Number(match[2]);
