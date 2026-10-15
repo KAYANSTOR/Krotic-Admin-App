@@ -49,7 +49,7 @@ export default function BottomNav() {
     <>
       {quickOpen && <div className="sheet-backdrop" onClick={() => setQuickOpen(false)} aria-hidden="true" />}
       {quickOpen && (
-        <div className="sheet sheet--quick" role="dialog" aria-modal="true" aria-label="الإجراءات السريعة">
+        <div className="sheet sheet--quick is-open" role="dialog" aria-modal="true" aria-label="الإجراءات السريعة">
           <div className="sheet__grabber" aria-hidden="true" />
           <div className="sheet__head">
             <p className="sheet__title">الإجراءات السريعة</p>
