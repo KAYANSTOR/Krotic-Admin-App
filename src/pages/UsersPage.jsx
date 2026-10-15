@@ -793,12 +793,15 @@ export default function UsersPage() {
                     </button>
                     <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
                       <CalendarPlus className="w-4 h-4" />
+                      <span>تجديد</span>
                     </button>
                     <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
                       <Edit className="w-4 h-4" />
+                      <span>تعديل</span>
                     </button>
                     <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
                       <KeyRound className="w-4 h-4" />
+                      <span>الدخول</span>
                     </button>
                     {user.is_trial && (
                       <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
@@ -806,11 +809,14 @@ export default function UsersPage() {
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => handleToggleActive(user)}
                       className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
                       title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                      aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
                     >
                       {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                      <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
                     </button>
                   </div>
                 </article>
@@ -866,7 +872,7 @@ export default function UsersPage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={() => { confirmAction?.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
