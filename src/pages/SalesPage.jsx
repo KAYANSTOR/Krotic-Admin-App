@@ -272,7 +272,7 @@ export default function SalesPage() {
     setDateTo('');
   };
 
-  if (loading) return <PageSkeleton />;
+  if (loading && networkSales.length === 0 && !hasRealtimeSnapshot.current) return <PageSkeleton />;
 
   return (
     <div className="sales-page">
