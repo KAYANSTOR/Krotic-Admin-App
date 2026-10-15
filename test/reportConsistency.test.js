@@ -66,7 +66,7 @@ test('user billing totals stream the real payment ledger, not inferred sale allo
     read('src/lib/adminData.js'),
     read('src/pages/UsersPage.jsx'),
   ]);
-  assert.match(data, /includePayments = false/);
+  assert.match(data, /includePaymentTotals = false/);
   assert.match(data, /recordedPayments: payments\.reduce/);
   assert.match(users, /\{ includePayments: true \}/);
   assert.match(users, /recordedPayments: Number\(network\.recordedPayments\) \|\| 0/);
