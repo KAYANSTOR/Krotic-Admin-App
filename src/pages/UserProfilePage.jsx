@@ -155,6 +155,14 @@ export default function UserProfilePage() {
         }
       />
 
+      <div className="mb-4 max-w-xs">
+        <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
+        <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
+          <option value="all">كل الأشهر</option>
+          {monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}
+        </select>
+      </div>
+
       <div className="grid-kpi">
         <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني" />
         <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle="كل العمولات" />
