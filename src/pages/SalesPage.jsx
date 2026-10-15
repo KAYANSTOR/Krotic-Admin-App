@@ -63,8 +63,8 @@ export default function SalesPage() {
     ];
   }, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
-  const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : defaultMonthRange[0]);
-  const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : defaultMonthRange[1]);
+  const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : '');
+  const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : '');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
