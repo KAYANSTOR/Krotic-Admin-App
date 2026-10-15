@@ -13,10 +13,10 @@ test('panel commission is read from server fields only', () => {
 });
 
 test('V2 commission reads whole Riyal fields before legacy minor-unit aliases', () => {
-  assert.equal(saleCommission({ commissionRiyal: 25, commissionMinor: 25, commission: 25 }), 25);
+  assert.equal(saleCommission({ commissionRiyal: 25, commissionMinor: 2500, commission: 25 }), 25);
   assert.equal(saleOutstanding({
-    moneyPolicyVersion: 2, commissionRiyal: 25, commissionMinor: 25,
-    paidRiyal: 10, paidMinor: 10,
+    moneyPolicyVersion: 2, commissionRiyal: 25, commissionMinor: 2500,
+    paidRiyal: 10, paidMinor: 1000,
   }), 15);
 });
 
