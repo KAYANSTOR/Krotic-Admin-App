@@ -74,3 +74,19 @@ test('user billing totals stream the real payment ledger, not inferred sale allo
   assert.match(users, /recordedPayments: network\.recordedPayments == null/);
   assert.match(users, /recordedPayments: recordedPayments == null \? user\.recordedPayments : recordedPayments/);
 });
+
+test('row action buttons remain visible and usable on phone-sized screens', async () => {
+  const [css, profile, users] = await Promise.all([
+    read('src/index.css'),
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/pages/UsersPage.jsx'),
+  ]);
+  assert.match(css, /\.row-action\s*\{[^}]*min-height:\s*44px/);
+  assert.match(css, /\.row-action\s*\{[^}]*background:\s*var\(--ui-surface\)/);
+  assert.match(css, /\.row-action--danger\s*\{[^}]*background:\s*var\(--ui-danger-soft\)/);
+  assert.match(css, /\.row-action--success\s*\{[^}]*background:\s*var\(--ui-success-soft\)/);
+  assert.match(css, /\.row-action:focus-visible/);
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.row-action \{ min-height: 48px/);
+  assert.match(profile, /aria-label=\{user\.is_active === false \? 'إلغاء حظر المستخدم' : 'حظر المستخدم'\}/);
+  assert.match(users, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+});
