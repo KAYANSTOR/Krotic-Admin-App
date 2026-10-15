@@ -165,33 +165,39 @@ export default function SettingsPage() {
   const handleBatchUpdateExpiry = async () => {
     if (!batchDate) {
       toast.error('يرجى تحديد التاريخ أولاً');
-      return;
+      return false;
     }
     setUpdatingBatch(true);
-    // توحيد تواريخ الانتهاء للحسابات الرسمية عبر الخادم (قرار ح/ي3).
-    const subscriptionEndsAt = new Date(batchDate).getTime();
-    const result = await batchExpiry(subscriptionEndsAt);
-    setUpdatingBatch(false);
-    setShowBatchConfirm(false);
-    if (!result.ok) {
-      toast.error(adminApiError(result.error, 'تعذر تحديث تواريخ الانتهاء'));
-      return;
-    }
-    const updated = Number(result.data?.updated) || 0;
-    if (updated > 0) {
-      invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
-      await logAdminAction({
-        action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
-        targetType: 'settings',
-        targetId: 'global_config',
-        targetLabel: 'تواريخ الانتهاء المجمّعة',
-        details: { affected_users: updated, new_date: batchDate },
-      });
-      toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
+    try {
+      const subscriptionEndsAt = new Date(batchDate).getTime();
+      const result = await batchExpiry(subscriptionEndsAt);
+      if (!result.ok) {
+        toast.error(adminApiError(result.error, 'تعذر تحديث تواريخ الانتهاء'));
+        return false;
+      }
+      setShowBatchConfirm(false);
+      const updated = Number(result.data?.updated) || 0;
+      if (updated > 0) {
+        invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
+        void logAdminAction({
+          action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
+          targetType: 'settings',
+          targetId: 'global_config',
+          targetLabel: 'تواريخ الانتهاء المجمّعة',
+          details: { affected_users: updated, new_date: batchDate },
+        }).catch((error) => console.warn('Batch expiry audit failed:', error));
+        toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
+      } else {
+        toast.error('لا يوجد حسابات رسمية لتحديثها');
+      }
       setBatchDate('');
-    } else {
-      toast.error('لا يوجد حسابات رسمية لتحديثها');
-      setBatchDate('');
+      return true;
+    } catch (error) {
+      console.error('Batch expiry update failed:', error);
+      toast.error('تعذر إكمال تحديث التواريخ. تحقق من الاتصال ثم حاول مرة أخرى.');
+      return false;
+    } finally {
+      setUpdatingBatch(false);
     }
   };
 
