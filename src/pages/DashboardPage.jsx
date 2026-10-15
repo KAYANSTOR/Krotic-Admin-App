@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const [monthlySales, setMonthlySales] = useState([]);
   const [recentOperations, setRecentOperations] = useState([]);
   const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
+  const [salesSnapshotsReady, setSalesSnapshotsReady] = useState(false);
   const [partialErrors, setPartialErrors] = useState([]);
   const latestRequestId = useRef(0);
   const realtimeSummary = useRef(null);
@@ -164,6 +165,7 @@ export default function DashboardPage() {
     },
     () => {
       salesRealtimeReady.current = true;
+      setSalesSnapshotsReady(true);
       if (dashboardDataReady.current) setLoading(false);
     },
   ), []);
@@ -171,7 +173,7 @@ export default function DashboardPage() {
   // السحب للأسفل على الجوال يعيد جلب بيانات اللوحة (force).
   useAppRefresh(() => load({ force: true }));
 
-  if (loading) return <PageSkeleton />;
+  if (loading && !stats) return <PageSkeleton />;
 
   const maintenance = appStatus && !appStatus.is_app_active;
   const adminName = (adminData?.name || 'المدير').trim();
@@ -209,6 +211,16 @@ export default function DashboardPage() {
             {appStatus.maintenance_message && (
               <p className="dash-alert__msg">{appStatus.maintenance_message}</p>
             )}
+          </div>
+        </div>
+      )}
+
+      {!salesSnapshotsReady && stats && (
+        <div className="dash-alert" role="status" aria-live="polite">
+          <span className="dash-alert__icon" aria-hidden="true"><RefreshCw className="w-5 h-5" /></span>
+          <div className="dash-alert__body">
+            <p className="dash-alert__title">جارٍ مزامنة المؤشرات المالية</p>
+            <p className="dash-alert__msg">تتحدّث المجاميع مع وصول سجلات الشبكات؛ قد تتغير الأرقام لحظياً حتى اكتمال المزامنة.</p>
           </div>
         </div>
       )}
