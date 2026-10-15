@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
@@ -11,12 +12,17 @@ const isCoarsePointer = () =>
 export default function Modal({ isOpen, onClose, title, icon: Icon, description, children, footer, size = 'md', className }) {
   const sheetRef = useRef(null);
   const dragStartY = useRef(null);
+  const onCloseRef = useRef(onClose);
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  // Keep the newest handler without re-running the scroll lock when parents
+  // create a new inline onClose callback on every render.
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape') onCloseRef.current?.(); };
     document.addEventListener('keydown', onKey);
 
     // قفل تمرير الخلفية. على الجوال نستخدم position:fixed للحفاظ على الموضع
@@ -41,7 +47,7 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
         window.scrollTo(0, scrollY);
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) { setDragY(0); setDragging(false); }
@@ -65,11 +71,15 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
     if (dragStartY.current == null) return;
     dragStartY.current = null;
     setDragging(false);
-    if (dragY > 110) onClose();
+    if (dragY > 110) onCloseRef.current?.();
     else setDragY(0);
   };
 
-  return (
+  // PullToRefresh uses will-change: transform. Fixed descendants inside that
+  // container can be positioned against the full page instead of the viewport,
+  // leaving only the backdrop visible on mobile. Portal the modal to body to
+  // escape that containing block and keep every action dialog in view.
+  return createPortal(
     <div className="modal-root" role="presentation">
       <div className="overlay" onClick={onClose} aria-hidden="true" />
       <div
@@ -104,6 +114,7 @@ export default function Modal({ isOpen, onClose, title, icon: Icon, description,
         <div className="modal__body">{children}</div>
         {footer && <div className="modal__footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
