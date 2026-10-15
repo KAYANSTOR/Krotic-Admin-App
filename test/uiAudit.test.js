@@ -112,3 +112,17 @@ test('application status audit is written only after the server confirms setting
   assert.doesNotMatch(confirmHandler, /logAdminAction/);
   assert.match(settings, /لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على/);
 });
+
+test('mobile action dialogs escape the transformed pull-to-refresh container', async () => {
+  const [modal, pullToRefresh, css] = await Promise.all([
+    read('src/components/ui/Modal.jsx'),
+    read('src/components/PullToRefresh.jsx'),
+    read('src/index.css'),
+  ]);
+  assert.match(css, /\.ptr__content\s*\{[^}]*will-change:\s*transform/);
+  assert.match(pullToRefresh, /className="ptr__content"/);
+  assert.match(modal, /import \{ createPortal \} from 'react-dom'/);
+  assert.match(modal, /return createPortal\([\s\S]*?document\.body/);
+  assert.match(modal, /const onCloseRef = useRef\(onClose\)/);
+  assert.match(modal, /\}, \[isOpen\]\);/);
+});
