@@ -146,7 +146,7 @@ export default function UserProfilePage() {
         kicker="ملف العميل"
         title={user.networkName || uid}
         subtitle={`${user.phoneNumber || '—'} • ${user.networkId || uid}`}
-        meta={`${sales.length} عملية بيع • ${payments.length} دفعة`}
+        meta={`${sales.length} عملية بيع • ${payments.length} دفعة • ${historyMonth === 'all' ? 'كل الأشهر' : historyMonth}`}
         actions={
           <>
             <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => load({ force: true })} />
