@@ -1,5 +1,5 @@
 import {
-  collection, count, doc, getAggregateFromServer, getDoc, getDocs, getDocsFromServer, limit, onSnapshot, orderBy, query, startAt, sum, Timestamp, where,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, onSnapshot, orderBy, query, startAt, sum, Timestamp, where,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { toDate } from './format';
@@ -275,9 +275,8 @@ async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
 }
 async function fetchAggregate(uid, options) {
   return readCached(`aggregate:${uid}`, async ({ force = false } = {}) => {
-    const snap = force
-      ? await getDoc(doc(db, 'admin_aggregates', uid))
-      : await getDoc(doc(db, 'admin_aggregates', uid));
+    const aggregateRef = doc(db, 'admin_aggregates', uid);
+    const snap = force ? await getDocFromServer(aggregateRef) : await getDoc(aggregateRef);
     const aggregate = snap.exists()
       ? { ...snap.data(), monthlyAvailable: Object.hasOwn(snap.data(), 'monthly'), source: 'aggregate' }
       : await fetchAggregateFromFirestore(uid, { force });
