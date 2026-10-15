@@ -9,7 +9,7 @@ on:
 
 concurrency:
   # Keep main and each PR branch isolated; one branch must not cancel another branch's validation.
-  group: krotak-admin-ci-${{ github.workflow }}-${{ github.ref }}
+  group: krotak-admin-ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
