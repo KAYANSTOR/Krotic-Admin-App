@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saleCommission, sumCommission, hasUnverifiedCommission, saleOutstanding, sumOutstanding } from '../src/lib/commission.js';
+import { saleCommission, sumCommission, hasUnverifiedCommission, saleOutstanding, sumOutstanding, summarizeCompletedSales } from '../src/lib/commission.js';
 
 test('panel commission is read from server fields only', () => {
   assert.equal(saleCommission({ commissionMinor: 50 }), 50);
@@ -40,4 +40,20 @@ test('outstanding commission excludes settled amounts (only unsettled shows to a
     { commissionMinor: 100, paidMinor: 40 },  // جزئية
     { commissionMinor: 50, paidMinor: 0 },    // غير مسوّاة
   ]), 110);
+});
+
+test('shared financial summary excludes rolled-back and pending sales', () => {
+  const summary = summarizeCompletedSales([
+    { status: 'COMPLETED', faceValue: 100, commissionRiyal: 10, paidRiyal: 4 },
+    { status: 'COMPLETED', faceValue: 200, commissionRiyal: 20, paidRiyal: 0 },
+    { status: 'ROLLED_BACK', faceValue: 900, commissionRiyal: 90, paidRiyal: 0 },
+    { status: 'SMS_PENDING', faceValue: 700, commissionRiyal: 70, paidRiyal: 0 },
+  ]);
+  assert.deepEqual(summary, {
+    reportedSalesValue: 300,
+    reportedTransactions: 2,
+    commissionDue: 30,
+    outstandingCommission: 26,
+    recordedPayments: 4,
+  });
 });
