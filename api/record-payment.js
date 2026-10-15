@@ -45,7 +45,7 @@ export function validatePaymentInput(body) {
   if (!uid || !/^[A-Za-z0-9_-]{1,128}$/.test(uid)) return { ok: false, error: 'uid_invalid' };
 
   const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AMOUNT) return { ok: false, error: 'amount_invalid' };
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > MAX_AMOUNT) return { ok: false, error: 'amount_invalid' };
 
   const month = typeof input.month === 'string' ? input.month.trim() : '';
   if (!MONTH_PATTERN.test(month)) return { ok: false, error: 'month_invalid' };
