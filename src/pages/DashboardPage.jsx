@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   AlertTriangle, ArrowUpLeft, Bell, CreditCard,
   RefreshCw, Settings, Sparkles,
-  TrendingUp, UserPlus, Users,
+  TrendingUp, UserPlus, Users, Wallet,
 } from 'lucide-react';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
@@ -262,6 +262,26 @@ export default function DashboardPage() {
               </p>
             </article>
 
+            <div className="dash-finance__side">
+              <article className="dash-finance__tile dash-finance__tile--gold">
+                <span className="dash-finance__tile-icon"><Wallet className="w-5 h-5" aria-hidden="true" /></span>
+                <div>
+                  <p className="dash-finance__tile-label">عمولة الإدارة غير المسوّاة</p>
+                  <p className="dash-finance__tile-value">
+                    {formatNumber(stats.totalCommissionOutstanding || 0)} <small>ريال يمني</small>
+                  </p>
+                </div>
+              </article>
+              <article className="dash-finance__tile dash-finance__tile--brand">
+                <span className="dash-finance__tile-icon"><Users className="w-5 h-5" aria-hidden="true" /></span>
+                <div>
+                  <p className="dash-finance__tile-label">عدد الشبكات</p>
+                  <p className="dash-finance__tile-value">
+                    {formatNumber(stats.totalUsers || 0)} <small>شبكة</small>
+                  </p>
+                </div>
+              </article>
+            </div>
           </section>
 
           <Section eyebrow="تنقل سريع" title="إجراءات سريعة" aria-label="إجراءات سريعة">

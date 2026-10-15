@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saleCommission, sumCommission, hasUnverifiedCommission } from '../src/lib/commission.js';
+import { saleCommission, sumCommission, hasUnverifiedCommission, saleOutstanding, sumOutstanding } from '../src/lib/commission.js';
 
 test('panel commission is read from server fields only', () => {
   assert.equal(saleCommission({ commissionMinor: 50 }), 50);
@@ -18,4 +18,18 @@ test('summing and unverified detection never invent a local commission', () => {
   assert.equal(hasUnverifiedCommission([{ commissionMinor: 1 }, { faceValue: 2 }]), true);
   assert.equal(hasUnverifiedCommission([{ commissionMinor: 1 }]), false);
   assert.equal(hasUnverifiedCommission([]), false);
+});
+
+test('outstanding commission excludes settled amounts (only unsettled shows to admin)', () => {
+  assert.equal(saleOutstanding({ commissionMinor: 100, paidMinor: 0 }), 100);
+  assert.equal(saleOutstanding({ commissionMinor: 100, paidMinor: 40 }), 60);
+  assert.equal(saleOutstanding({ commissionMinor: 100, paidMinor: 100 }), 0);
+  assert.equal(saleOutstanding({ commissionMinor: 100, paidMinor: 150 }), 0);
+  assert.equal(saleOutstanding({ faceValue: 100 }), 0); // غير متحقق -> لا شيء
+
+  assert.equal(sumOutstanding([
+    { commissionMinor: 100, paidMinor: 100 }, // مسوّاة بالكامل
+    { commissionMinor: 100, paidMinor: 40 },  // جزئية
+    { commissionMinor: 50, paidMinor: 0 },    // غير مسوّاة
+  ]), 110);
 });

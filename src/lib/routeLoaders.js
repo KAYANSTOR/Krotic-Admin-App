@@ -2,6 +2,7 @@ const routeLoaders = {
   '/': () => import('../pages/DashboardPage'),
   '/settings': () => import('../pages/SettingsPage'),
   '/users': () => import('../pages/UsersPage'),
+  '/users/:uid': () => import('../pages/UserProfilePage'),
   '/sales': () => import('../pages/SalesPage'),
   '/notifications': () => import('../pages/NotificationsPage'),
   '/admins': () => import('../pages/AdminsPage'),

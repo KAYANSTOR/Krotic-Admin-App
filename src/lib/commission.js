@@ -17,3 +17,16 @@ export function sumCommission(sales = []) {
 export function hasUnverifiedCommission(sales = []) {
   return sales.some((sale) => saleCommission(sale) === null);
 }
+
+/** المتبقي غير المسوّى على بيع واحد = عمولته − ما سُدّد منه. */
+export function saleOutstanding(sale) {
+  const commission = saleCommission(sale);
+  if (commission === null) return 0;
+  const paid = Number(sale?.paidMinor) || 0;
+  return Math.max(0, commission - paid);
+}
+
+/** إجمالي العمولة غير المسوّاة (المتبقية) عبر قائمة مبيعات. */
+export function sumOutstanding(sales = []) {
+  return sales.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
+}

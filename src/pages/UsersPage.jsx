@@ -1,5 +1,6 @@
 // src/pages/UsersPage.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
@@ -10,7 +11,7 @@ import {
 } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
-  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download,
+  CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download, ArrowUpLeft,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
@@ -79,6 +80,7 @@ export default function UsersPage() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const latestRequestId = useRef(0);
+  const navigate = useNavigate();
 
   const fetchData = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
@@ -521,7 +523,19 @@ export default function UsersPage() {
             {visibleUsers.map((user) => {
               const expired = isExpired(user.subscription_end_date);
               return (
-                <article key={user.uid} className="user-card">
+                <article
+                  key={user.uid}
+                  className="user-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/users/${user.uid}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      navigate(`/users/${user.uid}`);
+                    }
+                  }}
+                >
                   <header className="user-card__head">
                     <div className="user-card__identity">
                       <p className="user-card__name">{user.networkName || '—'}</p>
@@ -548,9 +562,30 @@ export default function UsersPage() {
                         {formatDate(user.subscription_end_date)}
                       </dd>
                     </div>
+                    <div className="user-card__meta-item">
+                      <dt>مبيعاته (ريال)</dt>
+                      <dd><span className="num">{formatNumber(user.reportedSalesValue)}</span></dd>
+                    </div>
+                    <div className="user-card__meta-item">
+                      <dt>عدد المبيعات</dt>
+                      <dd><span className="num">{formatNumber(user.reportedTransactions)}</span></dd>
+                    </div>
+                    <div className="user-card__meta-item">
+                      <dt>عمولته غير المسوّاة</dt>
+                      <dd><span className="num text-primary-600">{formatNumber(user.outstandingCommission)}</span></dd>
+                    </div>
+                    <div className="user-card__meta-item">
+                      <dt>المسدّد</dt>
+                      <dd><span className="num">{formatNumber(user.recordedPayments)}</span></dd>
+                    </div>
                   </dl>
 
-                  <div className="user-card__actions">
+                  <span className="user-card__cta">
+                    <ArrowUpLeft aria-hidden="true" />
+                    عرض الملف الكامل والمبيعات والسجل
+                  </span>
+
+                  <div className="user-card__actions" onClick={(event) => event.stopPropagation()}>
                     <button onClick={() => setBillingUser(user)} className="row-action row-action--success">
                       <DollarSign className="w-4 h-4" />
                       <span className="text-xs font-medium">الفوترة</span>

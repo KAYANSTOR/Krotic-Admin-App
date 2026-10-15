@@ -16,8 +16,7 @@ import { formatNumber, formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
-import { saleCommission, sumCommission, hasUnverifiedCommission } from '../lib/commission';
-import SettlementModal from '../components/SettlementModal';
+import { saleCommission, sumOutstanding, hasUnverifiedCommission } from '../lib/commission';
 
 const NETWORK_PAGE_SIZE = 10;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v2';
@@ -65,7 +64,6 @@ export default function SalesPage() {
   const [newSaleNotice, setNewSaleNotice] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
-  const [settlementTarget, setSettlementTarget] = useState(null);
   const latestRequestId = useRef(0);
   const hasRealtimeSnapshot = useRef(false);
   const saleNoticeTimer = useRef(null);
@@ -111,7 +109,7 @@ export default function SalesPage() {
         }));
         if (addedSales.length) {
           const totalFaceValue = addedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-          const totalCommission = sumCommission(addedSales);
+          const totalCommission = sumOutstanding(addedSales);
           const networkNames = [...new Set(addedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
           setNewSaleNotice({
             id: Date.now(),
@@ -162,8 +160,8 @@ export default function SalesPage() {
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales);
     const totalFaceValue = filtered.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
-    // العمولة تُقرأ من حقول الخادم فقط (قرار المالك ي3)؛ لا حساب مالي محلي.
-    const totalCommission = sumCommission(filtered);
+    // يظهر للمدير العمولة غير المسوّاة فقط؛ المسوّاة تظهر في سجل العميل (قرار المالك).
+    const totalCommission = sumOutstanding(filtered);
     const unverified = hasUnverifiedCommission(filtered);
     return {
       totalSales: filtered.length,
@@ -252,7 +250,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة (خادمية)', value: (r) => saleCommission(r.sale) ?? '' },
+      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : Math.max(0, (saleCommission(r.sale) || 0) - (Number(r.sale.paidMinor) || 0)) },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
@@ -306,7 +304,7 @@ export default function SalesPage() {
       )}
 
       <p className="mb-4 text-sm text-ink-secondary" role="note">
-        العمولة تُحسب خادمياً وقت تسجيل البيع وتُقرأ من السجلات المعتمدة فقط. السجلات القديمة غير المتحقق منها تظهر «غير متحقق» ولا تُحتسب ضمن الإجمالي.
+        العمولة تُحسب خادمياً وقت تسجيل البيع، ويُعرض هنا المتبقي **غير المسوّى** فقط. المبالغ المسوّاة تظهر في سجل العميل.
       </p>
 
       {partialErrors.length > 0 && (
@@ -332,7 +330,7 @@ export default function SalesPage() {
 
       <div className="grid-kpi">
         <StatCard title="إجمالي المبيعات" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني • جميع الحالات" />
-        <StatCard title="إجمالي العمولة" value={formatNumber(grandTotals.totalCommission)} icon={Wallet} tone="success" subtitle="حسب نسبة العمولة لكل شبكة" />
+        <StatCard title="العمولة غير المسوّاة" value={formatNumber(grandTotals.totalCommission)} icon={Wallet} tone="success" subtitle="المتبقي على الشبكات" />
         <StatCard title="عدد المبيعات المكتملة" value={formatNumber(grandTotals.totalCount)} icon={Wallet} tone="warning" subtitle="للحالات المكتملة فقط" />
       </div>
 
@@ -452,7 +450,7 @@ export default function SalesPage() {
                       </span>
                     </div>
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">العمولة (خادمية)</span>
+                      <span className="sales-network__stat-label">العمولة غير المسوّاة</span>
                       <span className="sales-network__stat-value sales-network__stat-value--gold">
                         {formatNumber(stats.totalCommission)}
                       </span>
@@ -473,18 +471,6 @@ export default function SalesPage() {
                   </div>
                 </button>
 
-                <div className="sales-network__actions">
-                  <Button
-                    variant="success"
-                    size="sm"
-                    icon={CheckCircle2}
-                    disabled={stats.totalCommission <= 0}
-                    onClick={() => setSettlementTarget({ network, amountMinor: stats.totalCommission })}
-                  >
-                    اعتماد التسوية
-                  </Button>
-                </div>
-
                 {isExpanded && (
                   <div className="sales-network__body">
                     <div className="sales-network__mobile-stats">
@@ -493,7 +479,7 @@ export default function SalesPage() {
                         <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
-                        <span>العمولة (خادمية)</span>
+                        <span>العمولة غير المسوّاة</span>
                         <strong>{formatNumber(stats.totalCommission)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">
@@ -583,14 +569,6 @@ export default function SalesPage() {
         </div>
       )}
       </Section>
-
-      <SettlementModal
-        isOpen={Boolean(settlementTarget)}
-        onClose={() => setSettlementTarget(null)}
-        network={settlementTarget?.network}
-        amountMinor={settlementTarget?.amountMinor}
-        onSuccess={refreshAfterMutation}
-      />
     </div>
   );
 }
