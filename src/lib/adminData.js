@@ -385,7 +385,7 @@ export async function fetchNetworkSales(options) {
  * scoped to one network's sales collection, so Firestore rules can authorize
  * the same path the admin already reads for the initial page load.
  */
-export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePayments = false } = {}) {
+export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePaymentTotals = false } = {}) {
   let active = true;
   let defaultCommissionRate = 5;
   let usersUnsubscribe = null;
@@ -395,13 +395,13 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
   const usersByUid = new Map();
   const metadataByUid = new Map();
   const salesByUid = new Map();
-  const paymentsByUid = new Map();
+  const paymentTotalsByUid = new Map();
   const salesCacheByUid = new Map();
-  const paymentsCacheByUid = new Map();
+  const ledgerCacheByUid = new Map();
   const salesUnsubscribers = new Map();
-  const paymentsUnsubscribers = new Map();
+  const ledgerUnsubscribers = new Map();
   const initialSalesSnapshots = new Set();
-  const initialPaymentSnapshots = new Set();
+  const initialLedgerSnapshots = new Set();
 
   const reportError = (error, uid = '') => {
     if (active) onError?.(error, uid);
@@ -409,7 +409,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
   const isReady = () => initialNetworkIds !== null
     && [...initialNetworkIds].every((uid) => (
       initialSalesSnapshots.has(uid)
-      && (!includePayments || initialPaymentSnapshots.has(uid))
+      && (!includePaymentTotals || initialLedgerSnapshots.has(uid))
     ));
 
   const publish = (newSales = []) => {
@@ -419,40 +419,36 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       const sales = salesByUid.get(uid) || [];
       if (!sales.length) return;
       const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
-      const payments = includePayments ? (paymentsByUid.get(uid) || []) : [];
       networks.push({
         uid,
         networkName: meta.networkName,
         phoneNumber: meta.phoneNumber,
         sales,
         commissionRate: resolveCommissionRate(user, defaultCommissionRate),
-        // The payment collection is the reporting source for actual recorded
-        // payments. Do not infer this figure solely from sale-level allocation.
-        recordedPayments: payments.reduce((sum, payment) => (
-          sum + (Number(payment.amount ?? payment.amountRiyal) || 0)
-        ), 0),
+        // The network ledger is the authoritative source for actual recorded payments.
+        recordedPayments: includePaymentTotals ? (paymentTotalsByUid.get(uid) || 0) : undefined,
       });
     });
 
     const allUids = [...usersByUid.keys()];
     const fromCache = allUids.some((uid) => (
       salesCacheByUid.get(uid) !== false
-      || (includePayments && paymentsCacheByUid.get(uid) !== false)
+      || (includePaymentTotals && ledgerCacheByUid.get(uid) !== false)
     ));
     const expectedCount = initialNetworkIds?.size ?? null;
     const initialSnapshotsCount = initialSalesSnapshots.size;
-    const initialPaymentSnapshotsCount = initialPaymentSnapshots.size;
+    const initialLedgerSnapshotsCount = initialLedgerSnapshots.size;
     const ready = isReady();
 
-    // Publish loaded networks progressively; readiness now includes both the
-    // sale history and the payment ledger used by customer financial counters.
+    // Publish loaded networks progressively; the user list can track financial
+    // indicators from sales plus the canonical network-level payment ledger.
     onUpdate(networks, {
       fromCache,
       ready,
       expectedCount,
       initialSnapshotsCount,
-      initialPaymentSnapshotsCount: includePayments ? initialPaymentSnapshotsCount : null,
-      includesPaymentLedger: includePayments,
+      initialPaymentSnapshotsCount: includePaymentTotals ? initialLedgerSnapshotsCount : null,
+      includesPaymentLedger: includePaymentTotals,
     }, newSales);
 
     if (!readyCalled && ready) {
@@ -463,7 +459,6 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
 
   const startSalesSubscription = (uid, networkId) => {
     if (salesUnsubscribers.has(uid)) return;
-    const user = usersByUid.get(uid);
     fetchNetworkMeta(uid).then((meta) => {
       if (!active || !usersByUid.has(uid)) return;
       metadataByUid.set(uid, meta);
@@ -503,25 +498,26 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     salesUnsubscribers.set(uid, unsubscribe);
   };
 
-  const startPaymentsSubscription = (uid, networkId) => {
-    if (paymentsUnsubscribers.has(uid)) return;
+  const startFinancialLedgerSubscription = (uid, networkId) => {
+    if (ledgerUnsubscribers.has(uid)) return;
     const unsubscribe = onSnapshot(
-      collection(db, 'networks', networkId, 'payments'),
+      doc(db, 'networks', networkId),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
-        paymentsByUid.set(uid, snapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() })));
-        paymentsCacheByUid.set(uid, snapshot.metadata.fromCache);
-        initialPaymentSnapshots.add(uid);
+        const data = snapshot.exists() ? (snapshot.data() || {}) : {};
+        paymentTotalsByUid.set(uid, Math.max(0, Number(data.totalPaidAmount ?? data.totalPaid) || 0));
+        ledgerCacheByUid.set(uid, snapshot.metadata.fromCache);
+        initialLedgerSnapshots.add(uid);
         publish();
       },
       (error) => {
         reportError(error, uid);
-        initialPaymentSnapshots.add(uid);
+        initialLedgerSnapshots.add(uid);
         publish();
       },
     );
-    paymentsUnsubscribers.set(uid, unsubscribe);
+    ledgerUnsubscribers.set(uid, unsubscribe);
   };
 
   usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -537,13 +533,13 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       salesCacheByUid.delete(uid);
       initialSalesSnapshots.delete(uid);
     }
-    for (const [uid, unsubscribe] of paymentsUnsubscribers) {
+    for (const [uid, unsubscribe] of ledgerUnsubscribers) {
       if (currentUids.has(uid)) continue;
       unsubscribe();
-      paymentsUnsubscribers.delete(uid);
-      paymentsByUid.delete(uid);
-      paymentsCacheByUid.delete(uid);
-      initialPaymentSnapshots.delete(uid);
+      ledgerUnsubscribers.delete(uid);
+      paymentTotalsByUid.delete(uid);
+      ledgerCacheByUid.delete(uid);
+      initialLedgerSnapshots.delete(uid);
     }
     for (const uid of [...usersByUid.keys()]) {
       if (currentUids.has(uid)) continue;
@@ -556,7 +552,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       usersByUid.set(userDoc.id, user);
       const networkId = networkDocumentId(user);
       startSalesSubscription(userDoc.id, networkId);
-      if (includePayments) startPaymentsSubscription(userDoc.id, networkId);
+      if (includePaymentTotals) startFinancialLedgerSubscription(userDoc.id, networkId);
     });
     publish();
   }, (error) => {
@@ -580,11 +576,11 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     usersUnsubscribe?.();
     configUnsubscribe?.();
     salesUnsubscribers.forEach((unsubscribe) => unsubscribe());
-    paymentsUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    ledgerUnsubscribers.forEach((unsubscribe) => unsubscribe());
     salesUnsubscribers.clear();
-    paymentsUnsubscribers.clear();
+    ledgerUnsubscribers.clear();
     salesCacheByUid.clear();
-    paymentsCacheByUid.clear();
+    ledgerCacheByUid.clear();
   };
 }
 export async function fetchUsersForSelect(options) {
