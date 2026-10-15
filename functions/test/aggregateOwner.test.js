@@ -69,3 +69,8 @@ test('ambiguous network ownership fails closed instead of writing a wrong aggreg
   });
   await assert.rejects(__test.resolveAggregateOwnerUid('NET-123', firestore), /ambiguous_network_owner/);
 });
+
+test('unknown network ownership fails closed instead of creating a network-keyed report', async () => {
+  const firestore = mockFirestore({ networkData: {} });
+  await assert.rejects(__test.resolveAggregateOwnerUid('orphan-network', firestore), /network_owner_unresolved/);
+});
