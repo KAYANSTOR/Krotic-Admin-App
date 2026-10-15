@@ -82,7 +82,7 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
       return { status: 'conflict', paymentId: paymentRef.id };
     }
 
-    // توحيد الدفعة في الرصيد التراكمي وتسوية المبيعات المعلقة (FIFO).
+    // تُخصَّص الدفعة لمبيعات الشهر المحدد فقط، من الأقدم إلى الأحدث داخل الشهر.
     const ledger = await settleNetworkPayment(transaction, {
       networkRef,
       salesQuery,
