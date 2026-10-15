@@ -14,7 +14,7 @@ import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import { formatDate, formatNumber, toDate } from '../lib/format';
-import { saleCommission } from '../lib/commission';
+import { summarizeCompletedSales } from '../lib/commission';
 import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -31,29 +31,35 @@ function summarizeRealtimeSales(networks) {
     monthBuckets.set(month, bucket);
   }
 
-  const totals = networks.reduce((summary, network) => {
-    (network.sales || []).forEach((sale) => {
-      const faceValue = Number(sale.faceValue) || 0;
-      summary.totalSales += faceValue;
-      summary.totalTransactions += 1;
-      // العمولة من حقول الخادم فقط (قرار ي3)؛ السجلات غير المتحقق منها تُهمَل.
-      summary.totalCommission += saleCommission(sale) ?? 0;
+  const totals = {
+    totalSales: 0,
+    totalTransactions: 0,
+    totalCommission: 0,
+    totalCommissionOutstanding: 0,
+  };
 
+  networks.forEach((network) => {
+    const sales = (network.sales || []).filter((sale) => sale.status === 'COMPLETED');
+    const summary = summarizeCompletedSales(sales);
+    totals.totalSales += summary.reportedSalesValue;
+    totals.totalTransactions += summary.reportedTransactions;
+    totals.totalCommission += summary.commissionDue;
+    totals.totalCommissionOutstanding += summary.outstandingCommission;
+
+    sales.forEach((sale) => {
       const date = toDate(sale.createdAt);
       if (!date || Number.isNaN(date.getTime())) return;
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const bucket = monthBuckets.get(key);
       if (bucket) {
-        bucket.face += faceValue;
+        bucket.face += Number(sale.faceValue) || 0;
         bucket.count += 1;
       }
     });
-    return summary;
-  }, { totalSales: 0, totalTransactions: 0, totalCommission: 0 });
+  });
 
   return { stats: totals, monthlySales: months };
 }
-
 function recentOperationsFromNetworks(networks) {
   return networks
     .flatMap((network) => (network.sales || []).map((sale) => ({
@@ -258,7 +264,7 @@ export default function DashboardPage() {
                 <span>ريال يمني</span>
               </div>
               <p className="dash-finance__hint">
-                يشمل جميع حالات البيع، وتتحدث الأرقام تلقائياً عند وصول عمليات جديدة.
+                يحتسب المبيعات المكتملة فقط، وتتحدث المبيعات والعمولة المتبقية مع سجل البيع نفسه.
               </p>
             </article>
 
