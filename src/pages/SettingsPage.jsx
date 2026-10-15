@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { db } from '../firebase';
 import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
-  ShieldCheck, AlertTriangle, Users,
+  ShieldCheck, AlertTriangle, Users, KeyRound,
 } from 'lucide-react';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -19,6 +19,7 @@ import Switch from '../components/ui/Switch';
 import DataFreshness from '../components/ui/DataFreshness';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ChangeOwnPasswordModal from '../components/ChangeOwnPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
@@ -57,6 +58,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [cacheState, setCacheState] = useState(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // For batch update expiry
   const [batchDate, setBatchDate] = useState('');
@@ -232,6 +234,9 @@ export default function SettingsPage() {
               onRefresh={handleRefresh}
               fromCache={cacheState?.fromCache ?? null}
             />
+            <Button variant="secondary" icon={KeyRound} onClick={() => setShowPasswordModal(true)}>
+              تغيير كلمة المرور
+            </Button>
             <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
               إدارة المدراء
             </Button>
@@ -439,6 +444,11 @@ export default function SettingsPage() {
         confirmText="نعم، قم بالتحديث"
         variant="primary"
         requireText="تأكيد"
+      />
+
+      <ChangeOwnPasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
       />
     </div>
   );

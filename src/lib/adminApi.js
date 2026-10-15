@@ -50,6 +50,15 @@ export const ADMIN_API_ERRORS = {
   has_custom_warning_invalid: 'قيمة تخصيص التحذير غير صالحة.',
   no_fields: 'لم يتم إرسال أي حقل للتعديل.',
   account_not_found: 'لا يوجد حساب مطابق لهذا المعرّف.',
+  reconciliation_limit_exceeded: 'تجاوز سجل المبيعات حد القراءة الآمن (2000 عملية). لم تُطبَّق أي تغييرات؛ قسّم المعالجة إلى دفعات قبل إعادة المحاولة.',
+  commission_rate_invalid: 'نسبة العمولة الحالية غير صالحة. صحّح النسبة في إعدادات العميل ثم أعد المحاولة.',
+  customer_not_found: 'لا يوجد عميل مطابق لهذا المعرّف.',
+  target_is_admin: 'حذف حسابات المديرين من ميزة حذف العملاء غير مسموح.',
+  uid_confirmation_required: 'اكتب معرّف العميل نفسه لتأكيد الحذف.',
+  network_owner_mismatch: 'توقّف الحذف لحماية شبكة لا يملكها هذا العميل.',
+  network_mapping_invalid: 'ربط العميل بالشبكة غير صالح؛ لم تُحذف أي بيانات.',
+  shared_network: 'ترتبط الشبكة بأكثر من عميل؛ لم تُحذف لحماية بياناتهم.',
+  customer_delete_failed: 'تعذر إكمال حذف العميل. إذا بقي ملفه ظاهرًا، أعد المحاولة بعد التحقق من الاتصال.',
   hmac_not_configured: 'الخادم غير مهيّأ: أضف KROTAK_HMAC_SECRET إلى بيئة Vercel ثم أعد النشر.',
   network_secret_unavailable: 'تعذر فك مفتاح الشبكة. تحقّق من Master Secret في Vercel قبل إعادة المحاولة.',
   default_trial_days_out_of_range: 'الأيام التجريبية يجب أن تكون بين 0 و30.',
@@ -131,6 +140,16 @@ export async function batchExpiry(subscriptionEndsAt) {
 /** إصلاح دفعة واحدة من سجلات الوصول القديمة، مع متابعة cursor إلى أن ينتهي الترحيل. */
 export async function repairAccessPage(cursor = null, limit = 100) {
   return callAdminApi('/api/networks', { action: 'repair-access', cursor, limit });
+}
+
+/** يعيد احتساب عمولات مبيعات Android القديمة ويعيد بناء إجماليات الشبكة على الخادم. */
+export async function reconcileLegacyCommissions(uid) {
+  return callAdminApi('/api/migrate', { action: 'reconcile-legacy-commissions', uid });
+}
+
+/** حذف العميل وشبكته وبياناته المرتبطة عبر مسار خادمي محمي، مع تأكيد UID. */
+export async function deleteCustomer(uid, networkId) {
+  return callAdminApi('/api/delete-customer', { uid, networkId, confirmationUid: uid });
 }
 
 /** إدارة المدراء عبر POST /api/admins (قرار و3: خادمي فقط). */

@@ -10,6 +10,7 @@ export const AUDIT_COLLECTION = 'admin_audit_logs';
 export const AUDIT_ACTIONS = {
   USER_ACTIVATE: { label: 'تفعيل مستخدم', tone: 'success' },
   USER_BLOCK: { label: 'حظر مستخدم', tone: 'danger' },
+  CUSTOMER_DELETE: { label: 'حذف بيانات عميل', tone: 'danger' },
   USER_MAKE_OFFICIAL: { label: 'تحويل إلى رسمي', tone: 'brand' },
   USER_RENEW: { label: 'تجديد اشتراك', tone: 'brand' },
   USER_EDIT: { label: 'تعديل بيانات مستخدم', tone: 'neutral' },
@@ -21,6 +22,7 @@ export const AUDIT_ACTIONS = {
   APP_STATUS_CHANGE: { label: 'تغيير حالة التطبيق', tone: 'danger' },
   SUBSCRIPTION_BATCH: { label: 'تحديث تواريخ مجمّع', tone: 'danger' },
   USER_PASSWORD_SET: { label: 'تعيين كلمة مرور', tone: 'warning' },
+  ADMIN_PASSWORD_CHANGE: { label: 'تغيير كلمة مرور المدير', tone: 'warning' },
   USER_RESET_LINK: { label: 'إنشاء رابط إعادة تعيين', tone: 'warning' },
   ADMIN_CREATE: { label: 'إنشاء مدير', tone: 'brand' },
   ADMIN_DELETE: { label: 'حذف مدير', tone: 'danger' },
