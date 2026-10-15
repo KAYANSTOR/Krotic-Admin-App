@@ -189,7 +189,7 @@ async function provision(db, { ownerUid, actorUid, now }) {
   return { status: 'created', networkId, trialStartedAt, subscriptionEndsAt, networkSecret };
 }
 
-async function updateAccess(db, { value, actorUid, now }) {
+export async function updateAccess(db, { value, actorUid, now }) {
   const patch = {};
   if (value.accessStatus !== undefined) {
     patch.accessStatus = value.accessStatus;
