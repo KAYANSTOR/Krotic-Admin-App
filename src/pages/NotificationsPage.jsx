@@ -320,24 +320,27 @@ export default function NotificationsPage() {
   };
 
   const handleDeleteNotification = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget) return false;
     setDeleting(true);
     try {
       await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
       setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
-      logAdminAction({
+      void logAdminAction({
         action: AUDIT_ACTIONS.NOTIFICATION_DELETE,
         targetType: 'notification',
         targetId: deleteTarget.id,
         targetLabel: deleteTarget.title || '',
-      });
+      }).catch((error) => console.warn('Notification delete audit failed:', error));
       toast.success('تم حذف الإشعار من السجل');
       setDeleteTarget(null);
+      return true;
     } catch (error) {
       console.error('Error deleting notification:', error);
       toast.error('تعذر حذف الإشعار. تحقق من الصلاحيات ثم أعد المحاولة.');
+      return false;
+    } finally {
+      setDeleting(false);
     }
-    setDeleting(false);
   };
 
   const formatDate = (timestamp) => {
