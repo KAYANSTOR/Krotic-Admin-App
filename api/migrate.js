@@ -15,12 +15,21 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { planUserMigration, computeNetworkTotals, computeAggregate } from './_lib/migration.js';
 import { parseNetworkId } from './_lib/networkId.js';
+import { legacyAccessFields } from './_lib/accessStatus.js';
 
 export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all'];
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
 const MAX_DOCS_PER_NETWORK = 2000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+function toMillis(value) {
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -81,19 +90,53 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
   if (cursor) query = query.startAfter(cursor);
   const snap = await query.get();
 
+  const planned = snap.docs.map((docSnap) => {
+    const source = { uid: docSnap.id, ...(docSnap.data() || {}) };
+    const previousEnd = toMillis(source.subscriptionEndsAt ?? source.subscription_end_date);
+    const plan = planUserMigration({ ...source, subscriptionEndMs: previousEnd }, { now });
+    const networkId = parseNetworkId(plan.networkId) ? plan.networkId : docSnap.id;
+    return {
+      docSnap,
+      plan,
+      endAt: Timestamp.fromMillis(plan.subscriptionEndsAt),
+      networkId,
+      networkRef: db.collection('networks').doc(networkId),
+    };
+  });
+  const networkRefs = [...new Map(planned.map((item) => [item.networkRef.path, item.networkRef])).values()];
+  const networkSnapshots = networkRefs.length ? await db.getAll(...networkRefs) : [];
+  const networksByPath = new Map(networkSnapshots.map((snapshot) => [snapshot.ref.path, snapshot]));
   const batch = db.batch();
-  snap.docs.forEach((docSnap) => {
-    const plan = planUserMigration({ uid: docSnap.id, ...docSnap.data() }, { now });
-    batch.set(docSnap.ref, {
+
+  for (const item of planned) {
+    const { docSnap, plan, endAt, networkId, networkRef } = item;
+    const accessPatch = {
       accessStatus: plan.accessStatus,
+      ...legacyAccessFields(plan.accessStatus, endAt),
       trialStartedAt: Timestamp.fromMillis(plan.trialStartedAt),
-      subscriptionEndsAt: Timestamp.fromMillis(plan.subscriptionEndsAt),
-      networkId: plan.networkId,
+      subscriptionEndsAt: endAt,
+      networkId,
       owner_uid: plan.ownerUid,
       migratedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+    };
+    batch.set(docSnap.ref, accessPatch, { merge: true });
+
+    const networkSnapshot = networksByPath.get(networkRef.path);
+    if (!networkSnapshot?.exists) continue;
+    const network = networkSnapshot.data() || {};
+    const belongsToUser = network.owner_uid === docSnap.id || networkId === docSnap.id;
+    if (!belongsToUser) continue;
+    batch.set(networkRef, {
+      accessStatus: plan.accessStatus,
+      ...legacyAccessFields(plan.accessStatus, endAt),
+      trialStartedAt: Timestamp.fromMillis(plan.trialStartedAt),
+      subscriptionEndsAt: endAt,
+      networkId,
+      owner_uid: plan.ownerUid,
+      updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
-  });
+  }
   if (snap.size) await batch.commit();
 
   const nextCursor = snap.size === limit ? snap.docs[snap.docs.length - 1].id : null;
