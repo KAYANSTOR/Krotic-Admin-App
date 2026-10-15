@@ -842,6 +842,7 @@ export default function UsersPage() {
                     {user.is_trial && (
                       <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
                         <CheckCircle className="w-4 h-4" />
+                        <span>رسمي</span>
                       </button>
                     )}
                     <button
