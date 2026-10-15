@@ -7,6 +7,7 @@ import {
   ACCESS_STATUSES,
   legacyAccessFields,
   updateAccess,
+  repairLegacyAccess,
   TRIAL_DAYS,
   RENEWAL_DAYS,
 } from '../api/networks.js';
@@ -159,4 +160,91 @@ test('updateAccess atomically synchronizes suspension and reactivation fields', 
     assert.equal(document.subscription_end_date.toMillis(), endMs);
   }
   assert.equal(auditEntries.length, 3);
+});
+
+
+test('repair-access validates cursor and bounded page size', () => {
+  assert.equal(validateNetworkInput({ action: 'repair-access' }).ok, true);
+  assert.equal(validateNetworkInput({ action: 'repair-access', cursor: 'user_1', limit: 200 }).ok, true);
+  assert.equal(validateNetworkInput({ action: 'repair-access', limit: 201 }).error, 'repair_limit_invalid');
+  assert.equal(validateNetworkInput({ action: 'repair-access', limit: 0 }).error, 'repair_limit_invalid');
+});
+
+test('repairLegacyAccess fixes previously suspended user and network records without reactivation', async () => {
+  const timestamp = { toMillis: () => 1_900_000_000_000 };
+  const docs = new Map([
+    ['users/user_1', {
+      uid: 'user_1',
+      networkId: 'NET-10001',
+      accessStatus: 'SUSPENDED_GRACE',
+      is_active: true,
+      is_trial: true,
+      subscriptionEndsAt: timestamp,
+    }],
+    ['networks/NET-10001', {
+      owner_uid: 'user_1',
+      accessStatus: 'SUSPENDED_GRACE',
+      is_active: true,
+      is_trial: true,
+    }],
+  ]);
+  const audits = [];
+  const makeRef = (collection, id) => ({ path: `${collection}/${id}`, id, collection });
+  const userQuery = {
+    after: null,
+    pageSize: 100,
+    orderBy() { return this; },
+    startAfter(id) { this.after = id; return this; },
+    limit(n) { this.pageSize = n; return this; },
+    async get() {
+      const all = [...docs.entries()]
+        .filter(([path]) => path.startsWith('users/'))
+        .map(([path, data]) => ({ id: path.slice('users/'.length), ref: makeRef('users', path.slice('users/'.length)), data: () => data }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      const filtered = all.filter((entry) => !this.after || entry.id > this.after).slice(0, this.pageSize);
+      return { docs: filtered, size: filtered.length };
+    },
+  };
+  const db = {
+    collection(name) {
+      return {
+        doc(id) { return makeRef(name, id); },
+        orderBy() { return userQuery; },
+        async add(value) { audits.push(value); },
+      };
+    },
+    async runTransaction(callback) {
+      return callback({
+        async get(ref) {
+          const value = docs.get(ref.path);
+          return { exists: value !== undefined, data: () => value, ref };
+        },
+        set(ref, value, options = {}) {
+          const current = docs.get(ref.path) || {};
+          docs.set(ref.path, options.merge ? { ...current, ...value } : { ...value });
+        },
+      });
+    },
+  };
+
+  const result = await repairLegacyAccess(db, {
+    value: { action: 'repair-access', cursor: null, limit: 100 },
+    actorUid: 'admin_1',
+    now: 1_800_000_000_000,
+  });
+  assert.equal(result.status, 'access_repaired');
+  assert.equal(result.scanned, 1);
+  assert.equal(result.usersUpdated, 1);
+  assert.equal(result.networksUpdated, 1);
+  assert.equal(result.done, true);
+
+  for (const key of ['users/user_1', 'networks/NET-10001']) {
+    const value = docs.get(key);
+    assert.equal(value.accessStatus, 'SUSPENDED_GRACE');
+    assert.equal(value.is_active, false);
+    assert.equal(value.is_trial, false);
+    assert.equal(value.subscriptionEndsAt.toMillis(), timestamp.toMillis());
+    assert.equal(value.subscription_end_date.toMillis(), timestamp.toMillis());
+  }
+  assert.equal(audits.length, 1);
 });
