@@ -134,3 +134,17 @@ test('failed admin actions leave confirmation open and always release loading st
   );
   assert.ok(batchHandler.indexOf('if (!result.ok)') < batchHandler.indexOf('setShowBatchConfirm(false)'));
 });
+
+test('all modal dialogs escape the pull-to-refresh containing block on mobile', async () => {
+  const [modal, pullToRefresh, css] = await Promise.all([
+    read('src/components/ui/Modal.jsx'),
+    read('src/components/PullToRefresh.jsx'),
+    read('src/index.css'),
+  ]);
+  assert.match(pullToRefresh, /className="ptr__content"[^>]*style=\{\{ transform: pull \? \`translateY/);
+  assert.match(css, /\.ptr__content \{[^}]*will-change: transform/);
+  assert.match(modal, /import \{ createPortal \} from 'react-dom'/);
+  assert.match(modal, /return createPortal\([\s\S]*?document\.body/);
+  assert.match(modal, /const onCloseRef = useRef\(onClose\)/);
+  assert.match(modal, /\}, \[isOpen\]\);/);
+});
