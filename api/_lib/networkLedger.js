@@ -63,7 +63,7 @@ export async function settleNetworkPayment(transaction, {
 
   const salesSnap = await transaction.get(salesQuery);
   const sales = salesSnap.docs.map((saleDoc) => ({ id: saleDoc.id, ref: saleDoc.ref, ...saleDoc.data() }));
-  const unsettled = sales.filter((sale) => saleOutstanding(sale) > 0);
+  const unsettled = sales.filter((sale) => (!sale.status || sale.status === 'COMPLETED') && saleOutstanding(sale) > 0);
   const monthlyOutstanding = unsettled.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
 
   // لا نقبل رصيداً مقدماً لشهر آخر، ولا نسمح للدفعة الشهرية بتسوية مبيعات
