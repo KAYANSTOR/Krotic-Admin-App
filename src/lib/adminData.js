@@ -286,7 +286,18 @@ async function fetchAggregate(uid, options) {
 }
 async function enrichUserForBilling(user, options) {
   const [meta, aggregate] = await Promise.all([fetchNetworkMeta(user.uid, options), fetchAggregate(user.uid, options)]);
-  return { ...user, ...meta, reportedSalesValue: Number(aggregate.totalFaceValue) || 0, reportedTransactions: Number(aggregate.totalTransactions) || 0, recordedPayments: Number(aggregate.totalPaid) || 0 };
+  const commissionDue = Number(aggregate.totalCommissionDue) || 0;
+  const recordedPayments = Number(aggregate.totalPaid) || 0;
+  return {
+    ...user,
+    ...meta,
+    reportedSalesValue: Number(aggregate.totalFaceValue) || 0,
+    reportedTransactions: Number(aggregate.totalTransactions) || 0,
+    recordedPayments,
+    commissionDue,
+    // ما يظهر للمدير هو العمولة غير المسوّاة فقط؛ المسوّاة تظهر في سجل العميل.
+    outstandingCommission: Math.max(0, commissionDue - recordedPayments),
+  };
 }
 export async function fetchUsersWithBilling(options) {
   return readCached('users-with-billing', async (loaderContext) => {
@@ -324,9 +335,11 @@ export async function fetchDashboardStats(options) {
     const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
     const { values: rawAggregates, errors } = await mapUsersSoft(users, 'Dashboard aggregate', (user) => fetchAggregate(user.uid, childOptions));
     const aggregates = rawAggregates.map((aggregate) => aggregate ?? { monthly: {}, monthlyAvailable: true });
-    const totals = { totalSales: 0, totalTransactions: 0, totalCommission: 0 }; const buckets = {};
+    const totals = { totalSales: 0, totalTransactions: 0, totalCommission: 0, totalPaid: 0, totalCommissionOutstanding: 0 }; const buckets = {};
     aggregates.forEach((aggregate) => {
-      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0; totals.totalCommission += Number(aggregate.totalCommissionDue) || 0;
+      const due = Number(aggregate.totalCommissionDue) || 0;
+      const paid = Number(aggregate.totalPaid) || 0;
+      totals.totalSales += Number(aggregate.totalFaceValue) || 0; totals.totalTransactions += Number(aggregate.totalTransactions) || 0; totals.totalCommission += due; totals.totalPaid += paid; totals.totalCommissionOutstanding += Math.max(0, due - paid);
       Object.entries(aggregate.monthly || {}).forEach(([key, value]) => { const b = buckets[key] || { face: 0, count: 0 }; b.face += Number(value.face) || 0; b.count += Number(value.count) || 0; buckets[key] = b; });
     });
     const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5; const now = Date.now(); let expiredUsers = 0; let expiringSoonUsers = 0; let trialExpiringSoonUsers = 0;

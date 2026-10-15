@@ -22,7 +22,6 @@ const primaryItems = [
 ];
 
 const quickItems = [
-  { path: '/sales', label: 'اعتماد تسوية العمولة', icon: CheckCircle2 },
   { path: '/notifications', label: 'إنشاء إشعار', icon: Bell },
   { path: '/users', label: 'إدارة المشتركين', icon: Users },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },

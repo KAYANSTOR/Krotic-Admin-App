@@ -11,6 +11,7 @@ import { loadRoute } from './lib/routeLoaders';
 const DashboardPage = lazy(() => loadRoute('/'));
 const SettingsPage = lazy(() => loadRoute('/settings'));
 const UsersPage = lazy(() => loadRoute('/users'));
+const UserProfilePage = lazy(() => loadRoute('/users/:uid'));
 const SalesPage = lazy(() => loadRoute('/sales'));
 const NotificationsPage = lazy(() => loadRoute('/notifications'));
 const AdminsPage = lazy(() => loadRoute('/admins'));
@@ -106,6 +107,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <Layout>
               <AuditPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users/:uid"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <UserProfilePage />
             </Layout>
           </ProtectedRoute>
         }
