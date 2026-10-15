@@ -117,7 +117,7 @@ export default function AdminsPage() {
     const result = await deleteAdminAccount(deleteTarget.id);
     if (!result.ok) {
       toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
-      return;
+      return false;
     }
     invalidateAdminListData();
     logAdminAction({
