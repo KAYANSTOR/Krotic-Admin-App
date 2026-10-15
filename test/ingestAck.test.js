@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateIngestInput, ackForExistingSale } from '../api/sales/ingest.js';
 
-const base = { amountMinor: 150000, currencyCode: 'YER', createdMs: 1_700_000_000_000 };
+const base = { amountMinor: 1500, currencyCode: 'YER', createdMs: 1_700_000_000_000 };
 
 test('ingest accepts the canonical saleUuid and the legacy saleId', () => {
   const withUuid = validateIngestInput({ ...base, saleUuid: 'sale_uuid_1' });

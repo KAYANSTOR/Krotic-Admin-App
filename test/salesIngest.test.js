@@ -12,7 +12,7 @@ import {
 
 const validBody = {
   saleId: 'sale_abc-123',
-  amountMinor: 150000,
+  amountMinor: 1500,
   currencyCode: 'yer',
   createdMs: 1_700_000_000_000,
   customerId: 'cust-1',
@@ -43,7 +43,7 @@ class FakeFirestore {
 }
 function ingestArgs(db,overrides={}){
  return {db,uid:'user-1',networkId:'NET-10001',
-  payload:{saleId:'sale-1',saleUuid:'sale-1',amountMinor:50000,amountRiyal:500,currencyCode:'YER',customerId:'customer-1',cardId:'card-1',createdMs:1700000000000},
+  payload:{saleId:'sale-1',saleUuid:'sale-1',amountMinor:500,amountRiyal:500,currencyCode:'YER',customerId:'customer-1',cardId:'card-1',createdMs:1700000000000},
   payloadHash:'hash-a',receipt:'verified-receipt',commissionRateBps:500,...overrides};
 }
 test('new sale reads all transaction documents before writing and stores whole-Riyal totals',async()=>{
@@ -51,8 +51,8 @@ test('new sale reads all transaction documents before writing and stores whole-R
  const result=await ingestSale(ingestArgs(db));
  assert.equal(result.status,'created');assert.equal(result.amountRiyal,500);assert.equal(result.commissionRiyal,25);
  const sale=db.docs.get('networks/NET-10001/sales/sale-1');
- assert.equal(sale.amountMinor,50000);assert.equal(sale.amountRiyal,500);assert.equal(sale.faceValue,500);assert.equal(sale.netAmount,475);
- assert.equal(sale.commissionMinor,2500);assert.equal(sale.commissionRiyal,25);assert.equal(sale.moneyPolicyVersion,2);
+ assert.equal(sale.amountMinor,500);assert.equal(sale.amountRiyal,500);assert.equal(sale.faceValue,500);assert.equal(sale.netAmount,475);
+ assert.equal(sale.commissionMinor,25);assert.equal(sale.commissionRiyal,25);assert.equal(sale.moneyPolicyVersion,2);
  const network=db.docs.get('networks/NET-10001');
  assert.equal(network.totalSalesAmount,1500);assert.equal(network.totalCommissionDue,75);assert.equal(network.totalPaidAmount,20);assert.equal(network.outstandingBalance,55);
 });
@@ -61,7 +61,7 @@ test('same current-version sale gets ACK without changing totals; changed payloa
  db.docs.set('networks/NET-10001/sales/sale-1',{saleId:'sale-1',saleUuid:'sale-1',payloadHash:'hash-a',moneyPolicyVersion:2,amountRiyal:500,commissionRiyal:25});
  const dup=await ingestSale(ingestArgs(db));assert.equal(dup.status,'ALREADY_EXISTS_ACKED');assert.equal(dup.samePayload,true);
  const orig=ingestArgs(db);
- const conflict=await ingestSale(ingestArgs(db,{payloadHash:'hash-b',payload:{...orig.payload,amountMinor:60000,amountRiyal:600}}));
+ const conflict=await ingestSale(ingestArgs(db,{payloadHash:'hash-b',payload:{...orig.payload,amountMinor:600,amountRiyal:600}}));
  assert.equal(conflict.status,'conflict');assert.equal(conflict.error,'sale_id_payload_conflict');
  assert.equal(db.docs.get('networks/NET-10001').totalSalesAmount,500);
  assert.equal(db.docs.get('sale_ingest_registry/user-1_sale-1').reason,'sale_id_payload_conflict');
@@ -75,7 +75,7 @@ test('accepts a well-formed sale payload and normalizes the currency', () => {
   const result = validateIngestInput(validBody);
   assert.equal(result.ok, true);
   assert.equal(result.value.currencyCode, 'YER');
-  assert.equal(result.value.amountMinor, 150000);
+  assert.equal(result.value.amountMinor, 1500);
   assert.equal(result.value.amountRiyal, 1500);
 });
 
@@ -83,7 +83,7 @@ test('rejects malformed sale ids, amounts, currency, and timestamps', () => {
   assert.equal(validateIngestInput({ ...validBody, saleId: '' }).error, 'sale_id_required');
   assert.equal(validateIngestInput({ ...validBody, saleId: 'bad id!' }).error, 'sale_id_invalid');
   assert.equal(validateIngestInput({ ...validBody, amountMinor: 0 }).error, 'amount_invalid');
-  assert.equal(validateIngestInput({ ...validBody, amountMinor: 150050 }).error, 'amount_not_whole_riyal');
+  // YER uses whole integer Riyals; a decimal is invalid, not multiples of 100.
   assert.equal(validateIngestInput({ ...validBody, amountMinor: 12.5 }).error, 'amount_invalid');
   assert.equal(validateIngestInput({ ...validBody, currencyCode: '' }).error, 'currency_invalid');
   assert.equal(validateIngestInput({ ...validBody, createdMs: 0 }).error, 'created_at_invalid');
@@ -95,7 +95,7 @@ test('payload hash is stable, server-side, and changes with content', () => {
   assert.equal(hash.length, 64);
   assert.equal(hash, computePayloadHash({ ...validBody, uid: 'user-1' }));
   assert.notEqual(hash, computePayloadHash({ ...validBody, uid: 'user-2' }));
-  assert.notEqual(hash, computePayloadHash({ ...validBody, uid: 'user-1', amountMinor: 150100 }));
+  assert.notEqual(hash, computePayloadHash({ ...validBody, uid: 'user-1', amountMinor: 1501 }));
 });
 
 test('canonical representation pins the uid and field order', () => {
