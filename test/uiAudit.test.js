@@ -71,7 +71,7 @@ test('mobile action buttons are visible, distinct, labelled and easy to tap', as
   assert.match(css, /\.row-action--danger[^}]*background:\s*var\(--ui-danger-soft\)/);
   assert.match(css, /\.row-action--success[^}]*background:\s*var\(--ui-success-soft\)/);
   assert.match(css, /\.row-action:focus-visible/);
-  assert.match(css, /\.user-card__actions \.row-action\s*\{[^}]*min-height:\s*48px/);
+  assert.match(css, /@media \\(max-width: 640px\\)\\s*\\{\\s*\\.row-action \\{ min-height: 48px/);
   assert.match(users, /<span>تجديد<\/span>/);
   assert.match(users, /<span>تعديل<\/span>/);
   assert.match(users, /<span>الدخول<\/span>/);
