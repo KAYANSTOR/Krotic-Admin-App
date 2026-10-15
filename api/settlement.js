@@ -16,6 +16,7 @@ import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js'
 import { isPositiveRiyal } from './_lib/money.js';
 import { parseNetworkId } from './_lib/networkId.js';
 import { settleNetworkPayment } from './_lib/networkLedger.js';
+import { legacyAccessFields } from './_lib/accessStatus.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -171,12 +172,23 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid), { merge: false });
 
     if (extensionApplied) {
-      transaction.update(userRef, {
+      const endAt = new Date(nextEnd);
+      const accessPatch = {
         accessStatus: 'ACTIVE_PAID',
-        subscriptionEndsAt: new Date(nextEnd),
-        subscription_end_date: new Date(nextEnd),
+        ...legacyAccessFields('ACTIVE_PAID', endAt),
+        subscriptionEndsAt: endAt,
+      };
+      transaction.update(userRef, {
+        ...accessPatch,
         updated_at: FieldValue.serverTimestamp(),
       });
+      // settleNetworkPayment already reads and updates this network in the
+      // same transaction; merge the renewed access state rather than leaving
+      // a stale suspended status on the network document.
+      transaction.set(networkRef, {
+        ...accessPatch,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
     }
 
     transaction.set(auditRef, {
