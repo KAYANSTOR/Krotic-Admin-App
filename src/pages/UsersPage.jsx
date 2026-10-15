@@ -596,21 +596,21 @@ export default function UsersPage() {
                       </td>
                       <td className="px-6 py-4" data-label="الإجراءات السريعة">
                         <div className="flex items-center gap-1 flex-wrap">
-                          <button onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات">
+                          <button type="button" onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات" aria-label={`الفوترة والدفعات: ${user.networkName || "المستخدم"}`}>
                             <DollarSign className="w-4 h-4" />
                             <span className="text-xs font-medium">الفوترة</span>
                           </button>
-                          <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم">
+                          <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
                             <CalendarPlus className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات">
+                          <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                          <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
                             <KeyRound className="w-4 h-4" />
                           </button>
                           {user.is_trial && (
-                            <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
+                            <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
@@ -618,6 +618,7 @@ export default function UsersPage() {
                             onClick={() => handleToggleActive(user)}
                             className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
                             title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                            aria-label={`${user.is_active === false ? 'إلغاء الحظر' : 'حظر'}: ${user.networkName || 'المستخدم'}`}
                           >
                             {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                           </button>
@@ -641,6 +642,9 @@ export default function UsersPage() {
                   tabIndex={0}
                   onClick={() => navigate(`/users/${user.uid}`)}
                   onKeyDown={(event) => {
+                    // Nested action buttons are independent controls; do not
+                    // treat their Enter/Space keys as activation of the card.
+                    if (event.target !== event.currentTarget) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       navigate(`/users/${user.uid}`);
@@ -697,21 +701,21 @@ export default function UsersPage() {
                   </span>
 
                   <div className="user-card__actions" onClick={(event) => event.stopPropagation()}>
-                    <button onClick={() => setBillingUser(user)} className="row-action row-action--success">
+                    <button type="button" onClick={() => setBillingUser(user)} className="row-action row-action--success" aria-label={`الفوترة والدفعات: ${user.networkName || "المستخدم"}`}>
                       <DollarSign className="w-4 h-4" />
                       <span className="text-xs font-medium">الفوترة</span>
                     </button>
-                    <button onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد">
+                    <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
                       <CalendarPlus className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل">
+                    <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور">
+                    <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
                       <KeyRound className="w-4 h-4" />
                     </button>
                     {user.is_trial && (
-                      <button onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي">
+                      <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
                         <CheckCircle className="w-4 h-4" />
                       </button>
                     )}

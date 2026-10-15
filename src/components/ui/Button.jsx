@@ -49,9 +49,13 @@ export default function Button({
 
   return (
     <Component
-      aria-disabled={isDisabled || undefined}
-      className={cn('btn', VARIANTS[variant], SIZES[size], block && 'btn-block', isDisabled && 'btn--disabled', className)}
       {...rest}
+      aria-disabled={isDisabled || undefined}
+      tabIndex={isDisabled ? -1 : rest.tabIndex}
+      onClick={isDisabled
+        ? (event) => { event.preventDefault(); event.stopPropagation(); }
+        : rest.onClick}
+      className={cn('btn', VARIANTS[variant], SIZES[size], block && 'btn-block', isDisabled && 'btn--disabled', className)}
     >
       {Icon ? <Icon className="btn-icon-svg" aria-hidden="true" /> : null}
       {children != null && <span className="btn-label">{children}</span>}

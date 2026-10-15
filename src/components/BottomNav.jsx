@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -37,8 +37,27 @@ export default function BottomNav() {
   const [quickOpen, setQuickOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const quickSheetRef = useRef(null);
+  const quickTriggerRef = useRef(null);
 
   useEffect(() => setQuickOpen(false), [location.pathname]);
+
+  useEffect(() => {
+    if (!quickOpen) return undefined;
+    const previousActiveElement = document.activeElement;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setQuickOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    // Move focus into the dialog so the quick actions can be used with a keyboard.
+    quickSheetRef.current?.querySelector('button')?.focus();
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      if (previousActiveElement instanceof HTMLElement && previousActiveElement.isConnected) {
+        previousActiveElement.focus();
+      }
+    };
+  }, [quickOpen]);
 
   const navigateTo = (path) => {
     preloadRoute(path);
@@ -49,7 +68,7 @@ export default function BottomNav() {
     <>
       {quickOpen && <div className="sheet-backdrop" onClick={() => setQuickOpen(false)} aria-hidden="true" />}
       {quickOpen && (
-        <div className="sheet sheet--quick" role="dialog" aria-modal="true" aria-label="الإجراءات السريعة">
+        <div ref={quickSheetRef} className="sheet sheet--quick is-open" role="dialog" aria-modal="true" aria-label="الإجراءات السريعة">
           <div className="sheet__grabber" aria-hidden="true" />
           <div className="sheet__head">
             <p className="sheet__title">الإجراءات السريعة</p>
@@ -76,7 +95,7 @@ export default function BottomNav() {
               <span className="bottom-nav-label">{label}</span>
             </NavLink>
           ))}
-          <button type="button" className={`bottom-nav-quick ${quickOpen ? 'is-active' : ''}`} onClick={() => setQuickOpen((open) => !open)} aria-expanded={quickOpen} aria-label="الإجراءات السريعة">
+          <button ref={quickTriggerRef} type="button" className={`bottom-nav-quick ${quickOpen ? 'is-active' : ''}`} onClick={() => setQuickOpen((open) => !open)} aria-expanded={quickOpen} aria-haspopup="dialog" aria-label="الإجراءات السريعة">
             <span className="bottom-nav-quick__icon"><Plus className="w-6 h-6" /></span>
             <span className="bottom-nav-label">إجراءات</span>
           </button>

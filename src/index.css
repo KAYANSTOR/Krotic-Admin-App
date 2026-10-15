@@ -155,6 +155,8 @@
   /* ===== الحقول ===== */
   .label-field { display:block; margin-bottom:.4rem; font-size:.8125rem; font-weight:700; color:var(--ui-ink-soft); }
   .field-hint { margin-top:.4rem; font-size:.75rem; line-height:1.6; color:var(--ui-muted); }
+  .field-error { margin-top:.375rem; color:var(--ui-danger-ink); font-size:.8125rem; font-weight:700; line-height:1.5; }
+  .input-field[aria-invalid="true"] { border-color:var(--ui-danger); box-shadow:0 0 0 3px rgba(198,93,93,.1); }
   .field-control { position:relative; }
   .input-field { width:100%; min-height:44px; padding:.625rem 1rem; border:1px solid var(--ui-line-strong); border-radius:13px; background:var(--ui-white); color:var(--ui-ink); font-size:.875rem; transition:border-color .16s var(--ui-ease), box-shadow .16s var(--ui-ease); }
   .input-field::placeholder { color:var(--ui-faint); }
@@ -272,7 +274,8 @@
   .modal__title { font-size:1.0625rem; font-weight:800; color:var(--ui-ink); }
   .modal__desc { margin-top:.35rem; font-size:.8125rem; color:var(--ui-muted); }
   .modal__message { color:var(--ui-ink-soft); font-size:.875rem; line-height:1.7; }
-  .modal__close { display:grid; place-items:center; width:36px; height:36px; border-radius:10px; border:0; background:transparent; color:var(--ui-faint); cursor:pointer; flex-shrink:0; }
+  .modal__close { display:grid; place-items:center; width:44px; height:44px; border-radius:12px; border:0; background:transparent; color:var(--ui-faint); cursor:pointer; flex-shrink:0; }
+  .field-adorn { width:44px; height:44px; }
   .modal__close:hover { background:var(--ui-sunken); color:var(--ui-ink-soft); }
   .modal__body { padding:20px 24px; overflow-y:auto; flex:1 1 auto; }
   .modal__footer { display:flex; gap:.625rem; justify-content:flex-end; padding:16px 24px 20px; border-top:1px solid var(--ui-line); }
@@ -951,6 +954,7 @@
 .empty-state__icon { margin-bottom: .25rem; }
 
 @media (max-width: 640px) {
+  .user-card__actions .row-action { min-height:44px; }
   .users-stat { padding: .875rem 1rem; border-radius: 16px; }
   .users-stat__value { font-size: 1.25rem; }
   .user-card { padding: 1rem; border-radius: 18px; }
