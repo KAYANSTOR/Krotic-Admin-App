@@ -112,3 +112,23 @@ test('application status audit is written only after the server confirms setting
   assert.doesNotMatch(confirmHandler, /logAdminAction/);
   assert.match(settings, /لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على/);
 });
+
+
+test('failed confirmations stay open and action loading states are always released', async () => {
+  const [dialog, users, profile, admins, notifications, settings] = await Promise.all([
+    read('src/components/ConfirmDialog.jsx'),
+    read('src/pages/UsersPage.jsx'),
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/pages/AdminsPage.jsx'),
+    read('src/pages/NotificationsPage.jsx'),
+    read('src/pages/SettingsPage.jsx'),
+  ]);
+  assert.match(dialog, /if \(result === false\)/);
+  assert.match(dialog, /لم يكتمل الإجراء/);
+  assert.match(users, /if \(result === false\) return false/);
+  assert.match(profile, /if \(result === false\) return false/);
+  assert.match(admins, /تعذر حذف المدير[\s\S]*?return false/);
+  assert.match(notifications, /تعذر حذف الإشعار[\s\S]*?return false;[\s\S]*?finally \{\s*setDeleting\(false\)/);
+  assert.match(settings, /finally \{\s*setSaving\(false\)/);
+  assert.match(settings, /finally \{\s*setUpdatingBatch\(false\)/);
+});
