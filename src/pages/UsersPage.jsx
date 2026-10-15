@@ -35,6 +35,15 @@ import useAppRefresh from '../lib/useAppRefresh';
 const PAGE_SIZE = 24;
 const FILTER_STORAGE_KEY = 'krotak:users-filter';
 
+function hasExpiryCompatibilityGap(user) {
+  const modernValue = user?.subscriptionEndsAt;
+  const legacyValue = user?.subscription_end_date;
+  if (modernValue == null && legacyValue == null) return false;
+  const modernDate = toDate(modernValue);
+  const legacyDate = toDate(legacyValue);
+  return !modernDate || !legacyDate || modernDate.getTime() !== legacyDate.getTime();
+}
+
 function loadSavedFilter() {
   try {
     return window.localStorage.getItem(FILTER_STORAGE_KEY) || 'all';
@@ -147,7 +156,7 @@ export default function UsersPage() {
               accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
               is_active: newStatus,
               is_trial: false,
-              accessNeedsRepair: false,
+              accessNeedsRepair: hasExpiryCompatibilityGap(u),
             }
           : u)));
         logAdminAction({
@@ -175,7 +184,7 @@ export default function UsersPage() {
         }
         invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
-          ? { ...u, accessStatus: 'ACTIVE_PAID', is_active: true, is_trial: false, accessNeedsRepair: false }
+          ? { ...u, accessStatus: 'ACTIVE_PAID', is_active: true, is_trial: false, accessNeedsRepair: hasExpiryCompatibilityGap(u) }
           : u)));
         logAdminAction({
           action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
