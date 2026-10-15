@@ -92,6 +92,7 @@ test('confirmation dialogs wait for async actions and expose failures', async ()
     read('src/components/UserBillingModal.jsx'),
   ]);
   assert.match(dialog, /await onConfirm\?\.\(\)/);
+  assert.match(dialog, /if \(result === false\)/);
   assert.match(dialog, /loading=\{submitting\}/);
   assert.match(dialog, /تعذر تنفيذ الإجراء/);
   assert.match(users, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
