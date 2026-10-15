@@ -220,18 +220,19 @@ export async function updateAccess(db, { value, actorUid, now }) {
     const userSnap = await transaction.get(userRef);
     if (!userSnap.exists) return { status: 'account_not_found' };
 
-    const networkId = userSnap.data()?.networkId;
-    let networkRef = null;
-    let networkExists = false;
-    if (parseNetworkId(networkId)) {
-      networkRef = db.collection('networks').doc(networkId);
-      const networkSnap = await transaction.get(networkRef);
-      networkExists = networkSnap.exists;
-    }
+    const user = userSnap.data() || {};
+    const networkId = typeof user.networkId === 'string' && UID_PATTERN.test(user.networkId)
+      ? user.networkId
+      : value.uid;
+    const networkRef = db.collection('networks').doc(networkId);
+    const networkSnap = await transaction.get(networkRef);
+    const networkData = networkSnap.exists ? (networkSnap.data() || {}) : null;
+    const networkBelongsToUser = Boolean(networkData)
+      && (networkData.owner_uid === value.uid || (!networkData.owner_uid && networkId === value.uid));
 
-    // اكتب حساب المستخدم والشبكة في معاملة واحدة لتجنّب حالة حظر نصف مكتملة.
+    // اكتب حساب المستخدم والشبكة المملوكة له في معاملة واحدة.
     transaction.set(userRef, patch, { merge: true });
-    if (networkExists) transaction.set(networkRef, patch, { merge: true });
+    if (networkBelongsToUser) transaction.set(networkRef, patch, { merge: true });
     return { status: 'updated' };
   });
   if (result.status !== 'updated') return result;
@@ -365,16 +366,17 @@ async function renew(db, { value, actorUid, now }) {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    let networkRef = null;
-    let networkExists = false;
-    if (parseNetworkId(user.networkId)) {
-      networkRef = db.collection('networks').doc(user.networkId);
-      const networkSnap = await transaction.get(networkRef);
-      networkExists = networkSnap.exists;
-    }
+    const networkId = typeof user.networkId === 'string' && UID_PATTERN.test(user.networkId)
+      ? user.networkId
+      : value.uid;
+    const networkRef = db.collection('networks').doc(networkId);
+    const networkSnap = await transaction.get(networkRef);
+    const networkData = networkSnap.exists ? (networkSnap.data() || {}) : null;
+    const networkBelongsToUser = Boolean(networkData)
+      && (networkData.owner_uid === value.uid || (!networkData.owner_uid && networkId === value.uid));
 
     transaction.set(userRef, patch, { merge: true });
-    if (networkExists) transaction.set(networkRef, patch, { merge: true });
+    if (networkBelongsToUser) transaction.set(networkRef, patch, { merge: true });
     return { status: 'renewed', previousEnd, nextEnd };
   });
   if (result.status !== 'renewed') return result;
