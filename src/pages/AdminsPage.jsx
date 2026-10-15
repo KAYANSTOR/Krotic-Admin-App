@@ -113,22 +113,29 @@ export default function AdminsPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
-    const result = await deleteAdminAccount(deleteTarget.id);
-    if (!result.ok) {
-      toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
+    if (!deleteTarget) return false;
+    try {
+      const result = await deleteAdminAccount(deleteTarget.id);
+      if (!result.ok) {
+        toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
+        return false;
+      }
+      invalidateAdminListData();
+      void logAdminAction({
+        action: AUDIT_ACTIONS.ADMIN_DELETE,
+        targetType: 'admin',
+        targetId: deleteTarget.id,
+        targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
+      }).catch((error) => console.warn('Admin deletion audit failed:', error));
+      toast.success('تم حذف المدير من القائمة');
+      setDeleteTarget(null);
+      fetchAdmins();
+      return true;
+    } catch (error) {
+      console.error('Admin deletion failed:', error);
+      toast.error('تعذر حذف المدير. تحقق من الاتصال ثم حاول مرة أخرى.');
       return false;
     }
-    invalidateAdminListData();
-    logAdminAction({
-      action: AUDIT_ACTIONS.ADMIN_DELETE,
-      targetType: 'admin',
-      targetId: deleteTarget.id,
-      targetLabel: deleteTarget.name || deleteTarget.email || deleteTarget.id,
-    });
-    toast.success('تم حذف المدير من القائمة');
-    setDeleteTarget(null);
-    fetchAdmins();
   };
 
   const formatDate = (timestamp) => {
