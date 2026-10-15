@@ -5,9 +5,16 @@
 // ============================================================
 
 import { commissionFor } from './money.js';
+import { ACCESS_STATUSES } from './accessStatus.js';
 
-/** حالات الوصول الخادمية بعد التصنيف. */
-export function classifyAccessStatus({ is_trial, is_active, subscriptionEndMs }, now = Date.now()) {
+const KNOWN_ACCESS_STATUSES = new Set(ACCESS_STATUSES);
+
+/** حالات الوصول الخادمية بعد التصنيف؛ الحالة الحديثة تسبق أي حقل قديم متعارض. */
+export function classifyAccessStatus({ accessStatus, is_trial, is_active, subscriptionEndMs }, now = Date.now()) {
+  const currentStatus = typeof accessStatus === 'string' ? accessStatus.trim().toUpperCase() : '';
+  if (KNOWN_ACCESS_STATUSES.has(currentStatus)) return currentStatus;
+  // لا تحوّل حالة حديثة غير معروفة إلى حساب نشط اعتماداً على علم قديم.
+  if (currentStatus) return 'SUSPENDED_GRACE';
   if (is_active === false) return 'SUSPENDED_GRACE';
   const end = Number(subscriptionEndMs) || 0;
   if (end > 0 && end < now) return 'LOCKED_EXPIRED';
@@ -96,7 +103,12 @@ export function computeAggregate(sales = [], commissionRatePercent = 5) {
 /** التصنيف الكامل لمستخدم قديم (حقول خادمية + ربط الشبكة). */
 export function planUserMigration(user, { now = Date.now(), defaultTrialDays = 30, globalRate = 5 } = {}) {
   const endMs = Number(user?.subscriptionEndMs) || 0;
-  const accessStatus = classifyAccessStatus({ is_trial: user?.is_trial, is_active: user?.is_active, subscriptionEndMs: endMs }, now);
+  const accessStatus = classifyAccessStatus({
+    accessStatus: user?.accessStatus,
+    is_trial: user?.is_trial,
+    is_active: user?.is_active,
+    subscriptionEndMs: endMs,
+  }, now);
   const trialStartedAt = Number(user?.trialStartedAt) || now;
   const subscriptionEndsAt = endMs > 0 ? endMs : trialStartedAt + defaultTrialDays * 86_400_000;
   const commissionRate = Number.isFinite(Number(user?.commission_rate)) && user?.commission_rate !== '' && user?.commission_rate != null
