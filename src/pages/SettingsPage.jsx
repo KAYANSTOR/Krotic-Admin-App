@@ -103,7 +103,7 @@ export default function SettingsPage() {
   useAppRefresh(() => fetchConfig({ force: true }));
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving) return false;
     setSaving(true);
     try {
       // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
@@ -191,13 +191,13 @@ export default function SettingsPage() {
       const updated = Number(result.data?.updated) || 0;
       if (updated > 0) {
         invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
-        await logAdminAction({
+        void logAdminAction({
           action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
           targetType: 'settings',
           targetId: 'global_config',
           targetLabel: 'تواريخ الانتهاء المجمّعة',
           details: { affected_users: updated, new_date: batchDate },
-        });
+        }).catch((error) => console.warn('Batch expiry audit failed:', error));
         toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
       } else {
         toast.error('لا يوجد حسابات رسمية لتحديثها');
@@ -206,7 +206,7 @@ export default function SettingsPage() {
       return true;
     } catch (error) {
       console.error('Batch expiry update failed:', error);
-      toast.error('تعذر إكمال تحديث التواريخ. لم يتم تأكيد نجاح العملية.');
+      toast.error('تعذر إكمال تحديث التواريخ. تحقق من الاتصال ثم حاول مرة أخرى.');
       return false;
     } finally {
       setUpdatingBatch(false);
