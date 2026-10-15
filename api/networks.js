@@ -48,6 +48,16 @@ export function computeRenewalEnd(previousEndMs, now, extensionDays = RENEWAL_DA
   return base + extensionDays * DAY_MS;
 }
 
+/** توافق مركزي مع الحقول القديمة التي ما زالت نسخ Android ولوحة الإدارة تقرؤها. */
+export function legacyAccessFields(accessStatus, endAt) {
+  const fields = {
+    is_active: accessStatus === 'TRIAL' || accessStatus === 'ACTIVE_PAID',
+    is_trial: accessStatus === 'TRIAL',
+  };
+  if (endAt !== undefined) fields.subscription_end_date = endAt;
+  return fields;
+}
+
 export function validateNetworkInput(body) {
   const input = normalizeBody(body);
   const action = typeof input.action === 'string' ? input.action.trim() : '';
@@ -155,6 +165,8 @@ async function provision(db, { ownerUid, actorUid, now }) {
   const networkId = await allocateNetworkId(db);
   const trialStartedAt = now;
   const subscriptionEndsAt = now + TRIAL_DAYS * DAY_MS;
+  const subscriptionEndsAtTimestamp = Timestamp.fromMillis(subscriptionEndsAt);
+  const accessFields = legacyAccessFields('TRIAL', subscriptionEndsAtTimestamp);
   const networkSecret = generateNetworkSecret();
   const networkSecretEncrypted = encryptNetworkSecret(networkSecret);
   const networkRef = db.collection('networks').doc(networkId);
@@ -163,8 +175,9 @@ async function provision(db, { ownerUid, actorUid, now }) {
       networkId,
       owner_uid: ownerUid,
       accessStatus: 'TRIAL',
+      ...accessFields,
       trialStartedAt: Timestamp.fromMillis(trialStartedAt),
-      subscriptionEndsAt: Timestamp.fromMillis(subscriptionEndsAt),
+      subscriptionEndsAt: subscriptionEndsAtTimestamp,
       networkSecretEncrypted,
       networkSecretVersion: 1,
       networkSecretUpdatedAt: FieldValue.serverTimestamp(),
@@ -175,8 +188,9 @@ async function provision(db, { ownerUid, actorUid, now }) {
       networkId,
       owner_uid: ownerUid,
       accessStatus: 'TRIAL',
+      ...accessFields,
       trialStartedAt: Timestamp.fromMillis(trialStartedAt),
-      subscriptionEndsAt: Timestamp.fromMillis(subscriptionEndsAt),
+      subscriptionEndsAt: subscriptionEndsAtTimestamp,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   });
@@ -186,44 +200,78 @@ async function provision(db, { ownerUid, actorUid, now }) {
 
 async function updateAccess(db, { value, actorUid, now }) {
   const patch = {};
-  if (value.accessStatus !== undefined) patch.accessStatus = value.accessStatus;
-  if (value.subscriptionEndsAtMs !== undefined) patch.subscriptionEndsAt = Timestamp.fromMillis(value.subscriptionEndsAtMs);
+  if (value.accessStatus !== undefined) {
+    patch.accessStatus = value.accessStatus;
+    Object.assign(patch, legacyAccessFields(value.accessStatus));
+  }
+  if (value.subscriptionEndsAtMs !== undefined) {
+    const endAt = Timestamp.fromMillis(value.subscriptionEndsAtMs);
+    patch.subscriptionEndsAt = endAt;
+    patch.subscription_end_date = endAt;
+  }
   if (value.commissionRate !== undefined) patch.commission_rate = value.commissionRate;
   if (value.warningMessage !== undefined) patch.warning_message = value.warningMessage;
   if (value.hasCustomWarning !== undefined) patch.has_custom_warning = value.hasCustomWarning;
   patch.updatedAt = FieldValue.serverTimestamp();
 
   const userRef = db.collection('users').doc(value.uid);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) return { status: 'account_not_found' };
-  await userRef.set(patch, { merge: true });
+  const result = await db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists) return { status: 'account_not_found' };
 
-  const networkId = userSnap.data()?.networkId;
-  if (parseNetworkId(networkId)) {
-    await db.collection('networks').doc(networkId).set(patch, { merge: true });
-  }
-  await audit(db, { action: 'NETWORK_ACCESS_UPDATE', actorUid, uid: value.uid, details: patch, now });
-  return { status: 'updated' };
+    const networkId = userSnap.data()?.networkId;
+    let networkRef = null;
+    let networkExists = false;
+    if (parseNetworkId(networkId)) {
+      networkRef = db.collection('networks').doc(networkId);
+      const networkSnap = await transaction.get(networkRef);
+      networkExists = networkSnap.exists;
+    }
+
+    // اكتب حساب المستخدم والشبكة في معاملة واحدة لتجنّب حالة حظر نصف مكتملة.
+    transaction.set(userRef, patch, { merge: true });
+    if (networkExists) transaction.set(networkRef, patch, { merge: true });
+    return { status: 'updated' };
+  });
+  if (result.status !== 'updated') return result;
+
+  const { updatedAt: _updatedAt, ...auditPatch } = patch;
+  await audit(db, { action: 'NETWORK_ACCESS_UPDATE', actorUid, uid: value.uid, details: auditPatch, now });
+  return result;
 }
 
 async function renew(db, { value, actorUid, now }) {
   const userRef = db.collection('users').doc(value.uid);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) return { status: 'account_not_found' };
-  const user = userSnap.data() || {};
-  const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-  const nextEnd = computeRenewalEnd(previousEnd, now, value.extensionDays);
-  const patch = {
-    accessStatus: 'ACTIVE_PAID',
-    subscriptionEndsAt: Timestamp.fromMillis(nextEnd),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  await userRef.set(patch, { merge: true });
-  if (parseNetworkId(user.networkId)) {
-    await db.collection('networks').doc(user.networkId).set(patch, { merge: true });
-  }
-  await audit(db, { action: 'NETWORK_RENEW', actorUid, uid: value.uid, details: { previousEnd, nextEnd, extensionDays: value.extensionDays }, now });
-  return { status: 'renewed', subscriptionEndsAt: nextEnd };
+  const result = await db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    if (!userSnap.exists) return { status: 'account_not_found' };
+
+    const user = userSnap.data() || {};
+    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+    const nextEnd = computeRenewalEnd(previousEnd, now, value.extensionDays);
+    const endAt = Timestamp.fromMillis(nextEnd);
+    const patch = {
+      accessStatus: 'ACTIVE_PAID',
+      ...legacyAccessFields('ACTIVE_PAID', endAt),
+      subscriptionEndsAt: endAt,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    let networkRef = null;
+    let networkExists = false;
+    if (parseNetworkId(user.networkId)) {
+      networkRef = db.collection('networks').doc(user.networkId);
+      const networkSnap = await transaction.get(networkRef);
+      networkExists = networkSnap.exists;
+    }
+
+    transaction.set(userRef, patch, { merge: true });
+    if (networkExists) transaction.set(networkRef, patch, { merge: true });
+    return { status: 'renewed', previousEnd, nextEnd };
+  });
+  if (result.status !== 'renewed') return result;
+  await audit(db, { action: 'NETWORK_RENEW', actorUid, uid: value.uid, details: { previousEnd: result.previousEnd, nextEnd: result.nextEnd, extensionDays: value.extensionDays }, now });
+  return { status: 'renewed', subscriptionEndsAt: result.nextEnd };
 }
 
 async function batchExpiry(db, { value, actorUid, now }) {
