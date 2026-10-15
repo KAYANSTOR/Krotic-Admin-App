@@ -84,8 +84,9 @@ function partialResult(value, errors) {
 }
 
 export async function fetchGlobalConfig(options) {
-  return readCached('global-config', async () => {
-    const snap = await getDoc(doc(db, 'app_settings', 'global_config'));
+  return readCached('global-config', async ({ force = false } = {}) => {
+    const configRef = doc(db, 'app_settings', 'global_config');
+    const snap = force ? await getDocFromServer(configRef) : await getDoc(configRef);
     return snap.exists() ? snap.data() : { default_commission_rate: 5, is_app_active: true };
   }, options);
 }
@@ -101,8 +102,9 @@ function resolveCommissionRate(user, defaultRate) {
  * نُبطل مفتاحه يدوياً بعد الإنشاء/الحذف (انظر invalidateAdminListData).
  */
 export async function fetchAdmins(options) {
-  return readCached('admins', async () => {
-    const snap = await getDocs(collection(db, 'Admins'));
+  return readCached('admins', async ({ force = false } = {}) => {
+    const adminsRef = collection(db, 'Admins');
+    const snap = force ? await getDocsFromServer(adminsRef) : await getDocs(adminsRef);
     const admins = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     admins.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     return admins;
@@ -111,24 +113,26 @@ export async function fetchAdmins(options) {
 
 /** أول صفحة من سجل العمليات مع تخزين محلي (الصفحات التالية تُدمج عند الطلب). */
 export async function fetchAuditLogs(options) {
-  return readCached('audit-logs', async () => {
-    const snap = await getDocs(query(
+  return readCached('audit-logs', async ({ force = false } = {}) => {
+    const auditQuery = query(
       collection(db, 'admin_audit_logs'),
       orderBy('createdAtMs', 'desc'),
       limit(30),
-    ));
+    );
+    const snap = force ? await getDocsFromServer(auditQuery) : await getDocs(auditQuery);
     return { logs: snap.docs.map((d) => ({ id: d.id, ...d.data() })), hasMore: snap.docs.length === 30 };
   }, options);
 }
 
 /** أول صفحة من الإشعارات العامة مع تخزين محلي. */
 export async function fetchNotificationHistory(options) {
-  return readCached('notification-history', async () => {
-    const snap = await getDocs(query(
+  return readCached('notification-history', async ({ force = false } = {}) => {
+    const historyQuery = query(
       collection(db, 'app_settings', 'global_config', 'notifications'),
       orderBy('timestamp', 'desc'),
       limit(20),
-    ));
+    );
+    const snap = force ? await getDocsFromServer(historyQuery) : await getDocs(historyQuery);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }, options);
 }
@@ -146,9 +150,10 @@ function nestedReadOptions(options, loaderContext) {
 }
 
 async function fetchNetworkMeta(uid, options) {
-  return readCached(`network-meta:${uid}`, async () => {
+  return readCached(`network-meta:${uid}`, async ({ force = false } = {}) => {
     try {
-      const userSnapshot = await getDoc(doc(db, 'users', uid));
+      const userRef = doc(db, 'users', uid);
+      const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
       const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
       const snap = await getDoc(doc(db, 'networks', networkId, '_metadata', 'info'));
       if (snap.exists()) { const data = snap.data(); return { networkName: data.name || '', phoneNumber: data.phoneNumber || '' }; }
@@ -160,11 +165,13 @@ function networkDocumentId(user) {
   return typeof user?.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : user.uid;
 }
 async function fetchSalesForUser(uid, recentOnly = false, options) {
-  return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async () => {
-    const userSnapshot = await getDoc(doc(db, 'users', uid));
+  return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async ({ force = false } = {}) => {
+    const userRef = doc(db, 'users', uid);
+    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const ref = collection(db, 'networks', networkId, 'sales');
-    const snap = await getDocs(recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref);
+    const salesQuery = recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref;
+    const snap = force ? await getDocsFromServer(salesQuery) : await getDocs(salesQuery);
     return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
   }, options);
 }
@@ -217,8 +224,9 @@ export async function fetchUserBillingHistory(uid, options) {
   }, options);
 }
 export async function fetchAllUsers(options) {
-  return readCached('all-users', async () => {
-    const snap = await getDocs(collection(db, 'users'));
+  return readCached('all-users', async ({ force = false } = {}) => {
+    const usersRef = collection(db, 'users');
+    const snap = force ? await getDocsFromServer(usersRef) : await getDocs(usersRef);
     return snap.docs.map((userDoc) => normalizeUserAccess({ uid: userDoc.id, ...userDoc.data() }));
   }, options);
 }
