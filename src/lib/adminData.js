@@ -191,7 +191,8 @@ function latestTimestampCursor(records, field) {
 }
 export async function fetchUserBillingHistory(uid, options) {
   return readCached(`billing-history:${uid}`, async ({ cachedValue, force } = {}) => {
-    const userSnapshot = await getDoc(doc(db, 'users', uid));
+    const userRef = doc(db, 'users', uid);
+    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const salesRef = collection(db, 'networks', networkId, 'sales');
     const paymentsRef = collection(db, 'networks', networkId, 'payments');
@@ -249,7 +250,8 @@ function sixMonthsAgo() {
   return new Date(now.getFullYear(), now.getMonth() - 5, 1);
 }
 async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
-  const userSnapshot = await getDoc(doc(db, 'users', uid));
+  const userRef = doc(db, 'users', uid);
+  const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
   const salesRef = collection(db, 'networks', networkId, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
