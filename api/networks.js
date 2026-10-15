@@ -8,13 +8,14 @@
 //   action=provision      { ownerUid }                     → يخصّص NET-xxxxx ويمنح تجربة 30 يوماً
 //   action=update-access  { uid, accessStatus?, subscriptionEndsAt?, commission_rate?, warning_message?, has_custom_warning? }
 //   action=renew          { uid, extensionDays }           → تمديد يدوي (30 فقط)
+//   action=repair-access   { cursor?, limit? }              → إصلاح سجلات الوصول القديمة على دفعات
 //   action=batch-expiry   { subscriptionEndsAt }           → إجراء إداري قديم لتوحيد تاريخ الانتهاء؛ لا يُستدعى من Cron
 //   Vercel Cron يفحص الاستحقاقات عبر api/_lib/subscriptionExpiry.js ولا يغيّر تواريخ الانتهاء.
 //
 // يتطلب FIREBASE_SERVICE_ACCOUNT.
 // ============================================================
 
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
 import { nextNetworkSequence, formatNetworkId, parseNetworkId } from './_lib/networkId.js';
@@ -52,8 +53,17 @@ export function computeRenewalEnd(previousEndMs, now, extensionDays = RENEWAL_DA
 export function validateNetworkInput(body) {
   const input = normalizeBody(body);
   const action = typeof input.action === 'string' ? input.action.trim() : '';
-  if (!['provision', 'update-access', 'renew', 'batch-expiry'].includes(action)) {
+  if (!['provision', 'update-access', 'renew', 'repair-access', 'batch-expiry'].includes(action)) {
     return { ok: false, error: 'unknown_action' };
+  }
+
+  if (action === 'repair-access') {
+    const cursor = typeof input.cursor === 'string' && input.cursor.trim() ? input.cursor.trim() : null;
+    const limit = input.limit === undefined ? 100 : Number(input.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return { ok: false, error: 'repair_limit_invalid' };
+    }
+    return { ok: true, value: { action, cursor, limit } };
   }
 
   if (action === 'provision') {
@@ -231,6 +241,113 @@ export async function updateAccess(db, { value, actorUid, now }) {
   return result;
 }
 
+function sameTimestamp(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  return toMillis(left) === toMillis(right);
+}
+
+function accessFieldsMatch(record, accessStatus, endAt) {
+  const expected = legacyAccessFields(accessStatus);
+  if (record.accessStatus !== accessStatus
+    || record.is_active !== expected.is_active
+    || record.is_trial !== expected.is_trial) return false;
+  if (endAt != null) {
+    if (!sameTimestamp(record.subscriptionEndsAt, endAt)
+      || !sameTimestamp(record.subscription_end_date, endAt)) return false;
+  }
+  return true;
+}
+
+/**
+ * Idempotent, paginated repair for records created before accessStatus and
+ * legacy booleans were synchronized. Each user/network pair is repaired in a
+ * transaction and the explicit server status is always the source of truth.
+ */
+export async function repairLegacyAccess(db, { value, actorUid, now }) {
+  let query = db.collection('users')
+    .orderBy(FieldPath.documentId())
+    .limit(value.limit);
+  if (value.cursor) query = query.startAfter(value.cursor);
+  const page = await query.get();
+
+  let usersUpdated = 0;
+  let networksUpdated = 0;
+  let skipped = 0;
+
+  // Limit concurrent transactions to avoid flooding Firestore on large accounts.
+  for (let offset = 0; offset < page.docs.length; offset += 10) {
+    const group = page.docs.slice(offset, offset + 10);
+    const results = await Promise.all(group.map(async (entry) => db.runTransaction(async (transaction) => {
+      const userRef = db.collection('users').doc(entry.id);
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) return { skipped: true };
+
+      const user = userSnap.data() || {};
+      const accessStatus = typeof user.accessStatus === 'string'
+        ? user.accessStatus.trim().toUpperCase()
+        : '';
+      // Do not infer a new entitlement for records lacking a known server status.
+      if (!ACCESS_STATUSES.includes(accessStatus)) return { skipped: true };
+
+      const endAt = user.subscriptionEndsAt ?? user.subscription_end_date ?? null;
+      const userNeedsUpdate = !accessFieldsMatch(user, accessStatus, endAt);
+      const networkIdCandidate = typeof user.networkId === 'string' && UID_PATTERN.test(user.networkId)
+        ? user.networkId
+        : entry.id;
+      const networkRef = db.collection('networks').doc(networkIdCandidate);
+      const networkSnap = await transaction.get(networkRef);
+      const network = networkSnap.exists ? (networkSnap.data() || {}) : null;
+      const networkBelongsToUser = Boolean(network)
+        && (network.owner_uid === entry.id || networkIdCandidate === entry.id);
+      const networkNeedsUpdate = networkBelongsToUser
+        && !accessFieldsMatch(network, accessStatus, endAt);
+
+      const makePatch = () => {
+        const patch = {
+          accessStatus,
+          ...legacyAccessFields(accessStatus),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (endAt != null) {
+          patch.subscriptionEndsAt = endAt;
+          patch.subscription_end_date = endAt;
+        }
+        return patch;
+      };
+
+      if (userNeedsUpdate) transaction.set(userRef, makePatch(), { merge: true });
+      if (networkNeedsUpdate) transaction.set(networkRef, makePatch(), { merge: true });
+      return { userUpdated: userNeedsUpdate, networkUpdated: Boolean(networkNeedsUpdate) };
+    })));
+
+    for (const result of results) {
+      if (result.skipped) skipped += 1;
+      else {
+        if (result.userUpdated) usersUpdated += 1;
+        if (result.networkUpdated) networksUpdated += 1;
+      }
+    }
+  }
+
+  const nextCursor = page.size === value.limit ? page.docs[page.docs.length - 1].id : null;
+  await audit(db, {
+    action: 'ACCESS_COMPATIBILITY_REPAIR',
+    actorUid,
+    uid: null,
+    details: { scanned: page.size, usersUpdated, networksUpdated, skipped, nextCursor },
+    now,
+  });
+  return {
+    status: 'access_repaired',
+    scanned: page.size,
+    usersUpdated,
+    networksUpdated,
+    skipped,
+    nextCursor,
+    done: !nextCursor,
+  };
+}
+
 async function renew(db, { value, actorUid, now }) {
   const userRef = db.collection('users').doc(value.uid);
   const result = await db.runTransaction(async (transaction) => {
@@ -330,6 +447,7 @@ export default async function handler(req, res) {
     if (parsed.value.action === 'provision') result = await provision(db, { ownerUid: parsed.value.ownerUid, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'update-access') result = await updateAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'renew') result = await renew(db, { value: parsed.value, actorUid: caller.callerUid, now });
+    else if (parsed.value.action === 'repair-access') result = await repairLegacyAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else result = await batchExpiry(db, { value: parsed.value, actorUid: caller.callerUid, now });
 
     if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });
