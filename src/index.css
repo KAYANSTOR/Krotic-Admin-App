@@ -1501,16 +1501,19 @@
 /* زر حذف الإشعار داخل السجل */
 @layer components {
   .notif-item__delete {
-    display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
-    border: 1px solid transparent; border-radius: 11px;
-    background: transparent; color: var(--ui-faint); cursor: pointer;
-    transition: color .16s var(--ui-ease), background-color .16s var(--ui-ease), border-color .16s var(--ui-ease);
+    display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0;
+    border: 1px solid rgba(198,93,93,.24); border-radius: 12px;
+    background: var(--ui-danger-soft); color: var(--ui-danger-ink);
+    cursor: pointer; touch-action: manipulation;
+    transition: color .16s var(--ui-ease), background-color .16s var(--ui-ease), border-color .16s var(--ui-ease), transform .1s ease;
   }
-  .notif-item__delete:hover {
-    color: var(--ui-danger-ink); background: var(--ui-danger-soft); border-color: rgba(198,93,93,.2);
+  .notif-item__delete:hover:not(:disabled) {
+    color: var(--ui-danger-ink); background: var(--ui-danger-soft); border-color: rgba(198,93,93,.4);
   }
+  .notif-item__delete:active:not(:disabled) { transform: scale(.98); }
+  .notif-item__delete:focus-visible { outline: 3px solid rgba(198,93,93,.28); outline-offset: 2px; }
   @media (max-width: 640px) {
-    .notif-item__delete { width: 40px; height: 40px; }
+    .notif-item__delete { width: 48px; height: 48px; }
   }
 }
 
