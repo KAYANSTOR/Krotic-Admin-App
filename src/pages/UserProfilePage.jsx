@@ -124,7 +124,7 @@ export default function UserProfilePage() {
       variant: 'danger',
       action: async () => {
         const result = await updateNetworkAccess({ uid, ...patch });
-        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر تنفيذ الإجراء')); return; }
+        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر تنفيذ الإجراء')); return false; }
         invalidateAdminUserData(uid);
         await logAdminAction({ action: auditAction, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid, details });
         toast.success(successMessage);
@@ -140,7 +140,7 @@ export default function UserProfilePage() {
       variant: 'success',
       action: async () => {
         const result = await renewNetwork(uid, 30);
-        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر التجديد')); return; }
+        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر التجديد')); return false; }
         invalidateAdminUserData(uid);
         await logAdminAction({ action: AUDIT_ACTIONS.USER_RENEW, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid });
         toast.success('تم التجديد بنجاح');
@@ -368,7 +368,7 @@ export default function UserProfilePage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return false; const result = await confirmAction.action(); if (result === false) return false; setConfirmAction(null); return true; }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
