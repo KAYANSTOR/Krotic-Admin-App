@@ -95,8 +95,10 @@ test('confirmation dialogs wait for async actions and expose failures', async ()
   assert.match(dialog, /if \(result === false\)/);
   assert.match(dialog, /loading=\{submitting\}/);
   assert.match(dialog, /تعذر تنفيذ الإجراء/);
-  assert.match(users, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
-  assert.match(profile, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
+  assert.match(users, /await confirmAction\.action\(\)/);
+  assert.match(users, /if \(result === false\) return false;[\s\S]*?setConfirmAction\(null\)/);
+  assert.match(profile, /await confirmAction\.action\(\)/);
+  assert.match(profile, /if \(result === false\) return false;[\s\S]*?setConfirmAction\(null\)/);
   assert.match(billing, /finally \{\s*setSavingPayment\(false\)/);
   assert.match(billing, /Payment submission failed/);
   assert.match(billing, /void refreshBillingHistory\(\)/);
