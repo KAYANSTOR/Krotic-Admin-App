@@ -35,6 +35,7 @@ export default function UserProfilePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [history, setHistory] = useState({ sales: [], payments: [] });
+  const [historyMonth, setHistoryMonth] = useState(() => getCurrentMonthKey());
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [editing, setEditing] = useState(false);
