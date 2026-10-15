@@ -22,7 +22,13 @@ export function computeOutstanding(totalCommissionDue, totalPaidAmount) {
  * يطبّق مبلغ دفعة داخل معاملة: يسوّي المبيعات غير المسوّاة (FIFO) ويحدّث
  * الرصيد التراكمي على مستند الشبكة. يُرجع ملخص التخصيص والرصيد المتبقي.
  */
-export async function settleNetworkPayment(transaction, { networkRef, salesQuery, amountMinor, settlementId }) {
+export async function settleNetworkPayment(transaction, {
+  networkRef,
+  salesQuery,
+  amountMinor,
+  settlementId,
+  networkAccessPatch = {},
+}) {
   const networkSnap = await transaction.get(networkRef);
   const network = networkSnap.exists ? networkSnap.data() : {};
 
@@ -52,6 +58,7 @@ export async function settleNetworkPayment(transaction, { networkRef, salesQuery
     lastPaymentMinor: amountMinor,
     lastPaymentAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    ...networkAccessPatch,
   }, { merge: true });
 
   return {
