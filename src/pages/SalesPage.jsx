@@ -250,7 +250,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : Math.max(0, (saleCommission(r.sale) || 0) - (Number(r.sale.paidMinor) || 0)) },
+      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : Math.max(0, (saleCommission(r.sale) || 0) - (Number(r.sale.paidRiyal ?? r.sale.paidMinor) || 0)) },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
