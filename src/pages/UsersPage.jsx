@@ -152,7 +152,7 @@ export default function UsersPage() {
         }));
       },
       () => setLiveSalesReady(true),
-      { includePayments: true },
+      { includePaymentTotals: true },
     );
     return unsubscribe;
   }, []);
