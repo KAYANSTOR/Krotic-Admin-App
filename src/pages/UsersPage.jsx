@@ -222,7 +222,7 @@ export default function UsersPage() {
         });
         if (!result.ok) {
           toast.error(adminApiError(result.error, 'تعذر تحديث حالة المستخدم'));
-          return;
+          return false;
         }
         invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
@@ -255,7 +255,7 @@ export default function UsersPage() {
         const result = await updateNetworkAccess({ uid: user.uid, accessStatus: 'ACTIVE_PAID' });
         if (!result.ok) {
           toast.error(adminApiError(result.error, 'تعذر تحويل المستخدم إلى رسمي'));
-          return;
+          return false;
         }
         invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
@@ -282,7 +282,7 @@ export default function UsersPage() {
         const result = await renewNetwork(user.uid, 30);
         if (!result.ok) {
           toast.error(adminApiError(result.error, 'تعذر التجديد'));
-          return;
+          return false;
         }
         invalidateAdminUserData(user.uid);
         const endMs = Number(result.data?.subscriptionEndsAt) || null;
@@ -442,7 +442,7 @@ export default function UsersPage() {
       message: `تم اكتشاف ${formatNumber(accessRepairCount)} سجل يحتاج إلى توحيد. سيعتمد الإصلاح حالة accessStatus الحالية ويحدّث الحقول القديمة والحسابات الشبكية المرتبطة دون إعادة تفعيل أي حساب موقوف. تُعالج السجلات على دفعات قابلة للاستئناف.`,
       variant: 'danger',
       action: async () => {
-        if (repairingAccess) return;
+        if (repairingAccess) return false;
         setRepairingAccess(true);
         const toastId = 'repair-access-state';
         toast.loading('جارٍ إصلاح سجلات الوصول القديمة…', { id: toastId });
@@ -457,7 +457,7 @@ export default function UsersPage() {
             const result = await repairAccessPage(cursor, 100);
             if (!result.ok) {
               toast.error(adminApiError(result.error, 'تعذر إصلاح حالات الوصول'), { id: toastId });
-              return;
+              return false;
             }
             const data = result.data || {};
             scanned += Number(data.scanned) || 0;
@@ -480,6 +480,7 @@ export default function UsersPage() {
         } catch (error) {
           console.error('access compatibility repair failed', error);
           toast.error('توقف الإصلاح قبل اكتماله. أعد المحاولة؛ يمكن متابعة الدفعات بأمان.', { id: toastId });
+          return false;
         } finally {
           setRepairingAccess(false);
         }
@@ -909,7 +910,7 @@ export default function UsersPage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return false; const result = await confirmAction.action(); if (result === false) return false; setConfirmAction(null); return true; }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
