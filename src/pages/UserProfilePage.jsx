@@ -241,9 +241,9 @@ export default function UserProfilePage() {
             <button type="button" onClick={() => setBilling(true)} className="row-action row-action--success" aria-label="الفوترة والدفعات">
               <DollarSign className="w-4 h-4" /><span className="text-xs font-medium">الفوترة والدفعات</span>
             </button>
-            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك"><CalendarPlus className="w-4 h-4" /></button>
-            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم"><Edit className="w-4 h-4" /></button>
-            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول"><KeyRound className="w-4 h-4" /></button>
+            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك"><CalendarPlus className="w-4 h-4" /><span>تجديد</span></button>
+            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم"><Edit className="w-4 h-4" /><span>تعديل</span></button>
+            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول"><KeyRound className="w-4 h-4" /><span>الدخول</span></button>
             {user.is_trial && (
               <button
                 onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}
@@ -252,7 +252,7 @@ export default function UserProfilePage() {
                 title="تحويل لرسمي"
                 aria-label="تحويل المستخدم إلى رسمي"
               >
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-4 h-4" /><span>رسمي</span>
               </button>
             )}
             <button
@@ -266,6 +266,7 @@ export default function UserProfilePage() {
               aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
             >
               {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+              <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
             </button>
           </div>
         </Card>
@@ -367,7 +368,7 @@ export default function UserProfilePage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={() => { confirmAction?.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
