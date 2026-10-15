@@ -18,6 +18,12 @@
 | `CRON_SECRET` | سرّ حماية Vercel Cron لـ `/api/dispatch-notifications` | نعم |
 | `FCM_DEFAULT_TOPIC` | موضوع FCM الافتراضي (اختياري، القيمة الافتراضية `krotak_all_users`) | لا |
 | `FCM_ANDROID_CHANNEL_ID` | قناة أندرويد للإشعارات (اختياري) | لا |
+| `OTP_HASH_SECRET` | سر عشوائي مستقل (32 بايت على الأقل) لهضم OTP ومعرّفات تحدي/تحديد المعدل | نعم عند تفعيل OTP |
+| `META_WHATSAPP_ACCESS_TOKEN` | رمز الوصول الدائم/الخادمي لـWhatsApp Cloud API | نعم عند تفعيل OTP |
+| `META_WHATSAPP_PHONE_NUMBER_ID` | معرّف رقم WhatsApp Business المرسل من Meta | نعم عند تفعيل OTP |
+| `META_WHATSAPP_TEMPLATE_NAME` | اسم قالب Authentication/Copy Code المعتمد | نعم عند تفعيل OTP |
+| `META_WHATSAPP_TEMPLATE_LANGUAGE` | رمز لغة القالب المعتمد، مثل `ar` أو `en_US` | نعم عند تفعيل OTP |
+| `META_WHATSAPP_API_VERSION` | نسخة Graph API (الافتراضي `v26.0`) | لا |
 
 **تُدار الأسرار حصراً في Vercel Project → Settings → Environment Variables** (قرار ط2). لا تُوضع في Git مطلقاً.
 
@@ -29,7 +35,16 @@
   `totalSalesAmount`, `totalCommissionDue`, `totalPaidAmount`, `outstandingBalance`.
 - **الكتابة المالية والتسوية:** خادمية فقط (`/api/record-payment`, `/api/settlement`, `/api/sales/ingest`)؛ قواعد Firestore تمنع العميل.
 - للحفاظ على حد Vercel Hobby، يعاد توجيه `/api/record-payment` داخليًا إلى وظيفة `/api/settlement` عبر `vercel.json`. يظل عنوان الطلب وطريقته وبياناته واستجابته متوافقة؛ لا يلزم تحديث تطبيق Android.
+- يُعاد توجيه `/api/request-otp` و`/api/verify-otp` داخليًا إلى وظيفة `/api/manage-user-auth`؛ لا تضاف وظائف Vercel جديدة. تُخزّن قيمة OTP كتجزئة HMAC لمدة 5 دقائق فقط، ويُستهلك الرمز بعد تحقق ناجح، مع 5 محاولات كحد أقصى ومحدد معدل لإعادة الإرسال. لا تُكتب قيمة OTP أو رقم الهاتف بنص صريح في مجموعة `auth_otps`.
 - **الوصول والتجربة:** خادمي فقط (`/api/networks`)، والقواعد تمنع كتابة العميل على حقول الصلاحية.
+
+### WhatsApp OTP (Meta Cloud API)
+
+- `POST /api/request-otp` يستقبل `{ "phoneNumber": "+967..." }`. يعيد دائمًا ردًا عامًا عند الرقم المسجل أو غير المسجل لتقليل كشف الحسابات. الرمز صالح 5 دقائق، ولا يُرسل إلا لحساب عميل قائم ومفعّل.
+- `POST /api/verify-otp` يستقبل `{ "phoneNumber": "+967...", "otp": "123456" }`. عند النجاح يعيد `{ "success": true, "customToken": "...", "uid": "..." }`. على Flutter استخدام `FirebaseAuth.instance.signInWithCustomToken(customToken)`؛ يجب إرسال OTP كنص حتى لا تضيع الأصفار في البداية.
+- يربط الخادم الرقم بـUID المسجل في `network_registration_phone_index`، مع بحث فريد احتياطي في `users.phone`. **لا يُستخدم رقم الهاتف كـUID** ولا يُنشأ حساب جديد في هذا المسار.
+- أنشئ في Meta قالب **Authentication / Copy Code** معتمدًا، واختر اللغة نفسها المحددة في `META_WHATSAPP_TEMPLATE_LANGUAGE`، واجعل انتهاء القالب 5 دقائق ليطابق تحقق الخادم. يلزم إعداد WhatsApp Business Account ورقم إرسال وaccess token خادمي.
+- لا يُعدّل هذا التغيير تطبيق Flutter/Android. بعد إعداد بيانات Meta، اختبر إرسال رمز على حساب حقيقي، ثم يدمج فريق Flutter استدعاء المسارين وتسجيل الدخول بالـcustom token.
 
 ## 3. بوابة الفحص قبل النشر (Deploy Gate)
 
@@ -82,12 +97,15 @@ cd functions && npm ci && npm test && node --check index.js
    - `FIREBASE_SERVICE_ACCOUNT` = محتوى ملف Service Account JSON كاملًا أو base64 له.
    - `KROTAK_HMAC_SECRET` = Master Secret عشوائي طويل (32 بايت على الأقل) لتشفير `networkSecret` لكل شبكة. لا يُضمّن في APK ولا يُرسل للعميل.
    - `CRON_SECRET` = سرّ عشوائي لحماية `/api/dispatch-notifications`.
+   - لاختبار OTP: أنشئ `OTP_HASH_SECRET` مستقلاً (32 بايت على الأقل، مثل ناتج `openssl rand -base64 48`) وبيانات `META_WHATSAPP_*` أعلاه في Vercel Production/Preview. يجب أن يكون اسم القالب ولغته مطابقين لقالب Authentication/Copy Code الذي اعتمدته Meta. لا تضع أي رمز وصول في Git أو تطبيق Flutter.
+   - فعّل سياسة Firestore TTL على الحقل `expiresAt` لمجموعة `auth_otps` وعلى الحقل نفسه في `auth_otp_rate_limits` للتنظيف التلقائي؛ التحقق من الانتهاء يتم خادميًا حتى قبل حذف TTL.
 2. **مفتاح الشبكة:** `POST /api/networks` مع `action=provision` ينشئ مفتاحًا خاصًا بالشبكة ويحفظ envelope مشفرًا (`networkSecretEncrypted`) بـ AES-256-GCM. بعد مصادقة العميل، يستدعي التطبيق `POST /api/network-secret` لاسترداد المفتاح عبر Firebase ID Token. يخزنه التطبيق في Android Keystore ولا يسجله أو يكتبه في Firestore/الـ APK.
 3. **Cron:** `vercel.json` يعرّف مهمة يومية واحدة لـ `/api/dispatch-notifications`. مع `CRON_SECRET` صحيح، تنفّذ فحص الانتهاء ثم إرسال الإشعارات؛ استدعاء المدير اليدوي يرسل الإشعارات فقط.
 4. **أعِد النشر (Redeploy)** بعد ضبط المتغيّرات، ثم تحقّق:
    - دخول اللوحة يعمل.
    - إرسال إشعار (اختبار) يعمل.
    - اعتماد تسوية/تسجيل دفعة يعمل ويحدّث الرصيد.
+   - بعد إضافة بيانات Meta فقط، جرّب OTP على حساب عميل موجود، ثم تحقق من أن Flutter يسجّل الدخول عبر `signInWithCustomToken`.
 
 ### ج) المهاجرة (تُشغَّل يدويًا بعد الموافقة فقط)
 بعد ضبط الخادم، استدعِ `POST /api/migrate` برمز مدير موثّق:

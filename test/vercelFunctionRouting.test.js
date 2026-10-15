@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dispatchLegacyPaymentRoute } from '../api/settlement.js';
+import { dispatchPublicOtpRoute } from '../api/manage-user-auth.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const apiRoot = join(projectRoot, 'api');
@@ -34,6 +35,16 @@ test('Vercel API functions stay within Hobby limit and preserve record-payment U
     source: '/api/record-payment',
     destination: '/api/settlement?__apiRoute=record-payment',
   });
+
+  for (const [source, route] of [
+    ['/api/request-otp', 'request-otp'],
+    ['/api/verify-otp', 'verify-otp'],
+  ]) {
+    assert.deepEqual(config.rewrites.find((entry) => entry.source === source), {
+      source,
+      destination: `/api/manage-user-auth?__apiRoute=${route}`,
+    });
+  }
 });
 
 test('legacy payment route dispatches the unchanged request and response to its handler', async () => {
@@ -66,4 +77,29 @@ test('normal settlement request does not enter the legacy payment handler', asyn
 
   assert.equal(handled, false);
   assert.equal(callCount, 0);
+});
+
+test('public OTP URLs dispatch to their dedicated handlers before admin authorization', async () => {
+  for (const [route, expected] of [
+    ['request-otp', 'request'],
+    ['verify-otp', 'verify'],
+  ]) {
+    const req = { query: { __apiRoute: route } };
+    const res = { marker: true };
+    let called = null;
+    const handled = await dispatchPublicOtpRoute(req, res, {
+      requestOtp: async (actualReq, actualRes) => { called = ['request', actualReq, actualRes]; },
+      verifyOtp: async (actualReq, actualRes) => { called = ['verify', actualReq, actualRes]; },
+    });
+    assert.equal(handled, true);
+    assert.equal(called[0], expected);
+    assert.strictEqual(called[1], req);
+    assert.strictEqual(called[2], res);
+  }
+
+  const notOtp = await dispatchPublicOtpRoute({ query: { __apiRoute: 'unknown' } }, {}, {
+    requestOtp: async () => assert.fail('unexpected OTP request'),
+    verifyOtp: async () => assert.fail('unexpected OTP verification'),
+  });
+  assert.equal(notOtp, false);
 });
