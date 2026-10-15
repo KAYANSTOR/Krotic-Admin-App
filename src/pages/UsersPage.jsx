@@ -743,7 +743,7 @@ export default function UsersPage() {
                       </dd>
                     </div>
                     <div className="user-card__meta-item">
-                      <dt>مبيعاته (ريال)</dt>
+                      <dt>مبيعات مكتملة (ريال)</dt>
                       <dd><span className="num">{formatNumber(getUserBilling(user).reportedSalesValue)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
