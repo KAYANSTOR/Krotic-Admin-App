@@ -417,7 +417,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     const networks = [];
     usersByUid.forEach((user, uid) => {
       const sales = salesByUid.get(uid) || [];
-      if (!sales.length) return;
+      if (!sales.length && !(includePaymentTotals && (paymentTotalsByUid.get(uid) || 0) > 0)) return;
       const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
       networks.push({
         uid,
@@ -426,7 +426,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
         sales,
         commissionRate: resolveCommissionRate(user, defaultCommissionRate),
         // The network ledger is the authoritative source for actual recorded payments.
-        recordedPayments: includePaymentTotals ? (paymentTotalsByUid.get(uid) || 0) : undefined,
+        recordedPayments: includePaymentTotals && paymentTotalsByUid.has(uid) ? paymentTotalsByUid.get(uid) : undefined,
       });
     });
 
