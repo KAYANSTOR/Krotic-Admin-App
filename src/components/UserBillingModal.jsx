@@ -86,39 +86,50 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
 
   const handleRecordPayment = async (event) => {
     event.preventDefault();
-    if (!userUid) return;
+    if (!userUid || savingPayment) return;
     const amount = Number(payAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('أدخل مبلغاً صحيحاً أكبر من صفر');
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      toast.error('أدخل مبلغاً صحيحاً بالريال أكبر من صفر');
       return;
     }
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(payMonth)) {
       toast.error('صيغة الشهر يجب أن تكون YYYY-MM');
       return;
     }
+
     setSavingPayment(true);
-    const result = await recordPayment({
-      uid: userUid,
-      amount,
-      month: payMonth,
-      idempotencyKey: payKey || newIdempotencyKey(userUid),
-    });
-    setSavingPayment(false);
-    if (!result.ok) {
-      toast.error(adminApiError(result.error));
-      return;
+    try {
+      const result = await recordPayment({
+        uid: userUid,
+        amount,
+        month: payMonth,
+        idempotencyKey: payKey || newIdempotencyKey(userUid),
+      });
+      if (!result.ok) {
+        toast.error(adminApiError(result.error));
+        return;
+      }
+
+      // A successful server acknowledgement ends this submission. Keep the
+      // same idempotency key on errors so retrying cannot duplicate a payment.
+      void logAdminAction({
+        action: AUDIT_ACTIONS.PAYMENT_ADD,
+        targetType: 'user',
+        targetId: userUid,
+        targetLabel: user?.networkName || userUid,
+        details: { amount, month: payMonth, ack: Boolean(result.data?.ack) },
+      }).catch((error) => console.error('Payment audit write failed:', error));
+
+      toast.success(result.data?.ack ? 'الدفعة مسجلة سابقاً (لم تُكرَّر)' : 'تم تسجيل الدفعة على الخادم');
+      setPayAmount('');
+      setPayKey(newIdempotencyKey(userUid));
+      await refreshBillingHistory();
+    } catch (error) {
+      console.error('Payment submission failed:', error);
+      toast.error('تعذر تأكيد تسجيل الدفعة. أعد المحاولة؛ لن تتكرر الدفعة إذا كان الخادم قد سجلها.');
+    } finally {
+      setSavingPayment(false);
     }
-    logAdminAction({
-      action: AUDIT_ACTIONS.PAYMENT_ADD,
-      targetType: 'user',
-      targetId: userUid,
-      targetLabel: user?.networkName || userUid,
-      details: { amount, month: payMonth, ack: Boolean(result.data?.ack) },
-    });
-    toast.success(result.data?.ack ? 'الدفعة مسجلة سابقاً (لم تُكرَّر)' : 'تم تسجيل الدفعة على الخادم');
-    setPayAmount('');
-    setPayKey(newIdempotencyKey(userUid));
-    refreshBillingHistory();
   };
 
   const refreshBillingHistory = async () => {
