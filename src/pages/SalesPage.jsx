@@ -12,14 +12,14 @@ import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
-import { formatNumber, formatDate } from '../lib/format';
+import { formatNumber, formatDate, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
 import { saleCommission, sumOutstanding, hasUnverifiedCommission } from '../lib/commission';
 
 const NETWORK_PAGE_SIZE = 10;
-const FILTER_STORAGE_KEY = 'krotak:sales-filters:v3';
+const FILTER_STORAGE_KEY = 'krotak:sales-filters:v4';
 
 function toDateInput(date) {
   const pad = (value) => String(value).padStart(2, '0');
@@ -55,19 +55,13 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const savedFilters = useMemo(loadSavedFilters, []);
-  const defaultMonthRange = useMemo(() => {
-    const now = new Date();
-    return [
-      toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
-      toDateInput(now),
-    ];
-  }, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
-  const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : defaultMonthRange[0]);
-  const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : defaultMonthRange[1]);
+  const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : '');
+  const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : '');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [realtimeReady, setRealtimeReady] = useState(false);
   const [newSaleNotice, setNewSaleNotice] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
@@ -108,19 +102,22 @@ export default function SalesPage() {
       (data, freshness, addedSales = []) => {
         hasRealtimeSnapshot.current = true;
         setNetworkSales(data);
+        if (freshness?.ready || Number(freshness?.initialSnapshotsCount) > 0) setLoading(false);
+        if (freshness?.ready) setRealtimeReady(true);
         setUpdatedAt(Date.now());
         setCacheState((previous) => ({
           ...previous,
           fromCache: freshness?.fromCache ?? false,
           lastSyncedAt: freshness?.fromCache ? previous?.lastSyncedAt : Date.now(),
         }));
-        if (addedSales.length) {
-          const totalFaceValue = addedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-          const totalCommission = sumOutstanding(addedSales);
-          const networkNames = [...new Set(addedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
+        const completedAddedSales = addedSales.filter((sale) => sale.status === 'COMPLETED');
+        if (completedAddedSales.length) {
+          const totalFaceValue = completedAddedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+          const totalCommission = sumOutstanding(completedAddedSales);
+          const networkNames = [...new Set(completedAddedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
           setNewSaleNotice({
             id: Date.now(),
-            count: addedSales.length,
+            count: completedAddedSales.length,
             totalFaceValue,
             totalCommission,
             networkName: networkNames.length === 1 ? networkNames[0] : 'عدة شبكات',
@@ -136,7 +133,7 @@ export default function SalesPage() {
           : `تعذر استقبال تحديثات المبيعات: ${error.message || error}`;
         setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
       },
-      () => setLoading(false),
+      () => { setRealtimeReady(true); setLoading(false); },
     );
     return () => {
       unsubscribe();
@@ -152,12 +149,15 @@ export default function SalesPage() {
     return sales.filter((sale) => {
       if (statusFilter !== 'all' && sale.status !== statusFilter) return false;
       if (dateFrom || dateTo) {
-        const saleDate = new Date(sale.createdAt);
-        if (dateFrom && saleDate < new Date(dateFrom)) return false;
+        const saleDate = toDate(sale.createdAt);
+        if (!saleDate || Number.isNaN(saleDate.getTime())) return false;
+        if (dateFrom) {
+          const fromDate = new Date(`${dateFrom}T00:00:00`);
+          if (saleDate < fromDate) return false;
+        }
         if (dateTo) {
-          const toDate = new Date(dateTo);
-          toDate.setHours(23, 59, 59, 999);
-          if (saleDate > toDate) return false;
+          const endDate = new Date(`${dateTo}T23:59:59.999`);
+          if (saleDate > endDate) return false;
         }
       }
       return true;
@@ -166,13 +166,15 @@ export default function SalesPage() {
 
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales);
-    const totalFaceValue = filtered.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
-    // يظهر للمدير العمولة غير المسوّاة فقط؛ المسوّاة تظهر في سجل العميل (قرار المالك).
-    const totalCommission = sumOutstanding(filtered);
-    const unverified = hasUnverifiedCommission(filtered);
+    const completed = filtered.filter((sale) => sale.status === 'COMPLETED');
+    const totalFaceValue = completed.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+    // All financial KPIs use completed sales only. Rolled-back/pending records
+    // remain visible in the table but never inflate payable commission.
+    const totalCommission = sumOutstanding(completed);
+    const unverified = hasUnverifiedCommission(completed);
     return {
-      totalSales: filtered.length,
-      completedCount: filtered.filter((s) => s.status === 'COMPLETED').length,
+      totalSales: completed.length,
+      completedCount: completed.length,
       totalFaceValue,
       totalCommission,
       unverified,
@@ -257,7 +259,7 @@ export default function SalesPage() {
       { label: 'قيمة البيع', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة غير المسوّاة', value: (r) => saleCommission(r.sale) === null ? '' : Math.max(0, (saleCommission(r.sale) || 0) - (Number(r.sale.paidRiyal ?? r.sale.paidMinor) || 0)) },
+      { label: 'العمولة غير المسوّاة', value: (r) => r.sale.status !== 'COMPLETED' || saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
     ]);
     toast.success('تم تصدير جميع السجلات المطابقة للفلاتر');
   }, [networkSales, calcNetworkStats]);
@@ -270,7 +272,7 @@ export default function SalesPage() {
     setDateTo('');
   };
 
-  if (loading) return <PageSkeleton />;
+  if (loading && networkSales.length === 0 && !hasRealtimeSnapshot.current) return <PageSkeleton />;
 
   return (
     <div className="sales-page">
@@ -314,14 +316,24 @@ export default function SalesPage() {
         العمولة تُحسب خادمياً وقت تسجيل البيع، ويُعرض هنا المتبقي **غير المسوّى** فقط. المبالغ المسوّاة تظهر في سجل العميل.
       </p>
 
+      {!realtimeReady && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><RefreshCw className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">جارٍ تحديث سجل جميع الشبكات</p>
+            <p className="users-error__msg">تظهر السجلات أولاً بأول؛ الإجماليات مؤقتة حتى اكتمال تحميل كل الشبكات.</p>
+          </div>
+        </div>
+      )}
+
       {partialErrors.length > 0 && (
         <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
           <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
           <div className="users-error__body">
             <p className="users-error__title">بعض الشبكات غير محمّلة</p>
             <p className="users-error__msg">
-              تعذّر تجميع مبيعات {partialErrors.length} شبكة. غالباً السبب فهرس Firestore المركّب الناقص على
-              المبيعات (status + faceValue)؛ باقي الشبكات معروضة أدناه.
+              تعذّر تحميل أو تحديث بيانات {partialErrors.length} شبكة. تحقق من الاتصال وصلاحيات القراءة؛
+              سيبقى التقرير معلّماً كجزئي حتى تعود البيانات.
             </p>
             <details className="users-error__details">
               <summary>عرض التفاصيل</summary>
@@ -336,7 +348,7 @@ export default function SalesPage() {
       )}
 
       <div className="grid-kpi">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني • جميع الحالات" />
+        <StatCard title="إجمالي المبيعات المكتملة" value={formatNumber(grandTotals.totalSales)} icon={DollarSign} tone="brand" subtitle="ريال يمني • مكتملة فقط" />
         <StatCard title="العمولة غير المسوّاة" value={formatNumber(grandTotals.totalCommission)} icon={Wallet} tone="success" subtitle="المتبقي على الشبكات" />
         <StatCard title="عدد المبيعات المكتملة" value={formatNumber(grandTotals.totalCount)} icon={Wallet} tone="warning" subtitle="للحالات المكتملة فقط" />
       </div>
@@ -451,7 +463,7 @@ export default function SalesPage() {
 
                   <div className="sales-network__stats">
                     <div className="sales-network__stat">
-                      <span className="sales-network__stat-label">إجمالي المبيعات</span>
+                      <span className="sales-network__stat-label">المبيعات المكتملة</span>
                       <span className="sales-network__stat-value">
                         {formatNumber(stats.totalFaceValue)}
                       </span>
@@ -482,7 +494,7 @@ export default function SalesPage() {
                   <div className="sales-network__body">
                     <div className="sales-network__mobile-stats">
                       <div className="sales-network__mobile-stat">
-                        <span>إجمالي المبيعات</span>
+                        <span>المبيعات المكتملة</span>
                         <strong>{formatNumber(stats.totalFaceValue)}</strong>
                       </div>
                       <div className="sales-network__mobile-stat">

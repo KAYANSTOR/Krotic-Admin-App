@@ -4,10 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
+  fetchAllUsers,
+  fetchGlobalConfig,
   fetchUsersWithBilling,
   getAdminDataCacheState,
   invalidateAdminUserData,
   subscribeAdminDataCache,
+  subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
@@ -27,6 +30,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
+import { summarizeCompletedSales } from '../lib/commission';
 import { renewNetwork, updateNetworkAccess, repairAccessPage, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -86,31 +90,61 @@ export default function UsersPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [billingRefreshing, setBillingRefreshing] = useState(false);
+  const [liveBillingByUid, setLiveBillingByUid] = useState({});
+  const [liveSalesReady, setLiveSalesReady] = useState(false);
+  const [liveSalesErrors, setLiveSalesErrors] = useState({});
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
   const latestRequestId = useRef(0);
+  const hasLoadedUsers = useRef(false);
   const navigate = useNavigate();
 
   const fetchData = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
-    setLoading(true);
+    setLoading(!hasLoadedUsers.current);
     setError(null);
+
     try {
-      const { users: usersData, globalConfig: config, errors: nextErrors } = await fetchUsersWithBilling({ force });
+      // Render the base user list as soon as users/config are available.
+      // Financial aggregates can fan out across many networks, so they refresh
+      // after the page is usable instead of blocking the whole phone screen.
+      const [baseUsers, config] = await Promise.all([
+        fetchAllUsers({ force }),
+        fetchGlobalConfig({ force }),
+      ]);
       if (requestId !== latestRequestId.current) return;
+      setUsers(baseUsers);
       setGlobalConfig(config);
-      setUsers(usersData);
+      setUpdatedAt(Date.now());
+      setCacheState(getAdminDataCacheState('all-users'));
+      hasLoadedUsers.current = true;
+      setLoading(false);
+      setBillingRefreshing(true);
+
+      const { users: billedUsers, globalConfig: billedConfig, errors: nextErrors } = await fetchUsersWithBilling({ force });
+      if (requestId !== latestRequestId.current) return;
+      setUsers(billedUsers);
+      setGlobalConfig(billedConfig || config);
       setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('users-with-billing'));
     } catch (err) {
       if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching data:', err);
-      setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
-      toast.error('خطأ في تحميل بيانات المستخدمين');
+      console.error('Error refreshing user reports:', err);
+      if (!hasLoadedUsers.current) {
+        setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
+        toast.error('خطأ في تحميل بيانات المستخدمين');
+      } else {
+        setPartialErrors((current) => [...current, 'تعذر تحديث المجاميع المالية؛ ما زالت قائمة المستخدمين متاحة.']);
+        toast.error('تم تحميل المستخدمين لكن تعذر تحديث بعض المؤشرات المالية');
+      }
     } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
+      if (requestId === latestRequestId.current) {
+        setLoading(false);
+        setBillingRefreshing(false);
+      }
     }
   }, []);
 
@@ -121,8 +155,49 @@ export default function UsersPage() {
     setUpdatedAt(Date.now());
     setCacheState(state);
     setError(null);
+    hasLoadedUsers.current = true;
     setLoading(false);
   }), []);
+
+  // Keep the user-card financial counters tied to the live sale ledger. The
+  // aggregate document is optimized for summaries and can lag a newly-synced
+  // offline sale; each user row now refreshes as its sales snapshot arrives.
+  useEffect(() => {
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (networks, freshness) => {
+        const next = Object.fromEntries(networks.map((network) => [
+          network.uid,
+          {
+            ...summarizeCompletedSales(network.sales || []),
+            recordedPayments: network.recordedPayments == null
+              ? undefined
+              : (Number(network.recordedPayments) || 0),
+          },
+        ]));
+        setLiveBillingByUid(next);
+        const recoveredUids = networks
+          .filter((network) => network.recordedPayments != null)
+          .map((network) => network.uid);
+        if (recoveredUids.length) {
+          setLiveSalesErrors((previous) => {
+            const updated = { ...previous };
+            recoveredUids.forEach((uid) => { delete updated[uid]; });
+            return updated;
+          });
+        }
+        if (freshness?.ready) setLiveSalesReady(true);
+      },
+      (listenerError, uid) => {
+        setLiveSalesErrors((previous) => ({
+          ...previous,
+          [uid || '_global']: listenerError?.message || String(listenerError),
+        }));
+      },
+      () => setLiveSalesReady(true),
+      { includePaymentTotals: true },
+    );
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -337,6 +412,29 @@ export default function UsersPage() {
   }, [users]);
 
   const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
+  const liveSalesErrorCount = Object.keys(liveSalesErrors).length;
+  const getUserBilling = (user) => {
+    const live = liveBillingByUid[user.uid];
+    if (live) {
+      const { recordedPayments, ...liveSales } = live;
+      return {
+        ...user,
+        ...liveSales,
+        recordedPayments: recordedPayments == null ? user.recordedPayments : recordedPayments,
+      };
+    }
+    if (liveSalesReady && !liveSalesErrors[user.uid] && !liveSalesErrors._global) {
+      return {
+        ...user,
+        reportedSalesValue: 0,
+        reportedTransactions: 0,
+        commissionDue: 0,
+        outstandingCommission: 0,
+        recordedPayments: 0,
+      };
+    }
+    return user;
+  };
 
   const handleRepairAccess = () => {
     setConfirmAction({
@@ -416,7 +514,7 @@ export default function UsersPage() {
     toast.success('تم تصدير بيانات المستخدمين');
   }, [filteredUsers, defaultCommission]);
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return (
       <div className="users-page">
         <SkeletonPageHeader />
@@ -453,7 +551,7 @@ export default function UsersPage() {
                 {repairingAccess ? 'جارٍ الإصلاح…' : `إصلاح الحالات القديمة (${formatNumber(accessRepairCount)})`}
               </Button>
             )}
-            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading || billingRefreshing} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
           </div>
         }
       />
@@ -471,14 +569,38 @@ export default function UsersPage() {
         </div>
       )}
 
+      {!liveSalesReady && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><RefreshCw className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">جارٍ مزامنة مؤشرات المبيعات والعمولات</p>
+            <p className="users-error__msg">تُحدَّث أرقام كل شبكة مع وصول سجلها المباشر. قد تكون الأرقام لبعض الشبكات مؤقتة حتى اكتمال التحميل.</p>
+          </div>
+        </div>
+      )}
+      {liveSalesReady && liveSalesErrorCount > 0 && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">تعذر تحديث مباشر لبعض الشبكات</p>
+            <p className="users-error__msg">يستمر عرض آخر مجاميع متاحة للشبكات المتأثرة؛ راجع الاتصال والصلاحيات ثم حدّث الصفحة.</p>
+          </div>
+        </div>
+      )}
+
+      {billingRefreshing && users.length > 0 && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          جاري تحديث مؤشرات العمولة والدفعات من الخادم؛ تبقى قائمة المستخدمين متاحة أثناء التحديث.
+        </div>
+      )}
+
       {partialErrors.length > 0 && (
         <div className="users-error users-error--warning" role="status" aria-live="polite">
           <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
           <div className="users-error__body">
             <p className="users-error__title">بعض بيانات الفوترة غير مكتملة</p>
             <p className="users-error__msg">
-              تم عرض كل المستخدمين، لكن تعذّر تجميع مبيعات/دفعات {partialErrors.length} شبكة.
-              تحقّق من فهرس Firestore المركّب على المبيعات (status + faceValue).
+              تم عرض كل المستخدمين، لكن تعذّر جلب بعض مجاميع الفوترة. ستُعرض المؤشرات المباشرة للشبكات التي نجح تحميلها فقط.
             </p>
             <details className="users-error__details">
               <summary>عرض التفاصيل</summary>
@@ -678,20 +800,20 @@ export default function UsersPage() {
                       </dd>
                     </div>
                     <div className="user-card__meta-item">
-                      <dt>مبيعاته (ريال)</dt>
-                      <dd><span className="num">{formatNumber(user.reportedSalesValue)}</span></dd>
+                      <dt>مبيعات مكتملة (ريال)</dt>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedSalesValue)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>عدد المبيعات</dt>
-                      <dd><span className="num">{formatNumber(user.reportedTransactions)}</span></dd>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedTransactions)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>عمولته غير المسوّاة</dt>
-                      <dd><span className="num text-primary-600">{formatNumber(user.outstandingCommission)}</span></dd>
+                      <dd><span className="num text-primary-600">{formatNumber(getUserBilling(user).outstandingCommission)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>المسدّد</dt>
-                      <dd><span className="num">{formatNumber(user.recordedPayments)}</span></dd>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).recordedPayments)}</span></dd>
                     </div>
                   </dl>
 
@@ -707,24 +829,31 @@ export default function UsersPage() {
                     </button>
                     <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
                       <CalendarPlus className="w-4 h-4" />
+                      <span>تجديد</span>
                     </button>
                     <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
                       <Edit className="w-4 h-4" />
+                      <span>تعديل</span>
                     </button>
                     <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
                       <KeyRound className="w-4 h-4" />
+                      <span>الدخول</span>
                     </button>
                     {user.is_trial && (
                       <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
                         <CheckCircle className="w-4 h-4" />
+                        <span>رسمي</span>
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => handleToggleActive(user)}
                       className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
                       title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                      aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
                     >
                       {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                      <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
                     </button>
                   </div>
                 </article>
@@ -780,7 +909,7 @@ export default function UsersPage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={() => { confirmAction?.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}

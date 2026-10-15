@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban, UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -15,10 +15,10 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
-import { saleCommission } from '../lib/commission';
+import { saleCommission, saleOutstanding, sumOutstanding } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
-  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
+  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData, subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
 import { renewNetwork, updateNetworkAccess, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -42,14 +42,22 @@ export default function UserProfilePage() {
   const [billing, setBilling] = useState(false);
   const [authModal, setAuthModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [liveSalesError, setLiveSalesError] = useState('');
+  const liveSalesSnapshotVersion = useRef(0);
 
   const load = useCallback(async ({ force = false } = {}) => {
+    const salesVersionAtStart = liveSalesSnapshotVersion.current;
     setLoading(true);
     try {
       const { users = [] } = await fetchUsersWithBilling({ force });
       setUser(users.find((item) => item.uid === uid) || null);
       const billingHistory = await fetchUserBillingHistory(uid, { force });
-      setHistory({ sales: billingHistory.sales || [], payments: billingHistory.payments || [] });
+      setHistory((previous) => ({
+        sales: liveSalesSnapshotVersion.current !== salesVersionAtStart
+          ? previous.sales
+          : (billingHistory.sales || []),
+        payments: billingHistory.payments || [],
+      }));
       setUpdatedAt(Date.now());
     } catch (error) {
       console.error('profile load failed', error);
@@ -59,6 +67,29 @@ export default function UserProfilePage() {
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (networks) => {
+        const network = networks.find((item) => item.uid === uid);
+        if (!network) return;
+        liveSalesSnapshotVersion.current += 1;
+        setHistory((previous) => ({
+          ...previous,
+          sales: (network.sales || []).filter((sale) => sale.status === 'COMPLETED'),
+        }));
+        setUpdatedAt(Date.now());
+        setLiveSalesError('');
+      },
+      (error, failedUid) => {
+        if (failedUid === uid || !failedUid) setLiveSalesError(error?.message || String(error));
+      },
+      () => {},
+    );
+    return unsubscribe;
+  }, [uid]);
+
+
 
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
@@ -83,7 +114,7 @@ export default function UserProfilePage() {
     ) === historyMonth);
   const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-  const outstanding = Math.max(0, commissionDue - totalPaid);
+  const outstanding = sumOutstanding(sales);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
 
   const applyAccess = (patch, { successMessage, auditAction, details }) => {
@@ -155,6 +186,12 @@ export default function UserProfilePage() {
         }
       />
 
+      {liveSalesError && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          تعذّر تحديث سجل المبيعات مباشرة؛ يُعرض آخر سجل متاح. حدّث الصفحة بعد التحقق من الاتصال.
+        </div>
+      )}
+
       <div className="mb-4 max-w-xs">
         <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
         <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
@@ -201,19 +238,21 @@ export default function UserProfilePage() {
           </dl>
 
           <div className="user-card__actions" style={{ marginTop: '1rem' }}>
-            <button onClick={() => setBilling(true)} className="row-action row-action--success">
+            <button type="button" onClick={() => setBilling(true)} className="row-action row-action--success" aria-label="الفوترة والدفعات">
               <DollarSign className="w-4 h-4" /><span className="text-xs font-medium">الفوترة والدفعات</span>
             </button>
-            <button onClick={handleRenew} className="row-action row-action--brand" title="تجديد"><CalendarPlus className="w-4 h-4" /></button>
-            <button onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل"><Edit className="w-4 h-4" /></button>
-            <button onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول"><KeyRound className="w-4 h-4" /></button>
+            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك"><CalendarPlus className="w-4 h-4" /><span>تجديد</span></button>
+            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم"><Edit className="w-4 h-4" /><span>تعديل</span></button>
+            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول"><KeyRound className="w-4 h-4" /><span>الدخول</span></button>
             {user.is_trial && (
               <button
                 onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}
+                type="button"
                 className="row-action row-action--brand-soft"
                 title="تحويل لرسمي"
+                aria-label="تحويل المستخدم إلى رسمي"
               >
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-4 h-4" /><span>رسمي</span>
               </button>
             )}
             <button
@@ -221,10 +260,13 @@ export default function UserProfilePage() {
                 { accessStatus: user.is_active === false ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE' },
                 { successMessage: user.is_active === false ? 'تم إلغاء الحظر' : 'تم الحظر', auditAction: user.is_active === false ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK },
               )}
+              type="button"
               className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
               title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+              aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
             >
               {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+              <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
             </button>
           </div>
         </Card>
@@ -255,8 +297,7 @@ export default function UserProfilePage() {
                 <tbody className="divide-y divide-line">
                   {sales.slice().reverse().map((sale) => {
                     const commission = saleCommission(sale);
-                    const paid = Number(sale.paidMinor) || 0;
-                    const settled = commission !== null && paid >= commission;
+                    const settled = commission !== null && saleOutstanding(sale) === 0;
                     return (
                       <tr key={sale.id}>
                         <td className="px-6 py-3 text-sm text-ink-soft" data-label="التاريخ">{formatDate(sale.createdAt, { withTime: true })}</td>
@@ -327,7 +368,7 @@ export default function UserProfilePage() {
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={() => { confirmAction?.action(); setConfirmAction(null); }}
+        onConfirm={async () => { if (!confirmAction?.action) return; await confirmAction.action(); setConfirmAction(null); }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}

@@ -1,11 +1,12 @@
 import {
-  collection, count, doc, getAggregateFromServer, getDoc, getDocs, getDocsFromServer, limit, onSnapshot, orderBy, query, startAt, sum, Timestamp, where,
+  collection, count, doc, getAggregateFromServer, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, onSnapshot, orderBy, query, startAt, sum, Timestamp, where,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { toDate } from './format';
 import { mapWithConcurrency } from './mapWithConcurrency';
 import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
 import { normalizeUserAccess } from './accessStatus';
+import { summarizeCompletedSales } from './commission';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
 const FAN_OUT_CONCURRENCY = 5;
@@ -83,8 +84,9 @@ function partialResult(value, errors) {
 }
 
 export async function fetchGlobalConfig(options) {
-  return readCached('global-config', async () => {
-    const snap = await getDoc(doc(db, 'app_settings', 'global_config'));
+  return readCached('global-config', async ({ force = false } = {}) => {
+    const configRef = doc(db, 'app_settings', 'global_config');
+    const snap = force ? await getDocFromServer(configRef) : await getDoc(configRef);
     return snap.exists() ? snap.data() : { default_commission_rate: 5, is_app_active: true };
   }, options);
 }
@@ -100,8 +102,9 @@ function resolveCommissionRate(user, defaultRate) {
  * نُبطل مفتاحه يدوياً بعد الإنشاء/الحذف (انظر invalidateAdminListData).
  */
 export async function fetchAdmins(options) {
-  return readCached('admins', async () => {
-    const snap = await getDocs(collection(db, 'Admins'));
+  return readCached('admins', async ({ force = false } = {}) => {
+    const adminsRef = collection(db, 'Admins');
+    const snap = force ? await getDocsFromServer(adminsRef) : await getDocs(adminsRef);
     const admins = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     admins.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     return admins;
@@ -110,24 +113,26 @@ export async function fetchAdmins(options) {
 
 /** أول صفحة من سجل العمليات مع تخزين محلي (الصفحات التالية تُدمج عند الطلب). */
 export async function fetchAuditLogs(options) {
-  return readCached('audit-logs', async () => {
-    const snap = await getDocs(query(
+  return readCached('audit-logs', async ({ force = false } = {}) => {
+    const auditQuery = query(
       collection(db, 'admin_audit_logs'),
       orderBy('createdAtMs', 'desc'),
       limit(30),
-    ));
+    );
+    const snap = force ? await getDocsFromServer(auditQuery) : await getDocs(auditQuery);
     return { logs: snap.docs.map((d) => ({ id: d.id, ...d.data() })), hasMore: snap.docs.length === 30 };
   }, options);
 }
 
 /** أول صفحة من الإشعارات العامة مع تخزين محلي. */
 export async function fetchNotificationHistory(options) {
-  return readCached('notification-history', async () => {
-    const snap = await getDocs(query(
+  return readCached('notification-history', async ({ force = false } = {}) => {
+    const historyQuery = query(
       collection(db, 'app_settings', 'global_config', 'notifications'),
       orderBy('timestamp', 'desc'),
       limit(20),
-    ));
+    );
+    const snap = force ? await getDocsFromServer(historyQuery) : await getDocs(historyQuery);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }, options);
 }
@@ -145,9 +150,10 @@ function nestedReadOptions(options, loaderContext) {
 }
 
 async function fetchNetworkMeta(uid, options) {
-  return readCached(`network-meta:${uid}`, async () => {
+  return readCached(`network-meta:${uid}`, async ({ force = false } = {}) => {
     try {
-      const userSnapshot = await getDoc(doc(db, 'users', uid));
+      const userRef = doc(db, 'users', uid);
+      const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
       const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
       const snap = await getDoc(doc(db, 'networks', networkId, '_metadata', 'info'));
       if (snap.exists()) { const data = snap.data(); return { networkName: data.name || '', phoneNumber: data.phoneNumber || '' }; }
@@ -159,11 +165,13 @@ function networkDocumentId(user) {
   return typeof user?.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : user.uid;
 }
 async function fetchSalesForUser(uid, recentOnly = false, options) {
-  return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async () => {
-    const userSnapshot = await getDoc(doc(db, 'users', uid));
+  return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async ({ force = false } = {}) => {
+    const userRef = doc(db, 'users', uid);
+    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const ref = collection(db, 'networks', networkId, 'sales');
-    const snap = await getDocs(recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref);
+    const salesQuery = recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref;
+    const snap = force ? await getDocsFromServer(salesQuery) : await getDocs(salesQuery);
     return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
   }, options);
 }
@@ -183,17 +191,18 @@ function latestTimestampCursor(records, field) {
 }
 export async function fetchUserBillingHistory(uid, options) {
   return readCached(`billing-history:${uid}`, async ({ cachedValue, force } = {}) => {
-    const userSnapshot = await getDoc(doc(db, 'users', uid));
+    const userRef = doc(db, 'users', uid);
+    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const salesRef = collection(db, 'networks', networkId, 'sales');
     const paymentsRef = collection(db, 'networks', networkId, 'payments');
-    const salesCursor = Number(cachedValue?.salesCursor?.millis);
     const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
-    const incrementalSales = !force && Array.isArray(cachedValue?.sales) && Number.isFinite(salesCursor);
+    // Offline sales may arrive after a newer sale while carrying an older
+    // createdAt. A createdAt cursor would silently omit those late-arriving
+    // records, so the customer's full history is re-read on each load.
     const incrementalPayments = !force && Array.isArray(cachedValue?.payments) && Number.isFinite(paymentsCursor);
     const salesConstraints = [where('status', '==', 'COMPLETED'), orderBy('createdAt', 'asc')];
     const paymentConstraints = [orderBy('timestamp', 'asc')];
-    if (incrementalSales) salesConstraints.push(startAt(Timestamp.fromMillis(salesCursor)));
     if (incrementalPayments) paymentConstraints.push(startAt(Timestamp.fromMillis(paymentsCursor)));
     const readQuery = (firestoreQuery) => (force
       ? getDocsFromServer(firestoreQuery)
@@ -204,7 +213,7 @@ export async function fetchUserBillingHistory(uid, options) {
     ]);
     const incomingSales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
     const incomingPayments = paymentsSnapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() }));
-    const sales = mergeByDocumentId(incrementalSales ? cachedValue.sales : [], incomingSales);
+    const sales = incomingSales;
     const payments = mergeByDocumentId(incrementalPayments ? cachedValue.payments : [], incomingPayments);
     const history = {
       sales,
@@ -216,8 +225,9 @@ export async function fetchUserBillingHistory(uid, options) {
   }, options);
 }
 export async function fetchAllUsers(options) {
-  return readCached('all-users', async () => {
-    const snap = await getDocs(collection(db, 'users'));
+  return readCached('all-users', async ({ force = false } = {}) => {
+    const usersRef = collection(db, 'users');
+    const snap = force ? await getDocsFromServer(usersRef) : await getDocs(usersRef);
     return snap.docs.map((userDoc) => normalizeUserAccess({ uid: userDoc.id, ...userDoc.data() }));
   }, options);
 }
@@ -239,52 +249,47 @@ function sixMonthsAgo() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() - 5, 1);
 }
-async function fetchAggregateFromFirestore(uid) {
-  const userSnapshot = await getDoc(doc(db, 'users', uid));
+async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
+  const userRef = doc(db, 'users', uid);
+  const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
   const salesRef = collection(db, 'networks', networkId, 'sales');
   const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
   const paymentsRef = collection(db, 'networks', networkId, 'payments');
-  const [salesAggregate, paymentsAggregate] = await Promise.all([
-    getAggregateFromServer(completedQuery, {
-      totalFaceValue: sum('faceValue'),
-      totalTransactions: count(),
-    }),
+
+  // This path is used only when the server aggregate document is absent.
+  // Reading the completed sales once lets us report verified server commission
+  // snapshots rather than silently setting the due amount to zero.
+  const [salesSnapshot, paymentsAggregate] = await Promise.all([
+    force ? getDocsFromServer(completedQuery) : getDocs(completedQuery),
     getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
   ]);
-  const totalFaceValue = Number(salesAggregate.data().totalFaceValue) || 0;
-  const totalTransactions = Number(salesAggregate.data().totalTransactions) || 0;
+  const sales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  const totals = summarizeCompletedSales(sales);
   const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
-  let monthly = {};
-  let monthlyAvailable = true;
-  try {
-    const recentSalesSnapshot = await getDocs(query(
-      completedQuery,
-      where('createdAt', '>=', Timestamp.fromDate(sixMonthsAgo())),
-      orderBy('createdAt', 'asc'),
-    ));
-    const recentSales = recentSalesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
-    monthly = buildMonthlyBuckets(recentSales);
-  } catch (error) {
-    // Keep all-time totals usable, but explicitly mark the monthly chart incomplete.
-    monthlyAvailable = false;
-    console.warn(`تعذر تحميل مبيعات الأشهر الأخيرة للشبكة ${uid}:`, error);
-  }
+  const minRecentDate = sixMonthsAgo();
+  const monthly = buildMonthlyBuckets(sales.filter((sale) => {
+    const date = toDate(sale.createdAt);
+    return date && !Number.isNaN(date.getTime()) && date >= minRecentDate;
+  }));
+
   return {
-    totalFaceValue,
-    totalTransactions,
+    totalFaceValue: totals.reportedSalesValue,
+    totalTransactions: totals.reportedTransactions,
+    totalCommissionDue: totals.commissionDue,
     totalPaid,
     monthly,
-    monthlyAvailable,
-    source: 'aggregation',
+    monthlyAvailable: true,
+    source: 'aggregation-fallback',
   };
 }
 async function fetchAggregate(uid, options) {
-  return readCached(`aggregate:${uid}`, async () => {
-    const snap = await getDoc(doc(db, 'admin_aggregates', uid));
+  return readCached(`aggregate:${uid}`, async ({ force = false } = {}) => {
+    const aggregateRef = doc(db, 'admin_aggregates', uid);
+    const snap = force ? await getDocFromServer(aggregateRef) : await getDoc(aggregateRef);
     const aggregate = snap.exists()
       ? { ...snap.data(), monthlyAvailable: Object.hasOwn(snap.data(), 'monthly'), source: 'aggregate' }
-      : await fetchAggregateFromFirestore(uid);
+      : await fetchAggregateFromFirestore(uid, { force });
     const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {}).map(([month, bucket]) => [
       month,
       { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
@@ -380,7 +385,7 @@ export async function fetchNetworkSales(options) {
  * scoped to one network's sales collection, so Firestore rules can authorize
  * the same path the admin already reads for the initial page load.
  */
-export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
+export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePaymentTotals = false } = {}) {
   let active = true;
   let defaultCommissionRate = 5;
   let usersUnsubscribe = null;
@@ -390,22 +395,29 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
   const usersByUid = new Map();
   const metadataByUid = new Map();
   const salesByUid = new Map();
+  const paymentTotalsByUid = new Map();
   const salesCacheByUid = new Map();
+  const ledgerCacheByUid = new Map();
   const salesUnsubscribers = new Map();
+  const ledgerUnsubscribers = new Map();
   const initialSalesSnapshots = new Set();
+  const initialLedgerSnapshots = new Set();
 
   const reportError = (error, uid = '') => {
     if (active) onError?.(error, uid);
   };
   const isReady = () => initialNetworkIds !== null
-    && [...initialNetworkIds].every((uid) => initialSalesSnapshots.has(uid));
+    && [...initialNetworkIds].every((uid) => (
+      initialSalesSnapshots.has(uid)
+      && (!includePaymentTotals || initialLedgerSnapshots.has(uid))
+    ));
+
   const publish = (newSales = []) => {
     if (!active) return;
-    if (!readyCalled && initialNetworkIds !== null && !isReady()) return;
     const networks = [];
     usersByUid.forEach((user, uid) => {
       const sales = salesByUid.get(uid) || [];
-      if (!sales.length) return;
+      if (!sales.length && !(includePaymentTotals && (paymentTotalsByUid.get(uid) || 0) > 0)) return;
       const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
       networks.push({
         uid,
@@ -413,31 +425,53 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
         phoneNumber: meta.phoneNumber,
         sales,
         commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+        // The network ledger is the authoritative source for actual recorded payments.
+        recordedPayments: includePaymentTotals && paymentTotalsByUid.has(uid) ? paymentTotalsByUid.get(uid) : undefined,
       });
     });
-    const fromCache = [...usersByUid.keys()].some((uid) => salesCacheByUid.get(uid) !== false);
-    onUpdate(networks, { fromCache }, newSales);
-    if (!readyCalled && isReady()) {
+
+    const allUids = [...usersByUid.keys()];
+    const fromCache = allUids.some((uid) => (
+      salesCacheByUid.get(uid) !== false
+      || (includePaymentTotals && ledgerCacheByUid.get(uid) !== false)
+    ));
+    const expectedCount = initialNetworkIds?.size ?? null;
+    const initialSnapshotsCount = initialSalesSnapshots.size;
+    const initialLedgerSnapshotsCount = initialLedgerSnapshots.size;
+    const ready = isReady();
+
+    // Publish loaded networks progressively; the user list can track financial
+    // indicators from sales plus the canonical network-level payment ledger.
+    onUpdate(networks, {
+      fromCache,
+      ready,
+      expectedCount,
+      initialSnapshotsCount,
+      initialPaymentSnapshotsCount: includePaymentTotals ? initialLedgerSnapshotsCount : null,
+      includesPaymentLedger: includePaymentTotals,
+    }, newSales);
+
+    if (!readyCalled && ready) {
       readyCalled = true;
       onReady?.();
     }
   };
-  const startSalesSubscription = (uid) => {
+
+  const startSalesSubscription = (uid, networkId) => {
     if (salesUnsubscribers.has(uid)) return;
-    const user = usersByUid.get(uid);
-    const networkId = networkDocumentId(user);
     fetchNetworkMeta(uid).then((meta) => {
       if (!active || !usersByUid.has(uid)) return;
       metadataByUid.set(uid, meta);
       publish();
     }).catch((error) => reportError(error, uid));
+
     const unsubscribe = onSnapshot(
       collection(db, 'networks', networkId, 'sales'),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
         const isInitialSnapshot = !initialSalesSnapshots.has(uid);
-        const user = usersByUid.get(uid);
+        const latestUser = usersByUid.get(uid);
         const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
         const newSales = isInitialSnapshot ? [] : snapshot.docChanges()
           .filter((change) => change.type === 'added')
@@ -448,7 +482,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
             status: change.doc.data().status || '',
             commissionRiyal: change.doc.data().commissionRiyal ?? change.doc.data().commission ?? change.doc.data().commissionAmount ?? change.doc.data().commissionMinor ?? null,
             commissionMinor: change.doc.data().commissionMinor ?? change.doc.data().commission ?? null,
-            commissionRate: resolveCommissionRate(user, defaultCommissionRate),
+            commissionRate: resolveCommissionRate(latestUser, defaultCommissionRate),
           }));
         salesByUid.set(uid, snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() })));
         salesCacheByUid.set(uid, snapshot.metadata.fromCache);
@@ -456,31 +490,69 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
         publish(newSales);
       },
       (error) => {
+        reportError(error, uid);
         initialSalesSnapshots.add(uid);
         publish();
-        reportError(error, uid);
       },
     );
     salesUnsubscribers.set(uid, unsubscribe);
+  };
+
+  const startFinancialLedgerSubscription = (uid, networkId) => {
+    if (ledgerUnsubscribers.has(uid)) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'networks', networkId),
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        if (!active || !usersByUid.has(uid)) return;
+        const data = snapshot.exists() ? (snapshot.data() || {}) : {};
+        paymentTotalsByUid.set(uid, Math.max(0, Number(data.totalPaidAmount ?? data.totalPaid) || 0));
+        ledgerCacheByUid.set(uid, snapshot.metadata.fromCache);
+        initialLedgerSnapshots.add(uid);
+        publish();
+      },
+      (error) => {
+        reportError(error, uid);
+        initialLedgerSnapshots.add(uid);
+        publish();
+      },
+    );
+    ledgerUnsubscribers.set(uid, unsubscribe);
   };
 
   usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
     if (!active) return;
     const currentUids = new Set(snapshot.docs.map((userDoc) => userDoc.id));
     if (initialNetworkIds === null || !readyCalled) initialNetworkIds = new Set(currentUids);
+
     for (const [uid, unsubscribe] of salesUnsubscribers) {
       if (currentUids.has(uid)) continue;
       unsubscribe();
       salesUnsubscribers.delete(uid);
-      usersByUid.delete(uid);
-      metadataByUid.delete(uid);
       salesByUid.delete(uid);
       salesCacheByUid.delete(uid);
       initialSalesSnapshots.delete(uid);
     }
+    for (const [uid, unsubscribe] of ledgerUnsubscribers) {
+      if (currentUids.has(uid)) continue;
+      unsubscribe();
+      ledgerUnsubscribers.delete(uid);
+      paymentTotalsByUid.delete(uid);
+      ledgerCacheByUid.delete(uid);
+      initialLedgerSnapshots.delete(uid);
+    }
+    for (const uid of [...usersByUid.keys()]) {
+      if (currentUids.has(uid)) continue;
+      usersByUid.delete(uid);
+      metadataByUid.delete(uid);
+    }
+
     snapshot.docs.forEach((userDoc) => {
-      usersByUid.set(userDoc.id, { uid: userDoc.id, ...userDoc.data() });
-      startSalesSubscription(userDoc.id);
+      const user = { uid: userDoc.id, ...userDoc.data() };
+      usersByUid.set(userDoc.id, user);
+      const networkId = networkDocumentId(user);
+      startSalesSubscription(userDoc.id, networkId);
+      if (includePaymentTotals) startFinancialLedgerSubscription(userDoc.id, networkId);
     });
     publish();
   }, (error) => {
@@ -504,8 +576,11 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady) {
     usersUnsubscribe?.();
     configUnsubscribe?.();
     salesUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    ledgerUnsubscribers.forEach((unsubscribe) => unsubscribe());
     salesUnsubscribers.clear();
+    ledgerUnsubscribers.clear();
     salesCacheByUid.clear();
+    ledgerCacheByUid.clear();
   };
 }
 export async function fetchUsersForSelect(options) {
