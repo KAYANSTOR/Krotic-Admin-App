@@ -57,6 +57,7 @@ test('a monthly payment above the selected month balance is rejected without wri
   const docs = [
     { id: 'oct-sale-1', ref: { id: 'oct-sale-1' }, data: () => ({ commissionRiyal: 60, paidRiyal: 0 }) },
     { id: 'oct-sale-2', ref: { id: 'oct-sale-2' }, data: () => ({ commissionRiyal: 40, paidRiyal: 0 }) },
+    { id: 'oct-sale-3', ref: { id: 'oct-sale-3' }, data: () => ({ commissionRiyal: 250, paidRiyal: 0, status: 'ROLLED_BACK' }) },
   ];
   const transaction = {
     async get(ref) {
