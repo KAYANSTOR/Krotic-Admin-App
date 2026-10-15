@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
+  fetchAllUsers,
+  fetchGlobalConfig,
   fetchUsersWithBilling,
   getAdminDataCacheState,
   invalidateAdminUserData,
@@ -88,6 +90,7 @@ export default function UsersPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [billingRefreshing, setBillingRefreshing] = useState(false);
   const [liveBillingByUid, setLiveBillingByUid] = useState({});
   const [liveSalesReady, setLiveSalesReady] = useState(false);
   const [liveSalesErrors, setLiveSalesErrors] = useState({});
@@ -95,27 +98,53 @@ export default function UsersPage() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
   const latestRequestId = useRef(0);
+  const hasLoadedUsers = useRef(false);
   const navigate = useNavigate();
 
   const fetchData = useCallback(async ({ force = false } = {}) => {
     const requestId = ++latestRequestId.current;
-    setLoading(true);
+    setLoading(!hasLoadedUsers.current);
     setError(null);
+
     try {
-      const { users: usersData, globalConfig: config, errors: nextErrors } = await fetchUsersWithBilling({ force });
+      // Render the base user list as soon as users/config are available.
+      // Financial aggregates can fan out across many networks, so they refresh
+      // after the page is usable instead of blocking the whole phone screen.
+      const [baseUsers, config] = await Promise.all([
+        fetchAllUsers({ force }),
+        fetchGlobalConfig({ force }),
+      ]);
       if (requestId !== latestRequestId.current) return;
+      setUsers(baseUsers);
       setGlobalConfig(config);
-      setUsers(usersData);
+      setUpdatedAt(Date.now());
+      setCacheState(getAdminDataCacheState('all-users'));
+      hasLoadedUsers.current = true;
+      setLoading(false);
+      setBillingRefreshing(true);
+
+      const { users: billedUsers, globalConfig: billedConfig, errors: nextErrors } = await fetchUsersWithBilling({ force });
+      if (requestId !== latestRequestId.current) return;
+      setUsers(billedUsers);
+      setGlobalConfig(billedConfig || config);
       setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
       setUpdatedAt(Date.now());
       setCacheState(getAdminDataCacheState('users-with-billing'));
     } catch (err) {
       if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching data:', err);
-      setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
-      toast.error('خطأ في تحميل بيانات المستخدمين');
+      console.error('Error refreshing user reports:', err);
+      if (!hasLoadedUsers.current) {
+        setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
+        toast.error('خطأ في تحميل بيانات المستخدمين');
+      } else {
+        setPartialErrors((current) => [...current, 'تعذر تحديث المجاميع المالية؛ ما زالت قائمة المستخدمين متاحة.']);
+        toast.error('تم تحميل المستخدمين لكن تعذر تحديث بعض المؤشرات المالية');
+      }
     } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
+      if (requestId === latestRequestId.current) {
+        setLoading(false);
+        setBillingRefreshing(false);
+      }
     }
   }, []);
 
@@ -126,6 +155,7 @@ export default function UsersPage() {
     setUpdatedAt(Date.now());
     setCacheState(state);
     setError(null);
+    hasLoadedUsers.current = true;
     setLoading(false);
   }), []);
 
@@ -484,7 +514,7 @@ export default function UsersPage() {
     toast.success('تم تصدير بيانات المستخدمين');
   }, [filteredUsers, defaultCommission]);
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return (
       <div className="users-page">
         <SkeletonPageHeader />
@@ -521,7 +551,7 @@ export default function UsersPage() {
                 {repairingAccess ? 'جارٍ الإصلاح…' : `إصلاح الحالات القديمة (${formatNumber(accessRepairCount)})`}
               </Button>
             )}
-            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading || billingRefreshing} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
           </div>
         }
       />
@@ -555,6 +585,12 @@ export default function UsersPage() {
             <p className="users-error__title">تعذر تحديث مباشر لبعض الشبكات</p>
             <p className="users-error__msg">يستمر عرض آخر مجاميع متاحة للشبكات المتأثرة؛ راجع الاتصال والصلاحيات ثم حدّث الصفحة.</p>
           </div>
+        </div>
+      )}
+
+      {billingRefreshing && users.length > 0 && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          جاري تحديث مؤشرات العمولة والدفعات من الخادم؛ تبقى قائمة المستخدمين متاحة أثناء التحديث.
         </div>
       )}
 
