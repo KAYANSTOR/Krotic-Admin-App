@@ -16,8 +16,13 @@ export function classifyAccessStatus({ is_trial, is_active, subscriptionEndMs },
 }
 
 export function saleFaceValue(sale) {
-  const raw = sale?.faceValue ?? sale?.amount ?? sale?.amountMinor;
-  const value = Number(raw);
+  const major = sale?.faceValue ?? sale?.amount ?? sale?.amountRiyal;
+  if (major !== null && major !== undefined) {
+    const value = Number(major);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+  const raw = Number(sale?.amountMinor);
+  const value = Number(sale?.moneyPolicyVersion) === 2 ? raw / 100 : raw;
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
@@ -26,6 +31,10 @@ export function saleFaceValue(sale) {
  * (قرار د3: إعادة احتساب العمولة خادمياً على المبيعات التاريخية غير المسوّاة).
  */
 export function saleCommissionMinor(sale, commissionRatePercent = 5) {
+  if (sale?.commissionRiyal !== null && sale?.commissionRiyal !== undefined) {
+    const riyal = Number(sale.commissionRiyal);
+    return Number.isFinite(riyal) && riyal >= 0 ? Math.round(riyal) : 0;
+  }
   const explicit = sale?.commissionMinor ?? sale?.commissionAmount ?? sale?.commission;
   const value = Number(explicit);
   if (Number.isFinite(value) && value > 0) return Math.round(value);

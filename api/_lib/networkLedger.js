@@ -36,6 +36,7 @@ export async function settleNetworkPayment(transaction, { networkRef, salesQuery
     transaction.update(sale.ref, {
       settlement_status: entry.fullySettled ? SETTLED : PARTIAL,
       paidMinor: entry.paidAfterMinor,
+      paidRiyal: entry.paidAfterRiyal,
       settlementId,
       settledAt: FieldValue.serverTimestamp(),
     });
