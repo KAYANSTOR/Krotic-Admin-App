@@ -80,6 +80,8 @@ test('mobile action buttons are visible, distinct, labelled and easy to tap', as
   assert.match(profile, /<span>تعديل<\/span>/);
   assert.match(profile, /<span>الدخول<\/span>/);
   assert.match(css, /\.modal__close\s*\{[^}]*width:44px; height:44px;/);
+  assert.match(css, /\.notif-item__delete\s*\{[\s\S]*?width: 44px; height: 44px;/);
+  assert.match(css, /\.notif-item__delete[^}]*background: var\(--ui-danger-soft\)/);
 });
 
 test('confirmation dialogs wait for async actions and expose failures', async () => {
@@ -96,6 +98,7 @@ test('confirmation dialogs wait for async actions and expose failures', async ()
   assert.match(profile, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
   assert.match(billing, /finally \{\s*setSavingPayment\(false\)/);
   assert.match(billing, /Payment submission failed/);
+  assert.match(billing, /void refreshBillingHistory\(\)/);
 });
 
 test('application status audit is written only after the server confirms settings were saved', async () => {
