@@ -27,7 +27,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
-import { renewNetwork, updateNetworkAccess, adminApiError } from '../lib/adminApi';
+import { renewNetwork, updateNetworkAccess, repairAccessPage, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import useAppRefresh from '../lib/useAppRefresh';
@@ -79,6 +79,7 @@ export default function UsersPage() {
   const [partialErrors, setPartialErrors] = useState([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [repairingAccess, setRepairingAccess] = useState(false);
   const latestRequestId = useRef(0);
   const navigate = useNavigate();
 
@@ -290,6 +291,59 @@ export default function UsersPage() {
     return { total, trial, active, blocked };
   }, [users]);
 
+  const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
+
+  const handleRepairAccess = () => {
+    setConfirmAction({
+      title: 'إصلاح حالات الحظر القديمة',
+      message: `تم اكتشاف ${formatNumber(accessRepairCount)} سجل يحتاج إلى توحيد. سيعتمد الإصلاح حالة accessStatus الحالية ويحدّث الحقول القديمة والحسابات الشبكية المرتبطة دون إعادة تفعيل أي حساب موقوف. تُعالج السجلات على دفعات قابلة للاستئناف.`,
+      variant: 'danger',
+      action: async () => {
+        if (repairingAccess) return;
+        setRepairingAccess(true);
+        const toastId = 'repair-access-state';
+        toast.loading('جارٍ إصلاح سجلات الوصول القديمة…', { id: toastId });
+        let cursor = null;
+        let scanned = 0;
+        let usersUpdated = 0;
+        let networksUpdated = 0;
+        let pages = 0;
+        try {
+          while (true) {
+            if (pages >= 1000) throw new Error('repair_page_limit_reached');
+            const result = await repairAccessPage(cursor, 100);
+            if (!result.ok) {
+              toast.error(adminApiError(result.error, 'تعذر إصلاح حالات الوصول'), { id: toastId });
+              return;
+            }
+            const data = result.data || {};
+            scanned += Number(data.scanned) || 0;
+            usersUpdated += Number(data.usersUpdated) || 0;
+            networksUpdated += Number(data.networksUpdated) || 0;
+            pages += 1;
+            if (data.done === true) break;
+            if (typeof data.nextCursor !== 'string' || !data.nextCursor) {
+              throw new Error('repair_cursor_missing');
+            }
+            cursor = data.nextCursor;
+            toast.loading(`جارٍ فحص السجلات… ${formatNumber(scanned)}`, { id: toastId });
+          }
+          invalidateAdminUserData();
+          await fetchData({ force: true });
+          toast.success(
+            `اكتمل الإصلاح: فحص ${formatNumber(scanned)}، تحديث ${formatNumber(usersUpdated)} حساب و${formatNumber(networksUpdated)} شبكة.`,
+            { id: toastId, duration: 6000 },
+          );
+        } catch (error) {
+          console.error('access compatibility repair failed', error);
+          toast.error('توقف الإصلاح قبل اكتماله. أعد المحاولة؛ يمكن متابعة الدفعات بأمان.', { id: toastId });
+        } finally {
+          setRepairingAccess(false);
+        }
+      },
+    });
+  };
+
   const configuredGlobalCommission = Number(globalConfig?.default_commission_rate);
   const defaultCommission = globalConfig?.default_commission_rate != null
     && globalConfig.default_commission_rate !== ''
@@ -343,7 +397,19 @@ export default function UsersPage() {
         title="إدارة المستخدمين والفوترة"
         subtitle={`${users.length} مستخدم مسجل`}
         actions={
-          <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+          <div className="flex flex-wrap items-center gap-2">
+            {accessRepairCount > 0 && (
+              <Button
+                variant="secondary"
+                icon={RefreshCw}
+                disabled={repairingAccess || loading}
+                onClick={handleRepairAccess}
+              >
+                {repairingAccess ? 'جارٍ الإصلاح…' : `إصلاح الحالات القديمة (${formatNumber(accessRepairCount)})`}
+              </Button>
+            )}
+            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+          </div>
         }
       />
 
