@@ -139,10 +139,22 @@ export default function UsersPage() {
           network.uid,
           {
             ...summarizeCompletedSales(network.sales || []),
-            recordedPayments: Number(network.recordedPayments) || 0,
+            recordedPayments: network.recordedPayments == null
+              ? undefined
+              : (Number(network.recordedPayments) || 0),
           },
         ]));
         setLiveBillingByUid(next);
+        const recoveredUids = networks
+          .filter((network) => network.recordedPayments != null)
+          .map((network) => network.uid);
+        if (recoveredUids.length) {
+          setLiveSalesErrors((previous) => {
+            const updated = { ...previous };
+            recoveredUids.forEach((uid) => { delete updated[uid]; });
+            return updated;
+          });
+        }
         if (freshness?.ready) setLiveSalesReady(true);
       },
       (listenerError, uid) => {
@@ -373,7 +385,14 @@ export default function UsersPage() {
   const liveSalesErrorCount = Object.keys(liveSalesErrors).length;
   const getUserBilling = (user) => {
     const live = liveBillingByUid[user.uid];
-    if (live) return { ...user, ...live };
+    if (live) {
+      const { recordedPayments, ...liveSales } = live;
+      return {
+        ...user,
+        ...liveSales,
+        recordedPayments: recordedPayments == null ? user.recordedPayments : recordedPayments,
+      };
+    }
     if (liveSalesReady && !liveSalesErrors[user.uid] && !liveSalesErrors._global) {
       return {
         ...user,
