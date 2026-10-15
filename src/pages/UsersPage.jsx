@@ -142,7 +142,13 @@ export default function UsersPage() {
         }
         invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
-          ? { ...u, accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE', is_active: newStatus }
+          ? {
+              ...u,
+              accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
+              is_active: newStatus,
+              is_trial: false,
+              accessNeedsRepair: false,
+            }
           : u)));
         logAdminAction({
           action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
@@ -168,7 +174,9 @@ export default function UsersPage() {
           return;
         }
         invalidateAdminUserData(user.uid);
-        setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, accessStatus: 'ACTIVE_PAID', is_trial: false } : u)));
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid
+          ? { ...u, accessStatus: 'ACTIVE_PAID', is_active: true, is_trial: false, accessNeedsRepair: false }
+          : u)));
         logAdminAction({
           action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
           targetType: 'user',
@@ -196,7 +204,15 @@ export default function UsersPage() {
         const endMs = Number(result.data?.subscriptionEndsAt) || null;
         const newEnd = endMs ? Timestamp.fromMillis(endMs) : null;
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
-          ? { ...u, accessStatus: 'ACTIVE_PAID', subscriptionEndsAt: newEnd, subscription_end_date: newEnd }
+          ? {
+              ...u,
+              accessStatus: 'ACTIVE_PAID',
+              is_active: true,
+              is_trial: false,
+              accessNeedsRepair: false,
+              subscriptionEndsAt: newEnd,
+              subscription_end_date: newEnd,
+            }
           : u)));
         logAdminAction({
           action: AUDIT_ACTIONS.USER_RENEW,
@@ -218,7 +234,27 @@ export default function UsersPage() {
       return;
     }
     invalidateAdminUserData(uid);
-    setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
+    setUsers((prev) => prev.map((u) => (u.uid === uid
+      ? {
+          ...u,
+          ...updates,
+          is_active: updates.accessStatus === 'SUSPENDED_GRACE' || updates.accessStatus === 'LOCKED_EXPIRED'
+            ? false
+            : updates.accessStatus === 'TRIAL' || updates.accessStatus === 'ACTIVE_PAID'
+              ? true
+              : u.is_active,
+          is_trial: updates.accessStatus === 'TRIAL'
+            ? true
+            : updates.accessStatus
+              ? false
+              : u.is_trial,
+          ...(updates.subscriptionEndsAt != null ? {
+            subscriptionEndsAt: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
+            subscription_end_date: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
+          } : {}),
+          accessNeedsRepair: false,
+        }
+      : u)));
     setEditingUser(null);
     const edited = users.find((u) => u.uid === uid);
     logAdminAction({
