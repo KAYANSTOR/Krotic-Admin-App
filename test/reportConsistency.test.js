@@ -52,3 +52,22 @@ test('aggregate triggers resolve the owner UID instead of confusing it with netw
   assert.match(source, /resolveAggregateOwnerUid\(event\.params\.networkId\)/);
   assert.match(source, /uid: ownerUid/);
 });
+
+test('forced refresh bypasses Firestore local cache for current reports', async () => {
+  const data = await read('src/lib/adminData.js');
+  assert.match(data, /force \? await getDocsFromServer\(usersRef\) : await getDocs\(usersRef\)/);
+  assert.match(data, /force \? await getDocFromServer\(aggregateRef\) : await getDoc\(aggregateRef\)/);
+  assert.match(data, /force \? getDocsFromServer\(firestoreQuery\) : getDocs\(firestoreQuery\)/);
+  assert.match(data, /force \? await getDocFromServer\(configRef\) : await getDoc\(configRef\)/);
+});
+
+test('user billing totals stream the real payment ledger, not inferred sale allocations', async () => {
+  const [data, users] = await Promise.all([
+    read('src/lib/adminData.js'),
+    read('src/pages/UsersPage.jsx'),
+  ]);
+  assert.match(data, /includePayments = false/);
+  assert.match(data, /recordedPayments: payments\.reduce/);
+  assert.match(users, /\{ includePayments: true \}/);
+  assert.match(users, /recordedPayments: Number\(network\.recordedPayments\) \|\| 0/);
+});
