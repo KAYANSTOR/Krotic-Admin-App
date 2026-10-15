@@ -436,7 +436,7 @@ async function resolveAggregateOwnerUid(networkId, firestore = db) {
     .get();
   if (matches.docs.length === 1) return matches.docs[0].id;
   if (matches.docs.length > 1) throw new Error('ambiguous_network_owner');
-  return networkId;
+  throw new Error('network_owner_unresolved');
 }
 
 exports.updateSaleAggregate = onDocumentWritten('networks/{networkId}/sales/{saleId}', async (event) => {
