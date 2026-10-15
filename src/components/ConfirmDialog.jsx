@@ -33,7 +33,11 @@ export default function ConfirmDialog({
     setSubmitting(true);
     setSubmitError('');
     try {
-      await onConfirm?.();
+      const result = await onConfirm?.();
+      if (result === false) {
+        setSubmitError('لم يكتمل الإجراء. راجع رسالة الخطأ ثم حاول مرة أخرى.');
+        return;
+      }
     } catch (error) {
       console.error('Confirmed admin action failed:', error);
       setSubmitError('تعذر تنفيذ الإجراء. لم يتم تأكيد نجاحه؛ تحقق من الاتصال ثم حاول مرة أخرى.');
