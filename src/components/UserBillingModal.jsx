@@ -123,7 +123,8 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
       toast.success(result.data?.ack ? 'الدفعة مسجلة سابقاً (لم تُكرَّر)' : 'تم تسجيل الدفعة على الخادم');
       setPayAmount('');
       setPayKey(newIdempotencyKey(userUid));
-      await refreshBillingHistory();
+      // Refresh history in the background; do not leave the payment button disabled while all historical sales reload.
+      void refreshBillingHistory();
     } catch (error) {
       console.error('Payment submission failed:', error);
       toast.error('تعذر تأكيد تسجيل الدفعة. أعد المحاولة؛ لن تتكرر الدفعة إذا كان الخادم قد سجلها.');
