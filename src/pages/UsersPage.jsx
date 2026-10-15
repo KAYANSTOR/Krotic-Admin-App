@@ -8,6 +8,7 @@ import {
   getAdminDataCacheState,
   invalidateAdminUserData,
   subscribeAdminDataCache,
+  subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
@@ -27,6 +28,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
+import { summarizeCompletedSales } from '../lib/commission';
 import { renewNetwork, updateNetworkAccess, repairAccessPage, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -86,6 +88,10 @@ export default function UsersPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [liveBillingByUid, setLiveBillingByUid] = useState({});
+  const [liveSalesReady, setLiveSalesReady] = useState(false);
+  const [liveSalesErrors, setLiveSalesErrors] = useState({});
+  const [liveSalesUpdatedAt, setLiveSalesUpdatedAt] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
@@ -123,6 +129,31 @@ export default function UsersPage() {
     setError(null);
     setLoading(false);
   }), []);
+
+  // Keep the user-card financial counters tied to the live sale ledger. The
+  // aggregate document is optimized for summaries and can lag a newly-synced
+  // offline sale; each user row now refreshes as its sales snapshot arrives.
+  useEffect(() => {
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (networks, freshness) => {
+        const next = Object.fromEntries(networks.map((network) => [
+          network.uid,
+          summarizeCompletedSales(network.sales || []),
+        ]));
+        setLiveBillingByUid(next);
+        setLiveSalesUpdatedAt(Date.now());
+        if (freshness?.ready) setLiveSalesReady(true);
+      },
+      (listenerError, uid) => {
+        setLiveSalesErrors((previous) => ({
+          ...previous,
+          [uid || '_global']: listenerError?.message || String(listenerError),
+        }));
+      },
+      () => setLiveSalesReady(true),
+    );
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -337,6 +368,22 @@ export default function UsersPage() {
   }, [users]);
 
   const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
+  const liveSalesErrorCount = Object.keys(liveSalesErrors).length;
+  const getUserBilling = (user) => {
+    const live = liveBillingByUid[user.uid];
+    if (live) return { ...user, ...live };
+    if (liveSalesReady && !liveSalesErrors[user.uid] && !liveSalesErrors._global) {
+      return {
+        ...user,
+        reportedSalesValue: 0,
+        reportedTransactions: 0,
+        commissionDue: 0,
+        outstandingCommission: 0,
+        recordedPayments: 0,
+      };
+    }
+    return user;
+  };
 
   const handleRepairAccess = () => {
     setConfirmAction({
@@ -471,14 +518,32 @@ export default function UsersPage() {
         </div>
       )}
 
+      {!liveSalesReady && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><RefreshCw className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">جارٍ مزامنة مؤشرات المبيعات والعمولات</p>
+            <p className="users-error__msg">تُحدَّث أرقام كل شبكة مع وصول سجلها المباشر. قد تكون الأرقام لبعض الشبكات مؤقتة حتى اكتمال التحميل.</p>
+          </div>
+        </div>
+      )}
+      {liveSalesReady && liveSalesErrorCount > 0 && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
+          <div className="users-error__body">
+            <p className="users-error__title">تعذر تحديث مباشر لبعض الشبكات</p>
+            <p className="users-error__msg">يستمر عرض آخر مجاميع متاحة للشبكات المتأثرة؛ راجع الاتصال والصلاحيات ثم حدّث الصفحة.</p>
+          </div>
+        </div>
+      )}
+
       {partialErrors.length > 0 && (
         <div className="users-error users-error--warning" role="status" aria-live="polite">
           <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
           <div className="users-error__body">
             <p className="users-error__title">بعض بيانات الفوترة غير مكتملة</p>
             <p className="users-error__msg">
-              تم عرض كل المستخدمين، لكن تعذّر تجميع مبيعات/دفعات {partialErrors.length} شبكة.
-              تحقّق من فهرس Firestore المركّب على المبيعات (status + faceValue).
+              تم عرض كل المستخدمين، لكن تعذّر جلب بعض مجاميع الفوترة. ستُعرض المؤشرات المباشرة للشبكات التي نجح تحميلها فقط.
             </p>
             <details className="users-error__details">
               <summary>عرض التفاصيل</summary>
@@ -679,19 +744,19 @@ export default function UsersPage() {
                     </div>
                     <div className="user-card__meta-item">
                       <dt>مبيعاته (ريال)</dt>
-                      <dd><span className="num">{formatNumber(user.reportedSalesValue)}</span></dd>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedSalesValue)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>عدد المبيعات</dt>
-                      <dd><span className="num">{formatNumber(user.reportedTransactions)}</span></dd>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedTransactions)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>عمولته غير المسوّاة</dt>
-                      <dd><span className="num text-primary-600">{formatNumber(user.outstandingCommission)}</span></dd>
+                      <dd><span className="num text-primary-600">{formatNumber(getUserBilling(user).outstandingCommission)}</span></dd>
                     </div>
                     <div className="user-card__meta-item">
                       <dt>المسدّد</dt>
-                      <dd><span className="num">{formatNumber(user.recordedPayments)}</span></dd>
+                      <dd><span className="num">{formatNumber(getUserBilling(user).recordedPayments)}</span></dd>
                     </div>
                   </dl>
 
