@@ -1,5 +1,5 @@
 // src/pages/SettingsPage.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   doc, setDoc, collection, getDocs, writeBatch, Timestamp,
 } from 'firebase/firestore';
@@ -62,6 +62,7 @@ export default function SettingsPage() {
   const [batchDate, setBatchDate] = useState('');
   const [updatingBatch, setUpdatingBatch] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const savedAppStatus = useRef(DEFAULTS.is_app_active);
 
   const fetchConfig = useCallback(async ({ force = false } = {}) => {
     if (force) setRefreshing(true);
@@ -73,6 +74,7 @@ export default function SettingsPage() {
         ...loaded,
         default_commission_rate: loaded?.default_commission_rate ?? 5,
       }));
+      savedAppStatus.current = loaded?.is_app_active ?? DEFAULTS.is_app_active;
       setCacheState(getAdminDataCacheState('global-config'));
       setUpdatedAt(Date.now());
     } catch (error) {
@@ -93,6 +95,7 @@ export default function SettingsPage() {
   useEffect(() => subscribeAdminDataCache('global-config', (data) => {
     if (!data) return;
     setConfig((prev) => ({ ...prev, ...data, default_commission_rate: data.default_commission_rate ?? 5 }));
+    savedAppStatus.current = data.is_app_active ?? savedAppStatus.current;
     setCacheState(getAdminDataCacheState('global-config'));
   }), []);
 
@@ -118,6 +121,17 @@ export default function SettingsPage() {
       return;
     }
     invalidateAdminGlobalConfigData();
+    const previousAppStatus = savedAppStatus.current;
+    savedAppStatus.current = patch.is_app_active;
+    if (previousAppStatus !== patch.is_app_active) {
+      await logAdminAction({
+        action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
+        targetType: 'settings',
+        targetId: 'global_config',
+        targetLabel: 'حالة التطبيق',
+        details: { is_app_active: patch.is_app_active },
+      });
+    }
     logAdminAction({
       action: AUDIT_ACTIONS.SETTINGS_SAVE,
       targetType: 'settings',
@@ -142,15 +156,10 @@ export default function SettingsPage() {
   };
 
   const confirmDisableApp = () => {
+    // This confirms the proposed form value only. The status is actually
+    // changed for users only after the global "Save changes" request succeeds.
     setConfig((prev) => ({ ...prev, is_app_active: false }));
     setShowConfirm(false);
-    logAdminAction({
-      action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
-      targetType: 'settings',
-      targetId: 'global_config',
-      targetLabel: 'حالة التطبيق',
-      details: { is_app_active: false },
-    });
   };
 
   const handleBatchUpdateExpiry = async () => {
