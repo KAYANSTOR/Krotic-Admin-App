@@ -40,6 +40,7 @@ export const ADMIN_API_ERRORS = {
   settlement_failed: 'تعذر اعتماد التسوية على الخادم.',
   settings_failed: 'تعذر حفظ الإعدادات على الخادم.',
   network_action_failed: 'تعذر تنفيذ إجراء الشبكة على الخادم.',
+  repair_limit_invalid: 'حجم دفعة إصلاح حالات الوصول غير صالح.',
   owner_uid_invalid: 'معرّف مالك الشبكة غير صالح.',
   access_status_invalid: 'حالة الوصول غير صالحة.',
   subscription_end_invalid: 'تاريخ الانتهاء غير صالح.',
@@ -124,6 +125,11 @@ export async function renewNetwork(uid, extensionDays = 30) {
 
 export async function batchExpiry(subscriptionEndsAt) {
   return callAdminApi('/api/networks', { action: 'batch-expiry', subscriptionEndsAt });
+}
+
+/** إصلاح دفعة واحدة من سجلات الوصول القديمة، مع متابعة cursor إلى أن ينتهي الترحيل. */
+export async function repairAccessPage(cursor = null, limit = 100) {
+  return callAdminApi('/api/networks', { action: 'repair-access', cursor, limit });
 }
 
 /** إدارة المدراء عبر POST /api/admins (قرار و3: خادمي فقط). */
