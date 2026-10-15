@@ -30,3 +30,21 @@ export function saleOutstanding(sale) {
 export function sumOutstanding(sales = []) {
   return sales.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
 }
+
+/**
+ * The shared financial definition used by dashboard, sales and user cards:
+ * only completed sales are financially counted; commission is never invented
+ * locally, and outstanding uses the same server snapshots as the sales ledger.
+ */
+export function summarizeCompletedSales(sales = []) {
+  const completedSales = sales.filter((sale) => sale?.status === 'COMPLETED');
+  const commissionDue = sumCommission(completedSales);
+  const outstandingCommission = sumOutstanding(completedSales);
+  return {
+    reportedSalesValue: completedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0),
+    reportedTransactions: completedSales.length,
+    commissionDue,
+    outstandingCommission,
+    recordedPayments: Math.max(0, commissionDue - outstandingCommission),
+  };
+}
