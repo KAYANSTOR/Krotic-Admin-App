@@ -20,14 +20,15 @@ import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js'
 import { nextNetworkSequence, formatNetworkId, parseNetworkId } from './_lib/networkId.js';
 import { encryptNetworkSecret, generateNetworkSecret } from './_lib/networkSecret.js';
 import { ensureNetworkSecret } from './_lib/networkSecretStore.js';
+import { ACCESS_STATUSES, legacyAccessFields } from './_lib/accessStatus.js';
 
-export const ACCESS_STATUSES = ['TRIAL', 'ACTIVE_PAID', 'SUSPENDED_GRACE', 'LOCKED_EXPIRED'];
+export { ACCESS_STATUSES, legacyAccessFields };
 export const TRIAL_DAYS = 30;
 export const RENEWAL_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_WARNING = 500;
-const BATCH_LIMIT = 450;
+const BATCH_LIMIT = 200;
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -46,16 +47,6 @@ function normalizeBody(body) {
 export function computeRenewalEnd(previousEndMs, now, extensionDays = RENEWAL_DAYS) {
   const base = Math.max(Number(previousEndMs) || 0, Number(now) || 0);
   return base + extensionDays * DAY_MS;
-}
-
-/** توافق مركزي مع الحقول القديمة التي ما زالت نسخ Android ولوحة الإدارة تقرؤها. */
-export function legacyAccessFields(accessStatus, endAt) {
-  const fields = {
-    is_active: accessStatus === 'TRIAL' || accessStatus === 'ACTIVE_PAID',
-    is_trial: accessStatus === 'TRIAL',
-  };
-  if (endAt !== undefined) fields.subscription_end_date = endAt;
-  return fields;
 }
 
 export function validateNetworkInput(body) {
@@ -278,16 +269,42 @@ async function batchExpiry(db, { value, actorUid, now }) {
   const snap = await db.collection('users').where('accessStatus', '==', 'ACTIVE_PAID').get();
   const end = Timestamp.fromMillis(value.subscriptionEndsAtMs);
   let updated = 0;
+  let networksUpdated = 0;
   for (let index = 0; index < snap.docs.length; index += BATCH_LIMIT) {
+    const docs = snap.docs.slice(index, index + BATCH_LIMIT);
+    const networkRefsByPath = new Map();
+    for (const docSnap of docs) {
+      const networkId = docSnap.data()?.networkId;
+      if (parseNetworkId(networkId)) {
+        const networkRef = db.collection('networks').doc(networkId);
+        networkRefsByPath.set(networkRef.path, networkRef);
+      }
+    }
+    const networkRefs = [...networkRefsByPath.values()];
+    const networkSnaps = networkRefs.length ? await db.getAll(...networkRefs) : [];
+    const existingNetworks = new Map(networkSnaps.filter((item) => item.exists).map((item) => [item.ref.path, item]));
     const batch = db.batch();
-    snap.docs.slice(index, index + BATCH_LIMIT).forEach((docSnap) => {
-      batch.set(docSnap.ref, { subscriptionEndsAt: end, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    });
+
+    for (const docSnap of docs) {
+      const patch = {
+        subscriptionEndsAt: end,
+        subscription_end_date: end,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      batch.set(docSnap.ref, patch, { merge: true });
+      updated += 1;
+
+      const networkId = docSnap.data()?.networkId;
+      const networkRef = parseNetworkId(networkId) ? db.collection('networks').doc(networkId) : null;
+      if (networkRef && existingNetworks.has(networkRef.path)) {
+        batch.set(networkRef, patch, { merge: true });
+        networksUpdated += 1;
+      }
+    }
     await batch.commit();
-    updated += Math.min(BATCH_LIMIT, snap.docs.length - index);
   }
-  await audit(db, { action: 'SUBSCRIPTION_BATCH', actorUid, uid: null, details: { subscriptionEndsAt: value.subscriptionEndsAtMs, updated }, now });
-  return { status: 'batched', updated };
+  await audit(db, { action: 'SUBSCRIPTION_BATCH', actorUid, uid: null, details: { subscriptionEndsAt: value.subscriptionEndsAtMs, updated, networksUpdated }, now });
+  return { status: 'batched', updated, networksUpdated };
 }
 
 
