@@ -59,7 +59,7 @@ test('forced refresh bypasses Firestore local cache for current reports', async 
   const data = await read('src/lib/adminData.js');
   assert.match(data, /force \? await getDocsFromServer\(usersRef\) : await getDocs\(usersRef\)/);
   assert.match(data, /force \? await getDocFromServer\(aggregateRef\) : await getDoc\(aggregateRef\)/);
-  assert.match(data, /force\\s*\\?\\s*getDocsFromServer\\(firestoreQuery\\)\\s*:\\s*getDocs\\(firestoreQuery\\)/);
+  assert.match(data, /force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)/);
   assert.match(data, /force \? await getDocFromServer\(configRef\) : await getDoc\(configRef\)/);
 });
 
@@ -72,4 +72,5 @@ test('user billing totals stream the real payment ledger, not inferred sale allo
   assert.match(data, /recordedPayments: includePaymentTotals && paymentTotalsByUid\.has\(uid\) \? paymentTotalsByUid\.get\(uid\) : undefined/);
   assert.match(users, /\{ includePaymentTotals: true \}/);
   assert.match(users, /recordedPayments: network\.recordedPayments == null/);
+  assert.match(users, /recordedPayments: recordedPayments == null \? user\.recordedPayments : recordedPayments/);
 });
