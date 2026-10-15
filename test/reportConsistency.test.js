@@ -104,3 +104,19 @@ test('phone reports stay visible during refresh and show the user list before ag
   assert.match(users, /setLoading\(false\);\s*setBillingRefreshing\(true\)/);
   assert.match(users, /if \(loading && users\.length === 0\)/);
 });
+
+test('legacy commission reconciliation writes server snapshots and is available with UID confirmation', async () => {
+  const [api, profile] = await Promise.all([
+    read('api/migrate.js'),
+    read('src/pages/UserProfilePage.jsx'),
+  ]);
+  const reconcileFunction = api.match(/export async function reconcileLegacyCommissionData[\s\S]*?^\}/m)?.[0] || '';
+  assert.match(api, /action === 'reconcile-legacy-commissions'/);
+  assert.match(reconcileFunction, /batch\.update/);
+  assert.match(reconcileFunction, /commissionReconciliationSource: 'admin_legacy_backfill'/);
+  assert.match(reconcileFunction, /rebuildNetwork\(db/);
+  assert.doesNotMatch(api, /preview-legacy-commissions/);
+  assert.match(profile, /إعادة احتساب العمولات القديمة/);
+  assert.match(profile, /requireText: uid/);
+  assert.match(profile, /النسبة الحالية/);
+});
