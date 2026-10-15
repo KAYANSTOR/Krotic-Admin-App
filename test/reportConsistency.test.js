@@ -90,3 +90,17 @@ test('row action buttons remain visible and usable on phone-sized screens', asyn
   assert.match(profile, /aria-label=\{user\.is_active === false \? 'إلغاء حظر المستخدم' : 'حظر المستخدم'\}/);
   assert.match(users, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
 });
+
+
+test('phone reports stay visible during refresh and show the user list before aggregate fan-out completes', async () => {
+  const [dashboard, sales, users] = await Promise.all([
+    read('src/pages/DashboardPage.jsx'),
+    read('src/pages/SalesPage.jsx'),
+    read('src/pages/UsersPage.jsx'),
+  ]);
+  assert.match(dashboard, /if \(loading && !stats\)/);
+  assert.match(sales, /if \(loading && networkSales\.length === 0 && !hasRealtimeSnapshot\.current\)/);
+  assert.match(users, /fetchAllUsers\(\{ force \}\)/);
+  assert.match(users, /setLoading\(false\);\s*setBillingRefreshing\(true\)/);
+  assert.match(users, /if \(loading && users\.length === 0\)/);
+});
