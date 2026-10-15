@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -5,6 +6,7 @@ import {
   computeRenewalEnd,
   ACCESS_STATUSES,
   legacyAccessFields,
+  updateAccess,
   TRIAL_DAYS,
   RENEWAL_DAYS,
 } from '../api/networks.js';
@@ -78,4 +80,83 @@ test('legacy subscription end is kept in sync when access dates change', () => {
     is_trial: false,
     subscription_end_date: endAt,
   });
+});
+
+
+test('updateAccess atomically synchronizes suspension and reactivation fields', async () => {
+  const documents = new Map([
+    ['users/user_1', {
+      uid: 'user_1',
+      networkId: 'NET-10001',
+      accessStatus: 'TRIAL',
+      is_active: true,
+      is_trial: true,
+    }],
+    ['networks/NET-10001', {
+      owner_uid: 'user_1',
+      accessStatus: 'TRIAL',
+      is_active: true,
+      is_trial: true,
+    }],
+  ]);
+  const auditEntries = [];
+  const reference = (collection, id) => ({ path: `${collection}/${id}`, id });
+  const db = {
+    collection(collection) {
+      return {
+        doc(id) { return reference(collection, id); },
+        async add(value) { auditEntries.push(value); },
+      };
+    },
+    async runTransaction(callback) {
+      return callback({
+        async get(ref) {
+          const current = documents.get(ref.path);
+          return { exists: current !== undefined, data: () => current, ref };
+        },
+        set(ref, value, options = {}) {
+          const current = documents.get(ref.path) || {};
+          documents.set(ref.path, options.merge ? { ...current, ...value } : { ...value });
+        },
+      });
+    },
+  };
+
+  const suspended = await updateAccess(db, {
+    value: { uid: 'user_1', accessStatus: 'SUSPENDED_GRACE' },
+    actorUid: 'admin_1',
+    now: 1_800_000_000_000,
+  });
+  assert.equal(suspended.status, 'updated');
+  for (const path of ['users/user_1', 'networks/NET-10001']) {
+    const document = documents.get(path);
+    assert.equal(document.accessStatus, 'SUSPENDED_GRACE');
+    assert.equal(document.is_active, false);
+    assert.equal(document.is_trial, false);
+  }
+
+  await updateAccess(db, {
+    value: { uid: 'user_1', accessStatus: 'ACTIVE_PAID' },
+    actorUid: 'admin_1',
+    now: 1_800_000_000_001,
+  });
+  for (const path of ['users/user_1', 'networks/NET-10001']) {
+    const document = documents.get(path);
+    assert.equal(document.accessStatus, 'ACTIVE_PAID');
+    assert.equal(document.is_active, true);
+    assert.equal(document.is_trial, false);
+  }
+
+  const endMs = 1_900_000_000_000;
+  await updateAccess(db, {
+    value: { uid: 'user_1', subscriptionEndsAtMs: endMs },
+    actorUid: 'admin_1',
+    now: 1_800_000_000_002,
+  });
+  for (const path of ['users/user_1', 'networks/NET-10001']) {
+    const document = documents.get(path);
+    assert.equal(document.subscriptionEndsAt.toMillis(), endMs);
+    assert.equal(document.subscription_end_date.toMillis(), endMs);
+  }
+  assert.equal(auditEntries.length, 3);
 });
