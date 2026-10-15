@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban, UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -15,10 +15,10 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
-import { saleCommission, saleOutstanding } from '../lib/commission';
+import { saleCommission, saleOutstanding, sumOutstanding } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
-  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
+  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData, subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
 import { renewNetwork, updateNetworkAccess, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -42,14 +42,22 @@ export default function UserProfilePage() {
   const [billing, setBilling] = useState(false);
   const [authModal, setAuthModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [liveSalesError, setLiveSalesError] = useState('');
+  const liveSalesSnapshotVersion = useRef(0);
 
   const load = useCallback(async ({ force = false } = {}) => {
+    const salesVersionAtStart = liveSalesSnapshotVersion.current;
     setLoading(true);
     try {
       const { users = [] } = await fetchUsersWithBilling({ force });
       setUser(users.find((item) => item.uid === uid) || null);
       const billingHistory = await fetchUserBillingHistory(uid, { force });
-      setHistory({ sales: billingHistory.sales || [], payments: billingHistory.payments || [] });
+      setHistory((previous) => ({
+        sales: liveSalesSnapshotVersion.current !== salesVersionAtStart
+          ? previous.sales
+          : (billingHistory.sales || []),
+        payments: billingHistory.payments || [],
+      }));
       setUpdatedAt(Date.now());
     } catch (error) {
       console.error('profile load failed', error);
@@ -59,6 +67,29 @@ export default function UserProfilePage() {
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (networks) => {
+        const network = networks.find((item) => item.uid === uid);
+        if (!network) return;
+        liveSalesSnapshotVersion.current += 1;
+        setHistory((previous) => ({
+          ...previous,
+          sales: (network.sales || []).filter((sale) => sale.status === 'COMPLETED'),
+        }));
+        setUpdatedAt(Date.now());
+        setLiveSalesError('');
+      },
+      (error, failedUid) => {
+        if (failedUid === uid || !failedUid) setLiveSalesError(error?.message || String(error));
+      },
+      () => {},
+    );
+    return unsubscribe;
+  }, [uid]);
+
+
 
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
@@ -83,7 +114,7 @@ export default function UserProfilePage() {
     ) === historyMonth);
   const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-  const outstanding = Math.max(0, commissionDue - totalPaid);
+  const outstanding = sumOutstanding(sales);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
 
   const applyAccess = (patch, { successMessage, auditAction, details }) => {
@@ -154,6 +185,12 @@ export default function UserProfilePage() {
           </>
         }
       />
+
+      {liveSalesError && (
+        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
+          تعذّر تحديث سجل المبيعات مباشرة؛ يُعرض آخر سجل متاح. حدّث الصفحة بعد التحقق من الاتصال.
+        </div>
+      )}
 
       <div className="mb-4 max-w-xs">
         <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
