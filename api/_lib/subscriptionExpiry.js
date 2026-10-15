@@ -1,4 +1,5 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { legacyAccessFields } from './accessStatus.js';
 
 const BATCH_SIZE = 200;
 const ELIGIBLE_STATUSES = new Set(['TRIAL', 'ACTIVE_PAID']);
@@ -74,6 +75,7 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
         if (!userSnapshot?.exists || !shouldLockExpiredAccount(userSnapshot.data(), now)) continue;
         const patch = {
           accessStatus: 'LOCKED_EXPIRED',
+          ...legacyAccessFields('LOCKED_EXPIRED'),
           lockedAt: Timestamp.fromMillis(now),
           updatedAt: FieldValue.serverTimestamp(),
         };
