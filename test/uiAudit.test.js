@@ -92,6 +92,7 @@ test('confirmation dialogs wait for async actions and expose failures', async ()
     read('src/components/UserBillingModal.jsx'),
   ]);
   assert.match(dialog, /await onConfirm\?\.\(\)/);
+  assert.match(dialog, /if \(result === false\)/);
   assert.match(dialog, /loading=\{submitting\}/);
   assert.match(dialog, /تعذر تنفيذ الإجراء/);
   assert.match(users, /await confirmAction\.action\(\); setConfirmAction\(null\)/);
@@ -113,14 +114,36 @@ test('application status audit is written only after the server confirms setting
   assert.match(settings, /لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على/);
 });
 
-test('mobile action dialogs escape the transformed pull-to-refresh container', async () => {
+
+test('failed admin actions leave confirmation open and always release loading states', async () => {
+  const [users, profile, admins, notifications, settings] = await Promise.all([
+    read('src/pages/UsersPage.jsx'),
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/pages/AdminsPage.jsx'),
+    read('src/pages/NotificationsPage.jsx'),
+    read('src/pages/SettingsPage.jsx'),
+  ]);
+  assert.match(users, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(profile, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(admins, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(notifications, /catch \(error\) \{[\s\S]*?return false;\s*\} finally \{\s*setDeleting\(false\)/);
+  assert.match(settings, /if \(!result\.ok\) \{\s*toast\.error\(adminApiError\(result\.error, 'تعذر تحديث تواريخ الانتهاء'\)\);\s*return false;/);
+  assert.match(settings, /finally \{\s*setUpdatingBatch\(false\)/);
+  const batchHandler = settings.slice(
+    settings.indexOf('const handleBatchUpdateExpiry = async () => {'),
+    settings.indexOf('const update = (patch)', settings.indexOf('const handleBatchUpdateExpiry = async () => {')),
+  );
+  assert.ok(batchHandler.indexOf('if (!result.ok)') < batchHandler.indexOf('setShowBatchConfirm(false)'));
+});
+
+test('all modal dialogs escape the pull-to-refresh containing block on mobile', async () => {
   const [modal, pullToRefresh, css] = await Promise.all([
     read('src/components/ui/Modal.jsx'),
     read('src/components/PullToRefresh.jsx'),
     read('src/index.css'),
   ]);
-  assert.match(css, /\.ptr__content\s*\{[^}]*will-change:\s*transform/);
-  assert.match(pullToRefresh, /className="ptr__content"/);
+  assert.match(pullToRefresh, /className="ptr__content"[^>]*style=\{\{ transform: pull \? \`translateY/);
+  assert.match(css, /\.ptr__content \{[^}]*will-change: transform/);
   assert.match(modal, /import \{ createPortal \} from 'react-dom'/);
   assert.match(modal, /return createPortal\([\s\S]*?document\.body/);
   assert.match(modal, /const onCloseRef = useRef\(onClose\)/);
