@@ -155,6 +155,8 @@
   /* ===== الحقول ===== */
   .label-field { display:block; margin-bottom:.4rem; font-size:.8125rem; font-weight:700; color:var(--ui-ink-soft); }
   .field-hint { margin-top:.4rem; font-size:.75rem; line-height:1.6; color:var(--ui-muted); }
+  .field-error { margin-top:.375rem; color:var(--ui-danger-ink); font-size:.8125rem; font-weight:700; line-height:1.5; }
+  .input-field[aria-invalid="true"] { border-color:var(--ui-danger); box-shadow:0 0 0 3px rgba(198,93,93,.1); }
   .field-control { position:relative; }
   .input-field { width:100%; min-height:44px; padding:.625rem 1rem; border:1px solid var(--ui-line-strong); border-radius:13px; background:var(--ui-white); color:var(--ui-ink); font-size:.875rem; transition:border-color .16s var(--ui-ease), box-shadow .16s var(--ui-ease); }
   .input-field::placeholder { color:var(--ui-faint); }
