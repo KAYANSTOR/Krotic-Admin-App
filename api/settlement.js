@@ -16,6 +16,7 @@ import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js'
 import { isPositiveRiyal } from './_lib/money.js';
 import { parseNetworkId } from './_lib/networkId.js';
 import { settleNetworkPayment } from './_lib/networkLedger.js';
+import { legacyAccessFields } from './_lib/accessStatus.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -127,20 +128,29 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     if (!userSnap.exists) return { status: 'account_not_found', settlementId };
     const user = userSnap.data() || {};
 
-    // دفتر الرصيد التراكمي الموحّد + تسوية FIFO على مستند الشبكة.
+    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+    const extensionApplied = value.extensionDays > 0;
+    const base = Math.max(previousEnd, now);
+    const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
+    const endAt = extensionApplied ? new Date(nextEnd) : null;
+    const accessPatch = extensionApplied
+      ? {
+          accessStatus: 'ACTIVE_PAID',
+          ...legacyAccessFields('ACTIVE_PAID', endAt),
+          subscriptionEndsAt: endAt,
+        }
+      : {};
+
+    // دفتر الرصيد والتجديد يُكتبان على مستند الشبكة مرة واحدة داخل المعاملة.
     const ledger = await settleNetworkPayment(transaction, {
       networkRef,
       salesQuery,
       amountMinor: value.amountMinor,
       settlementId,
+      networkAccessPatch: accessPatch,
     });
     const allocatedMinor = ledger.allocatedMinor;
     const outstandingAfterMinor = ledger.outstandingBalance;
-
-    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-    const extensionApplied = value.extensionDays > 0;
-    const base = Math.max(previousEnd, now);
-    const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
 
     transaction.set(settlementRef, {
       settlementId,
@@ -172,9 +182,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
 
     if (extensionApplied) {
       transaction.update(userRef, {
-        accessStatus: 'ACTIVE_PAID',
-        subscriptionEndsAt: new Date(nextEnd),
-        subscription_end_date: new Date(nextEnd),
+        ...accessPatch,
         updated_at: FieldValue.serverTimestamp(),
       });
     }

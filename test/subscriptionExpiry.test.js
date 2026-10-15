@@ -23,3 +23,22 @@ test('does not lock records with missing, invalid, or unknown status/expiry data
   assert.equal(expiryMillis('not-a-date'), 0);
   assert.equal(expiryMillis({ toMillis: () => NOW }), NOW);
 });
+
+
+test('modern active status overrides a stale false legacy flag during expiry checks', () => {
+  assert.equal(shouldLockExpiredAccount({
+    accessStatus: 'ACTIVE_PAID',
+    is_active: false,
+    subscriptionEndsAt: NOW - 1,
+  }, NOW), true);
+  assert.equal(shouldLockExpiredAccount({
+    accessStatus: 'ACTIVE_PAID',
+    is_active: false,
+    subscriptionEndsAt: NOW + 1,
+  }, NOW), false);
+  assert.equal(shouldLockExpiredAccount({
+    accessStatus: 'SUSPENDED_GRACE',
+    is_active: true,
+    subscription_end_date: new Date(NOW - 1),
+  }, NOW), false);
+});

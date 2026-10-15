@@ -27,13 +27,22 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
-import { renewNetwork, updateNetworkAccess, adminApiError } from '../lib/adminApi';
+import { renewNetwork, updateNetworkAccess, repairAccessPage, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 24;
 const FILTER_STORAGE_KEY = 'krotak:users-filter';
+
+function hasExpiryCompatibilityGap(user) {
+  const modernValue = user?.subscriptionEndsAt;
+  const legacyValue = user?.subscription_end_date;
+  if (modernValue == null && legacyValue == null) return false;
+  const modernDate = toDate(modernValue);
+  const legacyDate = toDate(legacyValue);
+  return !modernDate || !legacyDate || modernDate.getTime() !== legacyDate.getTime();
+}
 
 function loadSavedFilter() {
   try {
@@ -79,6 +88,7 @@ export default function UsersPage() {
   const [partialErrors, setPartialErrors] = useState([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [repairingAccess, setRepairingAccess] = useState(false);
   const latestRequestId = useRef(0);
   const navigate = useNavigate();
 
@@ -141,7 +151,13 @@ export default function UsersPage() {
         }
         invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
-          ? { ...u, accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE', is_active: newStatus }
+          ? {
+              ...u,
+              accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
+              is_active: newStatus,
+              is_trial: false,
+              accessNeedsRepair: hasExpiryCompatibilityGap(u),
+            }
           : u)));
         logAdminAction({
           action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
@@ -167,7 +183,9 @@ export default function UsersPage() {
           return;
         }
         invalidateAdminUserData(user.uid);
-        setUsers((prev) => prev.map((u) => (u.uid === user.uid ? { ...u, accessStatus: 'ACTIVE_PAID', is_trial: false } : u)));
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid
+          ? { ...u, accessStatus: 'ACTIVE_PAID', is_active: true, is_trial: false, accessNeedsRepair: hasExpiryCompatibilityGap(u) }
+          : u)));
         logAdminAction({
           action: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
           targetType: 'user',
@@ -195,7 +213,15 @@ export default function UsersPage() {
         const endMs = Number(result.data?.subscriptionEndsAt) || null;
         const newEnd = endMs ? Timestamp.fromMillis(endMs) : null;
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
-          ? { ...u, accessStatus: 'ACTIVE_PAID', subscriptionEndsAt: newEnd, subscription_end_date: newEnd }
+          ? {
+              ...u,
+              accessStatus: 'ACTIVE_PAID',
+              is_active: true,
+              is_trial: false,
+              accessNeedsRepair: false,
+              subscriptionEndsAt: newEnd,
+              subscription_end_date: newEnd,
+            }
           : u)));
         logAdminAction({
           action: AUDIT_ACTIONS.USER_RENEW,
@@ -217,7 +243,27 @@ export default function UsersPage() {
       return;
     }
     invalidateAdminUserData(uid);
-    setUsers((prev) => prev.map((u) => (u.uid === uid ? { ...u, ...updates } : u)));
+    setUsers((prev) => prev.map((u) => (u.uid === uid
+      ? {
+          ...u,
+          ...updates,
+          is_active: updates.accessStatus === 'SUSPENDED_GRACE' || updates.accessStatus === 'LOCKED_EXPIRED'
+            ? false
+            : updates.accessStatus === 'TRIAL' || updates.accessStatus === 'ACTIVE_PAID'
+              ? true
+              : u.is_active,
+          is_trial: updates.accessStatus === 'TRIAL'
+            ? true
+            : updates.accessStatus
+              ? false
+              : u.is_trial,
+          ...(updates.subscriptionEndsAt != null ? {
+            subscriptionEndsAt: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
+            subscription_end_date: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
+          } : {}),
+          accessNeedsRepair: false,
+        }
+      : u)));
     setEditingUser(null);
     const edited = users.find((u) => u.uid === uid);
     logAdminAction({
@@ -290,6 +336,59 @@ export default function UsersPage() {
     return { total, trial, active, blocked };
   }, [users]);
 
+  const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
+
+  const handleRepairAccess = () => {
+    setConfirmAction({
+      title: 'إصلاح حالات الحظر القديمة',
+      message: `تم اكتشاف ${formatNumber(accessRepairCount)} سجل يحتاج إلى توحيد. سيعتمد الإصلاح حالة accessStatus الحالية ويحدّث الحقول القديمة والحسابات الشبكية المرتبطة دون إعادة تفعيل أي حساب موقوف. تُعالج السجلات على دفعات قابلة للاستئناف.`,
+      variant: 'danger',
+      action: async () => {
+        if (repairingAccess) return;
+        setRepairingAccess(true);
+        const toastId = 'repair-access-state';
+        toast.loading('جارٍ إصلاح سجلات الوصول القديمة…', { id: toastId });
+        let cursor = null;
+        let scanned = 0;
+        let usersUpdated = 0;
+        let networksUpdated = 0;
+        let pages = 0;
+        try {
+          while (true) {
+            if (pages >= 1000) throw new Error('repair_page_limit_reached');
+            const result = await repairAccessPage(cursor, 100);
+            if (!result.ok) {
+              toast.error(adminApiError(result.error, 'تعذر إصلاح حالات الوصول'), { id: toastId });
+              return;
+            }
+            const data = result.data || {};
+            scanned += Number(data.scanned) || 0;
+            usersUpdated += Number(data.usersUpdated) || 0;
+            networksUpdated += Number(data.networksUpdated) || 0;
+            pages += 1;
+            if (data.done === true) break;
+            if (typeof data.nextCursor !== 'string' || !data.nextCursor) {
+              throw new Error('repair_cursor_missing');
+            }
+            cursor = data.nextCursor;
+            toast.loading(`جارٍ فحص السجلات… ${formatNumber(scanned)}`, { id: toastId });
+          }
+          invalidateAdminUserData();
+          await fetchData({ force: true });
+          toast.success(
+            `اكتمل الإصلاح: فحص ${formatNumber(scanned)}، تحديث ${formatNumber(usersUpdated)} حساب و${formatNumber(networksUpdated)} شبكة.`,
+            { id: toastId, duration: 6000 },
+          );
+        } catch (error) {
+          console.error('access compatibility repair failed', error);
+          toast.error('توقف الإصلاح قبل اكتماله. أعد المحاولة؛ يمكن متابعة الدفعات بأمان.', { id: toastId });
+        } finally {
+          setRepairingAccess(false);
+        }
+      },
+    });
+  };
+
   const configuredGlobalCommission = Number(globalConfig?.default_commission_rate);
   const defaultCommission = globalConfig?.default_commission_rate != null
     && globalConfig.default_commission_rate !== ''
@@ -343,7 +442,19 @@ export default function UsersPage() {
         title="إدارة المستخدمين والفوترة"
         subtitle={`${users.length} مستخدم مسجل`}
         actions={
-          <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+          <div className="flex flex-wrap items-center gap-2">
+            {accessRepairCount > 0 && (
+              <Button
+                variant="secondary"
+                icon={RefreshCw}
+                disabled={repairingAccess || loading}
+                onClick={handleRepairAccess}
+              >
+                {repairingAccess ? 'جارٍ الإصلاح…' : `إصلاح الحالات القديمة (${formatNumber(accessRepairCount)})`}
+              </Button>
+            )}
+            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+          </div>
         }
       />
 

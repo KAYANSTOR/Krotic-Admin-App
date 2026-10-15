@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from './_lib/firebaseAdmin.js';
+import { legacyAccessFields } from './_lib/accessStatus.js';
 import { formatNetworkId, nextNetworkSequence } from './_lib/networkId.js';
 import { encryptNetworkSecret, generateNetworkSecret } from './_lib/networkSecret.js';
 
@@ -49,14 +50,6 @@ export function validateSelfRegistration(body) {
 
 function phoneIndexId(phone) {
   return createHash('sha256').update(phone, 'utf8').digest('hex');
-}
-
-function legacyAccessFields(accessStatus, endAt) {
-  return {
-    is_active: accessStatus === 'TRIAL' || accessStatus === 'ACTIVE_PAID',
-    is_trial: accessStatus === 'TRIAL',
-    subscription_end_date: endAt,
-  };
 }
 
 /**
