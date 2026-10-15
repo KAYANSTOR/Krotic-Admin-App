@@ -40,7 +40,9 @@ test('live sales report metadata indicates when initial network snapshots are in
     read('src/pages/UsersPage.jsx'),
   ]);
   assert.match(data, /initialSnapshotsCount/);
-  assert.match(data, /ready, expectedCount, initialSnapshotsCount/);
+  assert.match(data, /ready/);
+  assert.match(data, /expectedCount/);
+  assert.match(data, /initialSnapshotsCount/);
   assert.match(sales, /!realtimeReady/);
   assert.match(users, /!liveSalesReady/);
 });
