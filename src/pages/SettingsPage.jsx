@@ -103,48 +103,58 @@ export default function SettingsPage() {
   useAppRefresh(() => fetchConfig({ force: true }));
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
-    // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
-    const patch = {
-      is_app_active: config.is_app_active,
-      maintenance_message: config.maintenance_message || '',
-      default_trial_days: Number(config.default_trial_days),
-      default_trial_warning: config.default_trial_warning || '',
-      default_commission_rate: Number(config.default_commission_rate),
-      global_official_warning: config.global_official_warning || '',
-      warning_days_before_expiry: Number(config.warning_days_before_expiry),
-    };
-    const result = await updateSettings(patch);
-    setSaving(false);
-    if (!result.ok) {
-      toast.error(adminApiError(result.error, 'تعذر حفظ الإعدادات على الخادم'));
-      return;
-    }
-    invalidateAdminGlobalConfigData();
-    const previousAppStatus = savedAppStatus.current;
-    savedAppStatus.current = patch.is_app_active;
-    if (previousAppStatus !== patch.is_app_active) {
-      await logAdminAction({
-        action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
+    try {
+      // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
+      const patch = {
+        is_app_active: config.is_app_active,
+        maintenance_message: config.maintenance_message || '',
+        default_trial_days: Number(config.default_trial_days),
+        default_trial_warning: config.default_trial_warning || '',
+        default_commission_rate: Number(config.default_commission_rate),
+        global_official_warning: config.global_official_warning || '',
+        warning_days_before_expiry: Number(config.warning_days_before_expiry),
+      };
+      const result = await updateSettings(patch);
+      if (!result.ok) {
+        toast.error(adminApiError(result.error, 'تعذر حفظ الإعدادات على الخادم'));
+        return false;
+      }
+
+      invalidateAdminGlobalConfigData();
+      const previousAppStatus = savedAppStatus.current;
+      savedAppStatus.current = patch.is_app_active;
+      if (previousAppStatus !== patch.is_app_active) {
+        await logAdminAction({
+          action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
+          targetType: 'settings',
+          targetId: 'global_config',
+          targetLabel: 'حالة التطبيق',
+          details: { is_app_active: patch.is_app_active },
+        });
+      }
+      void logAdminAction({
+        action: AUDIT_ACTIONS.SETTINGS_SAVE,
         targetType: 'settings',
         targetId: 'global_config',
-        targetLabel: 'حالة التطبيق',
-        details: { is_app_active: patch.is_app_active },
-      });
+        targetLabel: 'الإعدادات العامة',
+        details: {
+          default_commission_rate: patch.default_commission_rate,
+          default_trial_days: patch.default_trial_days,
+          warning_days_before_expiry: patch.warning_days_before_expiry,
+          is_app_active: patch.is_app_active,
+        },
+      }).catch((error) => console.warn('Settings audit write failed:', error));
+      toast.success('تم حفظ الإعدادات بنجاح');
+      return true;
+    } catch (error) {
+      console.error('Settings save failed:', error);
+      toast.error('تعذر حفظ الإعدادات. تحقق من الاتصال ثم حاول مرة أخرى.');
+      return false;
+    } finally {
+      setSaving(false);
     }
-    logAdminAction({
-      action: AUDIT_ACTIONS.SETTINGS_SAVE,
-      targetType: 'settings',
-      targetId: 'global_config',
-      targetLabel: 'الإعدادات العامة',
-      details: {
-        default_commission_rate: patch.default_commission_rate,
-        default_trial_days: patch.default_trial_days,
-        warning_days_before_expiry: patch.warning_days_before_expiry,
-        is_app_active: patch.is_app_active,
-      },
-    });
-    toast.success('تم حفظ الإعدادات بنجاح');
   };
 
   const toggleAppStatus = () => {
