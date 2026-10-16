@@ -226,6 +226,26 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {realtimeDataWarning && (
+        <div className="dash-alert" role="status" aria-live="polite">
+          <span className="dash-alert__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
+          <div className="dash-alert__body">
+            <p className="dash-alert__title">تعذر مزامنة بعض تحديثات المبيعات</p>
+            <p className="dash-alert__msg">قد تكون بيانات الشبكات غير مكتملة بسبب تعذر الاتصال بقاعدة البيانات. تحقق من تفاصيل الفشل، ولا تكرر التسوية المالية حتى تتأكد من نتيجتها.</p>
+            {partialErrors.length > 0 && (
+              <details className="dash-error__details">
+                <summary>عرض تفاصيل الفشل ({partialErrors.length})</summary>
+                <ul>
+                  {partialErrors.map((message, index) => (
+                    <li key={index} dir="ltr">{message}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
+
       {monthlyDataWarning && (
         <div className="dash-error" role="status" aria-live="polite">
           <span className="dash-error__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
