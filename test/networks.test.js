@@ -160,7 +160,26 @@ test('updateAccess atomically synchronizes suspension and reactivation fields', 
     assert.equal(document.subscriptionEndsAt.toMillis(), endMs);
     assert.equal(document.subscription_end_date.toMillis(), endMs);
   }
-  assert.equal(auditEntries.length, 3);
+
+  await updateAccess(db, {
+    value: { uid: 'user_1', phone_verified: true },
+    actorUid: 'admin_2',
+    now: 1_800_000_000_003,
+  });
+  assert.equal(documents.get('users/user_1').phone_verified, true);
+  assert.equal(documents.get('users/user_1').phoneVerified, true);
+  assert.equal(documents.get('users/user_1').phone_verified_manual, true);
+  assert.equal(documents.get('users/user_1').verified_by_admin_uid, 'admin_2');
+
+  await updateAccess(db, {
+    value: { uid: 'user_1', phone_verified: false },
+    actorUid: 'admin_2',
+    now: 1_800_000_000_004,
+  });
+  assert.equal(documents.get('users/user_1').phone_verified, false);
+  assert.equal(documents.get('users/user_1').phoneVerified, false);
+  assert.equal(documents.get('users/user_1').phone_verified_manual, false);
+  assert.equal(auditEntries.length, 5);
 });
 
 

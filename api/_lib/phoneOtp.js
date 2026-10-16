@@ -1,5 +1,5 @@
 // ============================================================
-// Krotak Pro — Twilio Verify WhatsApp OTP helpers
+// Krotak Pro — Twilio Verify SMS phone-verification helpers
 // Import-only module; public routes are rewritten to the existing
 // /api/manage-user-auth Vercel function to stay within the Hobby limit.
 // ============================================================
@@ -214,6 +214,13 @@ function genericRequestSuccess(res) {
   });
 }
 
+function isPhoneVerificationPending(profile) {
+  const verified = profile?.phone_verified === true
+    || profile?.phoneVerified === true
+    || profile?.phone_verified_manual === true;
+  return profile?.phone_verification_required === true && !verified;
+}
+
 function clientIpFromRequest(req) {
   const headers = req?.headers || {};
   const realIp = String(headers['x-real-ip'] || '').trim();
@@ -246,7 +253,7 @@ async function callTwilio({ config, resource, fields, fetchImpl }) {
   return result;
 }
 
-/** POST /api/request-otp — request a WhatsApp code for an existing client. */
+/** POST /api/request-otp — request an SMS code for a new pending registration. */
 export async function handleRequestOtp(req, res, deps = {}) {
   if (req.method !== 'POST') {
     setAllowPost(res);
@@ -288,23 +295,28 @@ export async function handleRequestOtp(req, res, deps = {}) {
       uid = await resolveClientUid(db, auth, phoneNumber);
     } catch (error) {
       // Keep registered and unknown numbers indistinguishable to callers.
-      (deps.logger || console.error)('whatsapp-otp: account lookup failed', {
+      (deps.logger || console.error)('sms-otp: account lookup failed', {
         code: error?.code || 'lookup_error',
       });
       return genericRequestSuccess(res);
     }
     if (!uid) return genericRequestSuccess(res);
 
+    const userSnapshot = await db.collection(USERS_COLLECTION).doc(uid).get();
+    if (!isPhoneVerificationPending(userSnapshot.data() || {})) {
+      return genericRequestSuccess(res);
+    }
+
     try {
       await callTwilio({
         config,
         resource: 'Verifications',
-        fields: { To: `+${phoneNumber}`, Channel: 'whatsapp' },
+        fields: { To: `+${phoneNumber}`, Channel: 'sms' },
         fetchImpl: deps.fetchImpl || globalThis.fetch,
       });
     } catch (error) {
       // Never log recipient, OTP, credentials, or provider response body.
-      (deps.logger || console.error)('whatsapp-otp: Twilio delivery failed', {
+      (deps.logger || console.error)('sms-otp: Twilio delivery failed', {
         status: error?.status || null,
         code: error?.twilioCode || null,
       });
@@ -312,7 +324,7 @@ export async function handleRequestOtp(req, res, deps = {}) {
     // Same response for known/unknown clients and provider delivery failures.
     return genericRequestSuccess(res);
   } catch (error) {
-    (deps.logger || console.error)('whatsapp-otp: request failed', {
+    (deps.logger || console.error)('sms-otp: request failed', {
       code: error?.code || 'request_error',
     });
     return respond(res, 500, { success: false, error: 'otp_request_failed' });
@@ -376,7 +388,7 @@ export async function handleVerifyOtp(req, res, deps = {}) {
         res.setHeader('Retry-After', '60');
         return respond(res, 429, { success: false, error: 'too_many_requests' });
       }
-      (deps.logger || console.error)('whatsapp-otp: Twilio verification failed', {
+      (deps.logger || console.error)('sms-otp: Twilio verification failed', {
         status: error?.status || null,
         code: error?.twilioCode || null,
       });
@@ -388,10 +400,22 @@ export async function handleVerifyOtp(req, res, deps = {}) {
 
     const uid = await resolveClientUid(db, auth, phoneNumber);
     if (!uid) return respond(res, 401, { success: false, error: 'otp_invalid_or_expired' });
+    const userRef = db.collection(USERS_COLLECTION).doc(uid);
+    const userSnapshot = await userRef.get();
+    if (!isPhoneVerificationPending(userSnapshot.data() || {})) {
+      return respond(res, 401, { success: false, error: 'otp_invalid_or_expired' });
+    }
+    await userRef.set({
+      phone_verified: true,
+      phoneVerified: true,
+      phone_verified_sms: true,
+      phone_verified_at: Timestamp.fromMillis(now),
+      phone_verification_required: false,
+    }, { merge: true });
     const customToken = await auth.createCustomToken(uid);
     return respond(res, 200, { success: true, customToken, uid });
   } catch (error) {
-    (deps.logger || console.error)('whatsapp-otp: verify failed', {
+    (deps.logger || console.error)('sms-otp: verify failed', {
       code: error?.code || 'verify_error',
     });
     return respond(res, 500, { success: false, error: 'otp_verification_failed' });

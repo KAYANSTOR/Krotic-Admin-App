@@ -234,6 +234,7 @@ export async function updateAccess(db, { value, actorUid, now }) {
     } else {
       patch.phone_verified = false;
       patch.phoneVerified = false;
+      patch.phone_verified_manual = false;
       patch.verified_by_admin = false;
       patch.phone_unverified_at = FieldValue.serverTimestamp();
       patch.phone_unverified_by = actorUid;

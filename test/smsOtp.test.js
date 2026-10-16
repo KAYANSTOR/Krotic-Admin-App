@@ -5,7 +5,7 @@ import {
   handleRequestOtp,
   handleVerifyOtp,
   normalizePhoneNumber,
-} from '../api/_lib/whatsappOtp.js';
+} from '../api/_lib/phoneOtp.js';
 
 const phoneNumber = '967773303450';
 const uid = 'client_otp_1';
@@ -92,7 +92,13 @@ class FakeDb {
 
 function seedExistingClient(db, targetUid = uid, targetPhone = phoneNumber) {
   db.docs.set(`network_registration_phone_index/${getPhoneIndexId(targetPhone)}`, { uid: targetUid });
-  db.docs.set(`users/${targetUid}`, { uid: targetUid, phone: targetPhone, networkId: 'NET-10001' });
+  db.docs.set(`users/${targetUid}`, {
+    uid: targetUid,
+    phone: targetPhone,
+    networkId: 'NET-10001',
+    phone_verification_required: true,
+    phone_verified: false,
+  });
 }
 
 function fakeAuth() {
@@ -129,7 +135,7 @@ test('phone input normalizes to the digits-only format already used by the app',
   assert.equal(normalizePhoneNumber('+967773303450x'), null);
 });
 
-test('request calls Twilio Verify WhatsApp and verify mints a custom Firebase token', async () => {
+test('request calls Twilio Verify SMS and records verification before minting a Firebase token', async () => {
   const db = new FakeDb();
   seedExistingClient(db);
   const now = Date.UTC(2026, 9, 16, 0, 0, 0);
@@ -155,7 +161,7 @@ test('request calls Twilio Verify WhatsApp and verify mints a custom Firebase to
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/x-www-form-urlencoded');
   assert.equal(calls[0].fields.get('To'), `+${phoneNumber}`);
-  assert.equal(calls[0].fields.get('Channel'), 'whatsapp');
+  assert.equal(calls[0].fields.get('Channel'), 'sms');
   assert.equal(
     Buffer.from(calls[0].options.headers.Authorization.slice('Basic '.length), 'base64').toString(),
     `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
@@ -168,6 +174,11 @@ test('request calls Twilio Verify WhatsApp and verify mints a custom Firebase to
   assert.equal(verifyResponse.body.customToken, `firebase-custom-token:${uid}`);
   assert.equal(verifyResponse.body.uid, uid);
   assert.equal(verifyResponse.headers['Cache-Control'], 'no-store');
+  assert.equal(db.docs.get(`users/${uid}`).phone_verified, true);
+  assert.equal(db.docs.get(`users/${uid}`).phoneVerified, true);
+  assert.equal(db.docs.get(`users/${uid}`).phone_verified_sms, true);
+  assert.equal(db.docs.get(`users/${uid}`).phone_verification_required, false);
+  assert.equal(db.docs.get(`users/${uid}`).phone_verified_at.toMillis(), now);
   assert.equal(calls[1].url, `https://verify.twilio.com/v2/Services/${env.TWILIO_VERIFY_SERVICE_SID}/VerificationCheck`);
   assert.equal(calls[1].fields.get('To'), `+${phoneNumber}`);
   assert.equal(calls[1].fields.get('Code'), '004271');
@@ -223,6 +234,34 @@ test('request enforces resend limits and does not disclose unknown phone numbers
   assert.equal(unknown.statusCode, 200);
   assert.deepEqual(unknown.body, first.body);
   assert.equal(sent, 1);
+});
+
+test('legacy existing accounts without a pending-registration flag receive no OTP and cannot use OTP sign-in', async () => {
+  const db = new FakeDb();
+  seedExistingClient(db);
+  db.docs.set(`users/${uid}`, { uid, phone: phoneNumber, phone_verified: false });
+  let sent = 0;
+  const deps = {
+    db,
+    auth: fakeAuth(),
+    env,
+    fetchImpl: async () => {
+      sent += 1;
+      return providerResponse({ status: 'approved' });
+    },
+    logger() {},
+  };
+  const requestResult = response();
+  await handleRequestOtp(request({ phoneNumber }), requestResult, deps);
+  assert.equal(requestResult.statusCode, 200);
+  assert.equal(sent, 0);
+
+  const verifyResult = response();
+  await handleVerifyOtp(request({ phoneNumber, otp: '004271' }), verifyResult, deps);
+  assert.equal(verifyResult.statusCode, 401);
+  assert.equal(verifyResult.body.error, 'otp_invalid_or_expired');
+  assert.equal(sent, 1);
+  assert.equal(db.docs.get(`users/${uid}`).phone_verified, false);
 });
 
 test('invalid Twilio code is rejected without minting a Firebase token', async () => {

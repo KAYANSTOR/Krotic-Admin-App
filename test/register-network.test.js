@@ -66,6 +66,10 @@ test('the server atomically creates one network and a bounded 30-day trial', asy
   assert.equal(user.accessStatus, 'TRIAL');
   assert.equal(user.is_active, true);
   assert.equal(user.is_trial, true);
+  assert.equal(user.phone_verified, false);
+  assert.equal(user.phoneVerified, false);
+  assert.equal(user.phone_verification_required, true);
+  assert.equal(user.phone_verified_manual, false);
   assert.equal(user.subscription_end_date.toMillis(), result.subscriptionEndsAtMs);
   assert.equal(user.subscriptionEndsAt.toMillis(), result.subscriptionEndsAtMs);
   assert.equal(network.owner_uid, 'client_1');
@@ -87,6 +91,7 @@ test('retrying the same registration is idempotent and does not extend the trial
   assert.equal(second.networkId, first.networkId);
   assert.equal(second.trialStartedAtMs, first.trialStartedAtMs);
   assert.equal(second.subscriptionEndsAtMs, first.subscriptionEndsAtMs);
+  assert.equal(db.docs.get('users/client_2').phone_verification_required, true);
   assert.equal(db.docs.get('counters/networks').lastNetworkId, 'NET-10001');
 });
 

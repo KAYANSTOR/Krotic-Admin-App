@@ -21,7 +21,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-import { handleRequestOtp, handleVerifyOtp } from './_lib/whatsappOtp.js';
+import { handleRequestOtp, handleVerifyOtp } from './_lib/phoneOtp.js';
 
 const MIN_PASSWORD_LENGTH = 6;
 const MAX_PASSWORD_LENGTH = 128;
