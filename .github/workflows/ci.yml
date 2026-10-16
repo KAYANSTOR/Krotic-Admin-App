@@ -20,9 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install web dependencies
-        run: npm ci
+        run: npm install
       - name: Test admin unit suite
         run: npm test
       - name: Set up Java 21 for Firebase Emulator
@@ -43,7 +42,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: functions/package-lock.json
       - name: Install function dependencies
         working-directory: functions
         run: npm ci
