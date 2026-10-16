@@ -23,7 +23,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin, isAdminUid } from '../_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../_lib/money.js';
 import { decryptNetworkSecret } from '../_lib/networkSecret.js';
 
@@ -241,10 +241,12 @@ async function resolveClientUid(req) {
 
   // Ingest is for client accounts only: an Admins/{uid} document is rejected.
   try {
-    const adminSnap = await getFirestore().collection('Admins').doc(uid).get();
-    if (adminSnap.exists) return { ok: false, status: 403, error: 'not_client_account' };
+    if (await isAdminUid(uid, getFirestore)) return { ok: false, status: 403, error: 'not_client_account' };
   } catch (error) {
-    console.error('sales/ingest: admin lookup failed', error);
+    console.error('sales/ingest: admin lookup failed', { code: error?.code, message: error?.message });
+    if (error?.code === 8 || error?.code === 'RESOURCE_EXHAUSTED') {
+      return { ok: false, status: 503, error: 'firestore_quota_exceeded' };
+    }
     return { ok: false, status: 500, error: 'admin_check_failed' };
   }
   return { ok: true, uid };
