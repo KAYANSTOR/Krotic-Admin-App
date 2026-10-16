@@ -405,8 +405,12 @@ export async function fetchDashboardStats(options) {
     });
     const warningDays = Number(config.warning_days_before_expiry) > 0 ? Number(config.warning_days_before_expiry) : 5; const now = Date.now(); let expiredUsers = 0; let expiringSoonUsers = 0; let trialExpiringSoonUsers = 0;
     users.forEach((user) => { const end = toDate(user.subscription_end_date); if (!end || Number.isNaN(end.getTime())) return; const remaining = end.getTime() - now; if (remaining < 0) expiredUsers += 1; else if (remaining <= warningDays * DAY_MS) { expiringSoonUsers += 1; if (user.is_trial === true) trialExpiringSoonUsers += 1; } });
-    const value = { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6), monthlyDataWarning: errors.length > 0 || aggregates.some((aggregate) => aggregate.monthlyAvailable === false) };
-    return errors.length ? partialResult(value, errors) : value;
+    const monthlyErrors = aggregates
+      .filter((aggregate) => aggregate.monthlyAvailable === false && aggregate.monthlyError)
+      .map((aggregate) => aggregate.monthlyError);
+    const allErrors = [...errors, ...monthlyErrors];
+    const value = { appStatus: config, stats: { totalUsers: users.length, trialUsers: users.filter((u) => u.is_trial === true).length, activeUsers: users.filter((u) => u.is_active !== false).length, blockedUsers: users.filter((u) => u.is_active === false).length, ...totals }, alerts: { expiredUsers, expiringSoonUsers, trialExpiringSoonUsers, warningDays }, monthlySales: recentMonths(buckets, 6), monthlyDataWarning: allErrors.length > 0 || aggregates.some((aggregate) => aggregate.monthlyAvailable === false) };
+    return allErrors.length ? partialResult(value, allErrors) : value;
   }, options);
 }
 export async function fetchNetworkSales(options) {
