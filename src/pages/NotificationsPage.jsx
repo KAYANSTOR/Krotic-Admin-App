@@ -821,6 +821,9 @@ export default function NotificationsPage() {
               >
                 <div>
                   <h4 className="text-sm font-bold text-ink">{tpl.name}</h4>
+                  {String(tpl.id).startsWith('builtin-') && (
+                    <span className="inline-flex mt-1 text-[10px] font-bold text-brand-deep">قالب جاهز</span>
+                  )}
                   <p className="text-xs text-ink-soft mt-1 line-clamp-2 leading-relaxed">{tpl.message}</p>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-line/60">
@@ -832,13 +835,15 @@ export default function NotificationsPage() {
                     <Send className="w-3 h-3" />
                     استخدام في النموذج
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTemplate(tpl.id)}
-                    className="text-xs text-danger hover:underline p-1"
-                  >
-                    حذف القالب
-                  </button>
+                  {!String(tpl.id).startsWith('builtin-') && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(tpl.id)}
+                      className="text-xs text-danger hover:underline p-1"
+                    >
+                      حذف القالب
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

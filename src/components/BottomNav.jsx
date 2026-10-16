@@ -16,8 +16,8 @@ import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
 const primaryItems = [
   { path: '/', label: 'الرئيسية', icon: LayoutDashboard },
-  { path: '/users', label: 'المستخدمون', icon: Users },
-  { path: '/sales', label: 'المبيعات', icon: DollarSign },
+  { path: '/users', label: 'الحسابات', icon: Users },
+  { path: '/sales', label: 'التقارير', icon: DollarSign },
   { path: '/notifications', label: 'الإشعارات', icon: Bell },
 ];
 
@@ -98,7 +98,7 @@ export default function BottomNav() {
           ))}
           <button ref={quickTriggerRef} type="button" className={`bottom-nav-quick ${quickOpen ? 'is-active' : ''}`} onClick={() => setQuickOpen((open) => !open)} aria-expanded={quickOpen} aria-haspopup="dialog" aria-label="الإجراءات السريعة">
             <span className="bottom-nav-quick__icon"><Plus className="w-8 h-8" strokeWidth={2.6} /></span>
-            <span className="bottom-nav-label">إجراءات</span>
+            <span className="bottom-nav-label">الإجراءات</span>
           </button>
           {primaryItems.slice(2).map(({ path, label, icon: Icon }) => (
             <NavLink key={path} to={path} end={path === '/'} onPointerEnter={() => preloadRoute(path)} className={({ isActive }) => `bottom-nav-item ${isActive ? 'is-active' : ''}`} title={label}>
