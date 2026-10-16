@@ -1,7 +1,10 @@
 {
   "rewrites": [
+    { "source": "/api/request-otp", "destination": "/api/manage-user-auth?__apiRoute=request-otp" },
+    { "source": "/api/verify-otp", "destination": "/api/manage-user-auth?__apiRoute=verify-otp" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "ignoreCommand": "git show -s --format=%B HEAD | grep -Fq '[otp-no-deploy]'",
   "crons": [
     { "path": "/api/dispatch-notifications", "schedule": "0 6 * * *" }
   ],

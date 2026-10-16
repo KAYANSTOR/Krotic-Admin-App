@@ -21,6 +21,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
+import { handleRequestOtp, handleVerifyOtp } from './_lib/whatsappOtp.js';
+
 const MIN_PASSWORD_LENGTH = 6;
 const MAX_PASSWORD_LENGTH = 128;
 const MAX_UID_LENGTH = 128;
@@ -145,7 +147,25 @@ function publicAuthInfo(record) {
   };
 }
 
+export async function dispatchPublicOtpRoute(req, res, handlers = {
+  requestOtp: handleRequestOtp,
+  verifyOtp: handleVerifyOtp,
+}) {
+  const route = req?.query?.__apiRoute;
+  if (route === 'request-otp') {
+    await handlers.requestOtp(req, res);
+    return true;
+  }
+  if (route === 'verify-otp') {
+    await handlers.verifyOtp(req, res);
+    return true;
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
+  if (await dispatchPublicOtpRoute(req, res)) return;
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
