@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const [monthlySales, setMonthlySales] = useState([]);
   const [recentOperations, setRecentOperations] = useState([]);
   const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
+  const [realtimeDataWarning, setRealtimeDataWarning] = useState(false);
   const [salesSnapshotsReady, setSalesSnapshotsReady] = useState(false);
   const [partialErrors, setPartialErrors] = useState([]);
   const latestRequestId = useRef(0);
@@ -161,7 +162,7 @@ export default function DashboardPage() {
         ? `تعذر استقبال مبيعات الشبكة ${uid}: ${listenerError.message || listenerError}`
         : `تعذر استقبال تحديثات المبيعات: ${listenerError.message || listenerError}`;
       setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
-      setMonthlyDataWarning(true);
+      setRealtimeDataWarning(true);
     },
     () => {
       salesRealtimeReady.current = true;
