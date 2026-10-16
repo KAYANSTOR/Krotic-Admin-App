@@ -283,13 +283,57 @@ async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
     source: 'aggregation-fallback',
   };
 }
+async function fetchMonthlyBucketsFromFirestore(uid, { force = false } = {}) {
+  const userRef = doc(db, 'users', uid);
+  const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+  const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+  const salesRef = collection(db, 'networks', networkId, 'sales');
+  // Equality-only query uses Firestore's single-field index; avoid depending on
+  // the composite status+createdAt index just to recover a missing summary.
+  const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
+  const salesSnapshot = force ? await getDocsFromServer(completedQuery) : await getDocs(completedQuery);
+  const minRecentDate = sixMonthsAgo();
+  const recentSales = salesSnapshot.docs
+    .map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }))
+    .filter((sale) => {
+      const date = toDate(sale.createdAt);
+      return date && !Number.isNaN(date.getTime()) && date >= minRecentDate;
+    });
+  return buildMonthlyBuckets(recentSales);
+}
 async function fetchAggregate(uid, options) {
   return readCached(`aggregate:${uid}`, async ({ force = false } = {}) => {
     const aggregateRef = doc(db, 'admin_aggregates', uid);
     const snap = force ? await getDocFromServer(aggregateRef) : await getDoc(aggregateRef);
-    const aggregate = snap.exists()
-      ? { ...snap.data(), monthlyAvailable: Object.hasOwn(snap.data(), 'monthly'), source: 'aggregate' }
-      : await fetchAggregateFromFirestore(uid, { force });
+    let aggregate;
+    if (!snap.exists()) {
+      aggregate = await fetchAggregateFromFirestore(uid, { force });
+    } else {
+      const data = snap.data() || {};
+      const hasMonthly = Object.hasOwn(data, 'monthly')
+        && data.monthly !== null
+        && typeof data.monthly === 'object'
+        && !Array.isArray(data.monthly);
+      if (hasMonthly) {
+        aggregate = { ...data, monthlyAvailable: true, source: 'aggregate' };
+      } else {
+        // Keep verified lifetime totals even if repairing the historical monthly
+        // breakdown fails. Never replace missing values with fabricated zeros.
+        try {
+          const monthly = await fetchMonthlyBucketsFromFirestore(uid, { force });
+          aggregate = { ...data, monthly, monthlyAvailable: true, source: 'aggregate+monthly-rebuild' };
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          aggregate = {
+            ...data,
+            monthly: {},
+            monthlyAvailable: false,
+            monthlyError: `Monthly breakdown rebuild failed for user ${uid}: ${detail}`,
+            source: 'aggregate',
+          };
+        }
+      }
+    }
     const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {}).map(([month, bucket]) => [
       month,
       { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
