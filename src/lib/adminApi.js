@@ -118,7 +118,56 @@ export async function provisionNetwork(ownerUid) {
 }
 
 export async function updateNetworkAccess(payload) {
-  return callAdminApi('/api/networks', { action: 'update-access', ...payload });
+  const result = await callAdminApi('/api/networks', { action: 'update-access', ...payload });
+  if (result.ok) return result;
+
+  // Fallback: If running without Vercel Serverless Function runtime or offline,
+  // update directly via client Firestore SDK (allowed for Admins in firestore.rules).
+  if (result.error === 'endpoint_unavailable') {
+    try {
+      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db, auth } = await import('../firebase');
+      const userRef = doc(db, 'users', payload.uid);
+      const patch = { updatedAt: serverTimestamp() };
+
+      if (payload.phone_verified !== undefined) {
+        patch.phone_verified = Boolean(payload.phone_verified);
+        patch.phoneVerified = Boolean(payload.phone_verified);
+        if (payload.phone_verified) {
+          patch.phone_verified_at = serverTimestamp();
+          patch.verified_by_admin = true;
+          patch.verified_by_admin_uid = auth.currentUser?.uid || 'admin';
+          patch.phone_verified_manual = true;
+        } else {
+          patch.phone_verified = false;
+          patch.phoneVerified = false;
+          patch.verified_by_admin = false;
+          patch.phone_unverified_at = serverTimestamp();
+        }
+      }
+      if (payload.accessStatus !== undefined) {
+        patch.accessStatus = payload.accessStatus;
+        patch.is_active = payload.accessStatus === 'ACTIVE_PAID' || payload.accessStatus === 'TRIAL';
+        patch.is_trial = payload.accessStatus === 'TRIAL';
+      }
+      if (payload.subscriptionEndsAt !== undefined) {
+        const { Timestamp } = await import('firebase/firestore');
+        const endAt = Timestamp.fromMillis(payload.subscriptionEndsAt);
+        patch.subscriptionEndsAt = endAt;
+        patch.subscription_end_date = endAt;
+      }
+      if (payload.commission_rate !== undefined) patch.commission_rate = payload.commission_rate;
+      if (payload.warning_message !== undefined) patch.warning_message = payload.warning_message;
+      if (payload.has_custom_warning !== undefined) patch.has_custom_warning = payload.has_custom_warning;
+
+      await updateDoc(userRef, patch);
+      return { ok: true, data: { status: 'updated', fallback: true } };
+    } catch (fallbackErr) {
+      console.error('Client fallback updateNetworkAccess failed:', fallbackErr);
+      return result;
+    }
+  }
+  return result;
 }
 
 export async function renewNetwork(uid, extensionDays = 30) {

@@ -15,7 +15,7 @@ import {
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download, ArrowUpLeft,
-  Trash2, X, Phone, ShieldAlert, Sparkles, ExternalLink
+  Trash2, X, Phone, ShieldAlert, ShieldCheck, LayoutGrid, List, Sparkles, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
@@ -35,6 +35,7 @@ import { summarizeCompletedSales } from '../lib/commission';
 import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import { isUserPhoneVerified } from '../lib/accessStatus';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 24;
@@ -60,6 +61,8 @@ function loadSavedFilter() {
 const FILTERS = [
   { value: 'all', label: 'الكل' },
   { value: 'active', label: 'نشط' },
+  { value: 'verified', label: 'موثّق بالهاتف' },
+  { value: 'unverified', label: 'غير موثّق' },
   { value: 'official', label: 'رسمي' },
   { value: 'trial', label: 'تجريبي' },
   { value: 'expiring', label: 'ينتهي قريباً' },
@@ -84,6 +87,7 @@ export default function UsersPage() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState(resolveInitialFilter);
+  const [viewMode, setViewMode] = useState('cards');
 
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
@@ -326,6 +330,11 @@ export default function UsersPage() {
             : updates.accessStatus
               ? false
               : u.is_trial,
+          ...(updates.phone_verified !== undefined ? {
+            phone_verified: Boolean(updates.phone_verified),
+            phoneVerified: Boolean(updates.phone_verified),
+            ...(updates.phone_verified ? { phone_verified_manual: true } : {}),
+          } : {}),
           ...(updates.subscriptionEndsAt != null ? {
             subscriptionEndsAt: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
             subscription_end_date: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
@@ -344,9 +353,92 @@ export default function UsersPage() {
         commission_rate: updates.commission_rate ?? null,
         has_custom_warning: updates.has_custom_warning ?? null,
         subscriptionEndsAt: updates.subscriptionEndsAt ?? null,
+        phone_verified: updates.phone_verified ?? null,
       },
     });
     toast.success('تم حفظ التعديلات بنجاح');
+  };
+
+  const handleManualPhoneVerify = (user) => {
+    const isVerified = isUserPhoneVerified(user);
+    const targetName = user.networkName || user.phoneNumber || user.uid;
+    const phoneDisplay = user.phoneNumber || user.phone || 'غير مسجّل';
+
+    if (!isVerified) {
+      setConfirmAction({
+        user,
+        title: 'تفعيل التحقق من الهاتف يدوياً (للدعم الفني)',
+        message: `هل تريد تفعيل واعتماد حساب «${targetName}» برقم الهاتف (${phoneDisplay}) يدوياً؟
+
+ملاحظة للدعم الفني: يُستخدم هذا الإجراء لمساعدة المشتركين في حال تعذر وصول كود التحقق SMS بسبب مشاكل الشبكة أو تغطية المشغل. سيتم اعتماد الحساب فوراً كـ (phone_verified: true).`,
+        variant: 'success',
+        action: async () => {
+          const result = await updateNetworkAccess({
+            uid: user.uid,
+            phone_verified: true,
+          });
+          if (!result.ok) {
+            toast.error(adminApiError(result.error, 'تعذر تفعيل التحقق من الهاتف'));
+            return false;
+          }
+          invalidateAdminUserData(user.uid);
+          setUsers((prev) => prev.map((u) => (u.uid === user.uid
+            ? {
+                ...u,
+                phone_verified: true,
+                phoneVerified: true,
+                phone_verified_at: new Date(),
+                verified_by_admin: true,
+                phone_verified_manual: true,
+              }
+            : u)));
+          await logAdminAction({
+            action: AUDIT_ACTIONS.USER_PHONE_VERIFY_MANUAL,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: targetName,
+            details: { phone: phoneDisplay, manual: true, reason: 'دعم فني - تفعيل يدوي' },
+          }).catch(() => {});
+          toast.success(`تم تفعيل وتوثيق حساب «${targetName}» برقم الهاتف بنجاح`);
+          return true;
+        },
+      });
+    } else {
+      setConfirmAction({
+        user,
+        title: 'إلغاء توثيق الهاتف',
+        message: `حساب «${targetName}» مفعل وموثّق بالهاتف حالياً (${phoneDisplay}). هل تريد إلغاء حالة التوثيق؟ (phone_verified: false)`,
+        variant: 'danger',
+        action: async () => {
+          const result = await updateNetworkAccess({
+            uid: user.uid,
+            phone_verified: false,
+          });
+          if (!result.ok) {
+            toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
+            return false;
+          }
+          invalidateAdminUserData(user.uid);
+          setUsers((prev) => prev.map((u) => (u.uid === user.uid
+            ? {
+                ...u,
+                phone_verified: false,
+                phoneVerified: false,
+                phone_verified_manual: false,
+              }
+            : u)));
+          await logAdminAction({
+            action: AUDIT_ACTIONS.USER_PHONE_UNVERIFY,
+            targetType: 'user',
+            targetId: user.uid,
+            targetLabel: targetName,
+            details: { phone: phoneDisplay },
+          }).catch(() => {});
+          toast.success(`تم إلغاء توثيق الهاتف لحساب «${targetName}»`);
+          return true;
+        },
+      });
+    }
   };
 
   const handleDeleteUser = (user) => {
@@ -392,6 +484,8 @@ export default function UsersPage() {
         user.uid.toLowerCase().includes(q);
 
       if (filterType === 'active') return matchesSearch && user.is_active !== false;
+      if (filterType === 'verified') return matchesSearch && isUserPhoneVerified(user);
+      if (filterType === 'unverified') return matchesSearch && !isUserPhoneVerified(user);
       if (filterType === 'trial') return matchesSearch && user.is_trial === true;
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
@@ -431,7 +525,9 @@ export default function UsersPage() {
     const active = users.filter((u) => u.is_active !== false).length;
     const blocked = users.filter((u) => u.is_active === false).length;
     const expired = users.filter((u) => isExpired(u.subscription_end_date)).length;
-    return { total, trial, official, active, blocked, expired };
+    const verified = users.filter((u) => isUserPhoneVerified(u)).length;
+    const unverified = total - verified;
+    return { total, trial, official, active, blocked, expired, verified, unverified };
   }, [users]);
 
   const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
@@ -477,6 +573,7 @@ export default function UsersPage() {
     downloadCsv(`users-${csvStamp()}`, filteredUsers, [
       { label: 'اسم الشبكة', value: (u) => u.networkName || '' },
       { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
+      { label: 'حالة التحقق (phone_verified)', value: (u) => (isUserPhoneVerified(u) ? 'مفعّل (true)' : 'غير مفعّل (false)') },
       { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
       { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
       { label: 'نسبة العمولة (%)', value: (u) => (hasCustomCommission(u) ? u.commission_rate : defaultCommission) },
@@ -513,6 +610,36 @@ export default function UsersPage() {
         meta={`${users.length} حساب مسجّل • ${stats.active} نشط`}
         actions={
           <div className="flex items-center gap-2">
+            <div className="inline-flex items-center rounded-xl bg-surface border border-line p-0.5 shadow-xs" role="tablist" aria-label="نمط العرض">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === 'cards'
+                    ? 'bg-brand text-white shadow-xs'
+                    : 'text-muted hover:text-ink'
+                }`}
+                title="عرض بطاقات المشتركين"
+                aria-label="عرض البطاقات"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">بطاقات</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  viewMode === 'table'
+                    ? 'bg-brand text-white shadow-xs'
+                    : 'text-muted hover:text-ink'
+                }`}
+                title="عرض جدول المشتركين مع عمود حالة التحقق بالهاتف (phone_verified)"
+                aria-label="عرض جدول البيانات"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">جدول</span>
+              </button>
+            </div>
             <Button variant="secondary" size="sm" icon={Download} onClick={handleExportUsers}>
               تصدير CSV
             </Button>
@@ -604,6 +731,8 @@ export default function UsersPage() {
         {FILTERS.map((f) => {
           let count = stats.total;
           if (f.value === 'active') count = stats.active;
+          if (f.value === 'verified') count = stats.verified;
+          if (f.value === 'unverified') count = stats.unverified;
           if (f.value === 'official') count = stats.official;
           if (f.value === 'trial') count = stats.trial;
           if (f.value === 'expired') count = stats.expired;
@@ -628,8 +757,7 @@ export default function UsersPage() {
           );
         })}
       </div>
-
-      {/* Android Users List (Cards Only - No heavy desktop tables!) */}
+      {/* عرض المشتركين: جدول بيانات (Table) أو بطاقات لمس (Cards) */}
       {filteredUsers.length === 0 ? (
         <Card className="p-8 text-center rounded-2xl">
           <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg mx-auto mb-3">
@@ -642,13 +770,228 @@ export default function UsersPage() {
               : 'لم يتم تسجيل أي شبكة حتى الآن.'}
           </p>
         </Card>
+      ) : viewMode === 'table' ? (
+        /* ================= جدول المشتركين مع عمود حالة التحقق بالهاتف ================= */
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-2xl border border-line bg-surface shadow-xs">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-surface-sunken/80 border-b border-line text-muted font-bold">
+                <tr>
+                  <th className="p-3 text-right">المشترك والشبكة</th>
+                  <th className="p-3 text-right">رقم الهاتف</th>
+                  <th className="p-3 text-right">حالة التحقق (phone_verified)</th>
+                  <th className="p-3 text-right">النوع</th>
+                  <th className="p-3 text-right">الحالة</th>
+                  <th className="p-3 text-right">العمولة</th>
+                  <th className="p-3 text-right">تاريخ الانتهاء</th>
+                  <th className="p-3 text-right">المبيعات المكتملة</th>
+                  <th className="p-3 text-center">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line/60">
+                {visibleUsers.map((user) => {
+                  const billing = getUserBilling(user);
+                  const expired = isExpired(user.subscription_end_date);
+                  const networkTitle = user.networkName || `شبكة ${user.uid.slice(0, 8)}`;
+                  const phoneStr = user.phoneNumber || user.phone || '';
+                  const isVerified = isUserPhoneVerified(user);
+
+                  return (
+                    <tr
+                      key={user.uid}
+                      className="hover:bg-surface-sunken/40 transition-colors"
+                    >
+                      {/* المشترك والشبكة */}
+                      <td className="p-3">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/users/${user.uid}`)}
+                          className="flex items-center gap-2 text-right group"
+                        >
+                          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand/20 to-brand/5 border border-brand/20 text-brand-deep flex items-center justify-center font-black text-xs flex-shrink-0">
+                            {networkTitle.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-ink group-hover:text-brand transition-colors flex items-center gap-1">
+                              <span>{networkTitle}</span>
+                              <ArrowUpLeft className="w-3 h-3 text-muted opacity-60" />
+                            </div>
+                            <span className="font-mono text-[10px] text-muted">{user.uid.slice(0, 10)}...</span>
+                          </div>
+                        </button>
+                      </td>
+
+                      {/* رقم الهاتف */}
+                      <td className="p-3 font-mono" dir="ltr">
+                        {phoneStr ? (
+                          <a
+                            href={`tel:${phoneStr}`}
+                            className="text-xs text-muted hover:text-brand flex items-center gap-1 justify-end"
+                          >
+                            <Phone className="w-3 h-3 text-muted" />
+                            <span>{phoneStr}</span>
+                          </a>
+                        ) : (
+                          <span className="text-muted text-[11px]">—</span>
+                        )}
+                      </td>
+
+                      {/* عمود حالة التحقق: phone_verified */}
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          {isVerified ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>مفعّل (true)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                              <span>غير مفعّل (false)</span>
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleManualPhoneVerify(user)}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold transition-all border ${
+                              isVerified
+                                ? 'bg-surface-sunken text-muted hover:text-rose-600 border-line hover:border-rose-300'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600 shadow-xs'
+                            }`}
+                            title={isVerified ? 'إلغاء توثيق الهاتف' : 'تفعيل الحساب يدوياً برقم الهاتف (للدعم الفني)'}
+                          >
+                            {isVerified ? 'إلغاء التوثيق' : 'تفعيل يدوي (دعم فني)'}
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* النوع */}
+                      <td className="p-3 whitespace-nowrap">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          user.is_trial ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        }`}>
+                          {user.is_trial ? 'تجريبي' : 'رسمي'}
+                        </span>
+                      </td>
+
+                      {/* الحالة */}
+                      <td className="p-3 whitespace-nowrap">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          user.is_active === false
+                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
+                          {user.is_active === false ? 'محظور' : 'نشط'}
+                        </span>
+                      </td>
+
+                      {/* العمولة */}
+                      <td className="p-3 whitespace-nowrap font-bold text-ink">
+                        {hasCustomCommission(user)
+                          ? <span className="text-brand font-black">{user.commission_rate}%</span>
+                          : `${defaultCommission}%`}
+                      </td>
+
+                      {/* تاريخ الانتهاء */}
+                      <td className={`p-3 whitespace-nowrap font-bold ${expired ? 'text-rose-600 font-black' : 'text-ink-soft'}`}>
+                        {formatDate(user.subscription_end_date)}
+                      </td>
+
+                      {/* المبيعات */}
+                      <td className="p-3 whitespace-nowrap font-mono font-bold text-ink">
+                        {formatNumber(billing.reportedSalesValue || 0)} ر.ي
+                      </td>
+
+                      {/* الإجراءات */}
+                      <td className="p-3 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setBillingUser(user)}
+                            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                            title="الفوترة والدفعات"
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickRenew(user)}
+                            className="p-1.5 rounded-lg bg-brand-soft/40 text-brand-deep hover:bg-brand-soft/60 transition-colors"
+                            title="تجديد الاشتراك"
+                            aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}
+                          >
+                            <CalendarPlus className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingUser(user)}
+                            className="p-1.5 rounded-lg bg-surface-sunken text-ink hover:bg-line/40 transition-colors"
+                            title="تعديل الإعدادات"
+                            aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAuthUser(user)}
+                            className="p-1.5 rounded-lg bg-surface-sunken text-ink hover:bg-line/40 transition-colors"
+                            title="بيانات الدخول"
+                            aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(user)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              user.is_active === false
+                                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                            }`}
+                            title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                            aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
+                          >
+                            {user.is_active === false ? <UserCheck className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user)}
+                            className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors"
+                            title="حذف الحساب"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {hasMore && (
+            <Button
+              variant="secondary"
+              size="md"
+              block
+              onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+              className="rounded-xl font-bold mt-2"
+            >
+              عرض المزيد من المشتركين ({filteredUsers.length - visibleUsers.length} متبقٍ)
+            </Button>
+          )}
+        </div>
       ) : (
+        /* ================= بطاقات المشتركين بنمط أندرويد اللمسي ================= */
         <div className="space-y-3">
           {visibleUsers.map((user) => {
             const billing = getUserBilling(user);
             const expired = isExpired(user.subscription_end_date);
             const networkTitle = user.networkName || `شبكة ${user.uid.slice(0, 8)}`;
             const phoneStr = user.phoneNumber || user.phone || '';
+            const isVerified = isUserPhoneVerified(user);
 
             return (
               <div
@@ -679,17 +1022,43 @@ export default function UsersPage() {
                         <ArrowUpLeft className="w-3.5 h-3.5 text-muted opacity-60 flex-shrink-0" />
                       </div>
                       {phoneStr ? (
-                        <a
-                          href={`tel:${phoneStr}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-muted hover:text-brand flex items-center gap-1 mt-0.5"
-                          dir="ltr"
-                        >
-                          <Phone className="w-3 h-3 text-muted" />
-                          <span>{phoneStr}</span>
-                        </a>
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                          <a
+                            href={`tel:${phoneStr}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-muted hover:text-brand flex items-center gap-1"
+                            dir="ltr"
+                          >
+                            <Phone className="w-3 h-3 text-muted" />
+                            <span>{phoneStr}</span>
+                          </a>
+
+                          {/* شارة حالة التحقق برقم الهاتف */}
+                          {isVerified ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              title="الحساب مفعّل برقم الهاتف (phone_verified: true)"
+                            >
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              <span>مفعّل بالهاتف (true)</span>
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 border border-amber-300"
+                              title="الحساب غير مفعّل بالهاتف (phone_verified: false) - بانتظار كود التحقق"
+                            >
+                              <ShieldAlert className="w-3 h-3 text-amber-600" />
+                              <span>غير مفعّل (false)</span>
+                            </span>
+                          )}
+                        </div>
                       ) : (
-                        <p className="text-xs text-muted mt-0.5">بدون هاتف</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-muted">بدون هاتف</p>
+                          <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 rounded border border-amber-200">
+                            غير مفعّل
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -743,7 +1112,7 @@ export default function UsersPage() {
 
                 {/* شريط الإجراءات السريعة بنمط أندرويد (Touch targets مريحة) */}
                 <div
-                  className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1 border-t border-line/60"
+                  className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 pt-1 border-t border-line/60"
                   onClick={(event) => event.stopPropagation()}
                 >
                   {/* الفوترة */}
@@ -791,6 +1160,26 @@ export default function UsersPage() {
                   >
                     <KeyRound className="w-4 h-4 text-muted" />
                     <span>الدخول</span>
+                  </button>
+
+                  {/* التفعيل اليدوي برقم الهاتف (للدعم الفني) */}
+                  <button
+                    type="button"
+                    onClick={() => handleManualPhoneVerify(user)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl text-[11px] font-bold gap-1 active:scale-95 transition-colors ${
+                      isVerified
+                        ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                        : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200 shadow-xs'
+                    }`}
+                    title={isVerified ? 'إلغاء توثيق الهاتف' : 'تفعيل الحساب يدوياً برقم الهاتف (للدعم الفني)'}
+                    aria-label={`تفعيل التحقق من الهاتف: ${user.networkName || "المستخدم"}`}
+                  >
+                    {isVerified ? (
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    )}
+                    <span>{isVerified ? 'الهاتف مفعّل' : 'تفعيل يدوي'}</span>
                   </button>
 
                   {/* حظر / تفعيل */}

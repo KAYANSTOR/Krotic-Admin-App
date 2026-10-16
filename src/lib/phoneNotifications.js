@@ -124,6 +124,70 @@ export function triggerVibration(pattern = [120, 60, 120]) {
   } catch {}
 }
 
+function getAbsoluteUrl(path) {
+  if (typeof window === 'undefined') return path;
+  try {
+    return new URL(path, window.location.origin).href;
+  } catch {
+    return path;
+  }
+}
+
+const WATERMARK_KEYS = {
+  sale: 'krotak_notif_watermark_sale',
+  user: 'krotak_notif_watermark_user',
+};
+
+const SEEN_IDS_KEYS = {
+  sale: 'krotak_notif_seen_sales',
+  user: 'krotak_notif_seen_users',
+};
+
+/**
+ * فحص هل الحدث جديد فعلاً ويستحق إشعار الهاتف
+ * يضمن عدم إطلاق إشعارات للسجلات القديمة عند الدخول للتطبيق
+ */
+export function shouldAlertNewEvent(type, id, timestamp) {
+  if (typeof window === 'undefined' || !id) return false;
+  const watermarkKey = WATERMARK_KEYS[type];
+  const seenKey = SEEN_IDS_KEYS[type];
+  if (!watermarkKey || !seenKey) return true;
+
+  try {
+    const rawWatermark = localStorage.getItem(watermarkKey);
+    const rawSeen = localStorage.getItem(seenKey);
+    let seenList = [];
+    try { seenList = rawSeen ? JSON.parse(rawSeen) : []; } catch { seenList = []; }
+    const seenSet = new Set(Array.isArray(seenList) ? seenList : []);
+
+    const eventTime = Number(timestamp) || Date.now();
+
+    // في أول مرة يفتح فيها التطبيق إطلاقاً: نسجل الوقت الحالي كعلامة مائية ولا نرسل إشعارات لما قبله
+    if (!rawWatermark) {
+      localStorage.setItem(watermarkKey, String(Date.now()));
+      seenSet.add(id);
+      localStorage.setItem(seenKey, JSON.stringify([...seenSet].slice(-200)));
+      return false;
+    }
+
+    const watermarkTime = Number(rawWatermark) || 0;
+
+    // إذا كان الحدث موجوداً بالفعل أو وقته أقدم من العلامة المائية: تجاهله تماماً
+    if (seenSet.has(id) || eventTime < watermarkTime - 1000) {
+      return false;
+    }
+
+    // حدث جديد حقيقي: أضفه للسجلات المحدثة
+    seenSet.add(id);
+    const updatedWatermark = Math.max(watermarkTime, eventTime);
+    localStorage.setItem(watermarkKey, String(updatedWatermark));
+    localStorage.setItem(seenKey, JSON.stringify([...seenSet].slice(-200)));
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * إرسال إشعار حي إلى شريط إشعارات الهاتف / النظام
  * @param {Object} options
@@ -140,6 +204,7 @@ export async function dispatchPhoneNotification({
   tag,
   type = 'sale',
   icon = '/icons/krotak-pro-192.png',
+  badge = '/icons/krotak-pro-48.png',
 }) {
   const prefs = getNotificationPreferences();
 
@@ -157,10 +222,13 @@ export async function dispatchPhoneNotification({
     return false;
   }
 
+  const iconAbsolute = getAbsoluteUrl(icon);
+  const badgeAbsolute = getAbsoluteUrl(badge);
+
   const notificationOptions = {
     body,
-    icon,
-    badge: icon,
+    icon: iconAbsolute,
+    badge: badgeAbsolute,
     tag: tag || `krotak-${Date.now()}`,
     data: { url },
     vibrate: [120, 60, 120],
@@ -170,7 +238,7 @@ export async function dispatchPhoneNotification({
   };
 
   try {
-    // المحاولة عبر Service Worker لظهور أفضل على أجهزة الأندرويد والهواتف
+    // المحاولة عبر Service Worker لظهور أفضل بأيقونة التطبيق على أجهزة الأندرويد والهواتف
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready.catch(() => null);
       if (reg && typeof reg.showNotification === 'function') {

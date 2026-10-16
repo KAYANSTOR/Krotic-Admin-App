@@ -26,6 +26,8 @@ export const AUDIT_ACTIONS = {
   ADMIN_DELETE: { label: 'حذف مدير', tone: 'danger' },
   DEVICE_DELETE: { label: 'حذف جهاز', tone: 'neutral' },
   USER_DELETE: { label: 'حذف حساب شبكة/عميل', tone: 'danger' },
+  USER_PHONE_VERIFY_MANUAL: { label: 'تفعيل رقم الهاتف يدوياً (دعم فني)', tone: 'success' },
+  USER_PHONE_UNVERIFY: { label: 'إلغاء توثيق الهاتف', tone: 'warning' },
   ADMIN_PASSWORD_CHANGE: { label: 'تغيير كلمة مرور المدير', tone: 'brand' },
 };
 

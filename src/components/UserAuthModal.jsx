@@ -13,6 +13,7 @@ import UserDevicesPanel from './UserDevicesPanel';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { formatDate } from '../lib/format';
+import { isUserPhoneVerified } from '../lib/accessStatus';
 
 const ENDPOINT = '/api/manage-user-auth';
 const MIN_PASSWORD_LENGTH = 6;
@@ -301,6 +302,9 @@ ${resetLink}`)}`
               <dd className="auth-info__value">
                 <Badge tone={displayInfo?.disabled ? 'danger' : 'success'} dot>
                   {displayInfo?.disabled ? 'معطّل في المصادقة' : 'مفعّل'}
+                </Badge>
+                <Badge tone={isUserPhoneVerified(user) ? 'success' : 'warning'}>
+                  {isUserPhoneVerified(user) ? 'الهاتف موثّق' : 'الهاتف غير موثّق'}
                 </Badge>
                 {displayInfo?.email && (
                   <Badge tone={displayInfo?.emailVerified ? 'success' : 'warning'}>

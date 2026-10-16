@@ -107,6 +107,10 @@ export function validateNetworkInput(body) {
       if (typeof input.has_custom_warning !== 'boolean') return { ok: false, error: 'has_custom_warning_invalid' };
       value.hasCustomWarning = input.has_custom_warning; provided += 1;
     }
+    if (input.phone_verified !== undefined) {
+      if (typeof input.phone_verified !== 'boolean') return { ok: false, error: 'phone_verified_invalid' };
+      value.phone_verified = input.phone_verified; provided += 1;
+    }
     if (provided === 0) return { ok: false, error: 'no_fields' };
     return { ok: true, value };
   }
@@ -219,6 +223,22 @@ export async function updateAccess(db, { value, actorUid, now }) {
   if (value.commissionRate !== undefined) patch.commission_rate = value.commissionRate;
   if (value.warningMessage !== undefined) patch.warning_message = value.warningMessage;
   if (value.hasCustomWarning !== undefined) patch.has_custom_warning = value.hasCustomWarning;
+  if (value.phone_verified !== undefined) {
+    patch.phone_verified = value.phone_verified;
+    patch.phoneVerified = value.phone_verified;
+    if (value.phone_verified) {
+      patch.phone_verified_at = FieldValue.serverTimestamp();
+      patch.verified_by_admin = true;
+      patch.verified_by_admin_uid = actorUid;
+      patch.phone_verified_manual = true;
+    } else {
+      patch.phone_verified = false;
+      patch.phoneVerified = false;
+      patch.verified_by_admin = false;
+      patch.phone_unverified_at = FieldValue.serverTimestamp();
+      patch.phone_unverified_by = actorUid;
+    }
+  }
   patch.updatedAt = FieldValue.serverTimestamp();
 
   const userRef = db.collection('users').doc(value.uid);

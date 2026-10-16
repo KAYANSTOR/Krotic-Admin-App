@@ -4,6 +4,7 @@ import {
   ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban,
   UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
   Trash2, ChevronDown, ChevronUp, Calendar, Receipt, Send, Sparkles,
+  ShieldCheck, ShieldAlert,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
@@ -26,6 +27,7 @@ import {
 } from '../lib/adminData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import { isUserPhoneVerified } from '../lib/accessStatus';
 
 const accessLabel = {
   TRIAL: { text: 'تجريبي', tone: 'warning' },
@@ -266,6 +268,79 @@ export default function UserProfilePage() {
     });
   };
 
+  const handleManualPhoneVerify = () => {
+    if (!user) return;
+    const isVerified = isUserPhoneVerified(user);
+    const targetName = user.networkName || user.phoneNumber || user.phone || uid;
+    const phoneDisplay = user.phoneNumber || user.phone || 'غير مسجّل';
+
+    if (!isVerified) {
+      setConfirmAction({
+        title: 'تفعيل التحقق من الهاتف يدوياً (للدعم الفني)',
+        message: `هل تريد تفعيل واعتماد حساب «${targetName}» برقم الهاتف (${phoneDisplay}) يدوياً؟
+
+ملاحظة للدعم الفني: يُستخدم هذا الإجراء لمساعدة المشتركين في حال تعذر وصول كود التحقق SMS بسبب مشاكل الشبكة أو تغطية المشغل. سيتم اعتماد الحساب فوراً كـ (phone_verified: true).`,
+        variant: 'success',
+        action: async () => {
+          const result = await updateNetworkAccess({ uid, phone_verified: true });
+          if (!result.ok) {
+            toast.error(adminApiError(result.error, 'تعذر تفعيل التحقق من الهاتف'));
+            return false;
+          }
+          invalidateAdminUserData(uid);
+          setUser((prev) => (prev ? {
+            ...prev,
+            phone_verified: true,
+            phoneVerified: true,
+            phone_verified_at: new Date(),
+            verified_by_admin: true,
+            phone_verified_manual: true,
+          } : prev));
+          await logAdminAction({
+            action: AUDIT_ACTIONS.USER_PHONE_VERIFY_MANUAL,
+            targetType: 'user',
+            targetId: uid,
+            targetLabel: targetName,
+            details: { phone: phoneDisplay, manual: true, reason: 'دعم فني - تفعيل يدوي' },
+          }).catch(() => {});
+          toast.success(`تم تفعيل وتوثيق حساب «${targetName}» برقم الهاتف بنجاح`);
+          load({ force: true });
+          return true;
+        },
+      });
+    } else {
+      setConfirmAction({
+        title: 'إلغاء توثيق الهاتف',
+        message: `حساب «${targetName}» مفعّل وموثّق بالهاتف حالياً (${phoneDisplay}). هل تريد إلغاء حالة التوثيق؟ (phone_verified: false)`,
+        variant: 'danger',
+        action: async () => {
+          const result = await updateNetworkAccess({ uid, phone_verified: false });
+          if (!result.ok) {
+            toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
+            return false;
+          }
+          invalidateAdminUserData(uid);
+          setUser((prev) => (prev ? {
+            ...prev,
+            phone_verified: false,
+            phoneVerified: false,
+            phone_verified_manual: false,
+          } : prev));
+          await logAdminAction({
+            action: AUDIT_ACTIONS.USER_PHONE_UNVERIFY,
+            targetType: 'user',
+            targetId: uid,
+            targetLabel: targetName,
+            details: { phone: phoneDisplay },
+          }).catch(() => {});
+          toast.success('تم إلغاء توثيق الهاتف للحساب');
+          load({ force: true });
+          return true;
+        },
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="users-page">
@@ -338,6 +413,22 @@ export default function UserProfilePage() {
               <dt>رقم الهاتف</dt>
               <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || '—'}</dd>
             </div>
+            <div className="user-card__meta-item">
+              <dt>حالة التحقق بالهاتف</dt>
+              <dd>
+                {isUserPhoneVerified(user) ? (
+                  <span className="inline-flex items-center gap-1 font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>مفعّل برقم الهاتف (true)</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 text-xs">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                    <span>غير مفعّل (false)</span>
+                  </span>
+                )}
+              </dd>
+            </div>
           </dl>
 
           <div className="user-card__actions" style={{ marginTop: '1rem' }}>
@@ -362,6 +453,19 @@ export default function UserProfilePage() {
               <KeyRound className="w-4 h-4" />
               <span>الدخول</span>
             </button>
+
+            {/* التفعيل اليدوي برقم الهاتف للدعم الفني */}
+            <button
+              type="button"
+              onClick={handleManualPhoneVerify}
+              className={`row-action ${isUserPhoneVerified(user) ? 'row-action--success' : 'row-action--brand-soft'}`}
+              title={isUserPhoneVerified(user) ? 'إلغاء توثيق الهاتف' : 'تفعيل الهاتف يدوياً للدعم الفني'}
+              aria-label="تفعيل الهاتف يدوياً"
+            >
+              {isUserPhoneVerified(user) ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
+              <span>{isUserPhoneVerified(user) ? 'الهاتف مفعّل' : 'تفعيل الهاتف'}</span>
+            </button>
+
             {user.is_trial && (
               <button
                 onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}

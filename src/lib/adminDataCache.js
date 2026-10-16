@@ -1,7 +1,7 @@
 export const ADMIN_DATA_CACHE_PREFIX = 'krotak:admin-data:';
-// Keep route-to-route data warm for five minutes; explicit refresh still bypasses it.
-export const MEMORY_CACHE_TTL = 5 * 60_000;
-export const LOCAL_CACHE_TTL = 15 * 60_000;
+// Keep route-to-route data warm locally; explicit manual refresh bypasses it.
+export const MEMORY_CACHE_TTL = 30 * 60_000; // 30 minutes
+export const LOCAL_CACHE_TTL = 7 * 24 * 60 * 60_000; // 7 days persistent cache
 const CACHE_RESULT = Symbol('ADMIN_DATA_CACHE_RESULT');
 
 export function withAdminDataCacheMetadata(value, metadata) {
@@ -128,7 +128,7 @@ export function createAdminDataCache({
       metadata.set(scopedKey, { ...state, fromCache: true, cachedAt: state.cachedAt || cached.createdAt, stale: true });
       notify(scopedKey, cached.value);
       if (!inFlight.has(scopedKey)) {
-        void readCached(key, loader, { force: true, uid: scopeUid }).catch(() => {
+        void readCached(key, loader, { force: false, uid: scopeUid }).catch(() => {
           // Keep serving the last known snapshot when offline.
         });
       }
@@ -147,7 +147,7 @@ export function createAdminDataCache({
           stale: localValue.stale,
         });
         if (localValue.stale) {
-          void readCached(key, loader, { force: true, uid: scopeUid }).catch(() => {
+          void readCached(key, loader, { force: false, uid: scopeUid }).catch(() => {
             // Keep serving the last known local snapshot when offline.
           });
         }

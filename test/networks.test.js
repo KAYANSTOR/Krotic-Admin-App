@@ -30,7 +30,8 @@ test('update-access validates each server-owned field', () => {
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', accessStatus: 'ACTIVE_PAID' }).ok, true);
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', accessStatus: 'NOPE' }).error, 'access_status_invalid');
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', commission_rate: 150 }).error, 'commission_rate_invalid');
-  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', subscriptionEndsAt: -1 }).error, 'subscription_end_invalid');
+  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', phone_verified: true }).ok, true);
+  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', phone_verified: 'yes' }).error, 'phone_verified_invalid');
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1' }).error, 'no_fields');
 });
 

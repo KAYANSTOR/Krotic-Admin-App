@@ -1,10 +1,12 @@
-const SHELL_CACHE = 'krotak-pro-shell-v3';
-const RUNTIME_CACHE = 'krotak-pro-runtime-v3';
+const SHELL_CACHE = 'krotak-pro-shell-v4';
+const RUNTIME_CACHE = 'krotak-pro-runtime-v4';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
   '/icons/krotak-pro-192.png',
   '/icons/krotak-pro-512.png',
+  '/icons/krotak-pro-48.png',
+  '/favicon.ico',
 ];
 
 self.addEventListener('install', (event) => {
@@ -47,16 +49,22 @@ self.addEventListener('fetch', (event) => {
   // لا نُخزّن طلبات الـ API ولا نتدخّل في اتصالات Firebase (بيانات حيّة دائماً).
   if (url.pathname.startsWith('/api/') || url.origin !== self.location.origin) return;
 
-  // التنقّل: الشبكة أولاً، ومحتوى التطبيق المخزَّن عند انقطاع الاتصال.
+  // التنقّل: كاش التطبيق أولاً مع التحديث في الخلفية لسرعة فائقة وانتقالات فورية
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy)).catch(() => {});
-          return response;
-        })
-        .catch(() => caches.match('/'))
+      caches.match('/').then((cached) => {
+        const networkFetch = fetch(request)
+          .then((response) => {
+            if (response && response.status === 200) {
+              const copy = response.clone();
+              caches.open(SHELL_CACHE).then((cache) => cache.put('/', copy)).catch(() => {});
+            }
+            return response;
+          })
+          .catch(() => cached);
+
+        return cached || networkFetch;
+      })
     );
     return;
   }
@@ -76,6 +84,36 @@ self.addEventListener('fetch', (event) => {
       })
     );
   }
+});
+
+// التعامل مع وصول إشعارات الدفع في الخلفية حتى عندما تكون لوحة الإدارة مقفلة
+self.addEventListener('push', (event) => {
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { title: 'كروتك برو', body: event.data.text() };
+    }
+  }
+
+  const title = payload.title || '🔔 تنبيه جديد - كروتك برو';
+  const iconUrl = new URL('/icons/krotak-pro-192.png', self.location.origin).href;
+  const badgeUrl = new URL('/icons/krotak-pro-48.png', self.location.origin).href;
+
+  const options = {
+    body: payload.body || 'عملية جديدة في لوحة الإدارة',
+    icon: iconUrl,
+    badge: badgeUrl,
+    data: { url: payload.url || '/' },
+    vibrate: [120, 60, 120],
+    dir: 'rtl',
+    lang: 'ar',
+    tag: payload.tag || `krotak-push-${Date.now()}`,
+    renotify: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 // التعامل مع النقر على إشعارات الهاتف / النظام لفتح التطبيق والانتقال للشاشة المناسبة

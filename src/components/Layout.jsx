@@ -21,6 +21,7 @@ import {
   getNotificationPreferences,
   subscribeNotificationPreferences,
   dispatchPhoneNotification,
+  shouldAlertNewEvent,
 } from '../lib/phoneNotifications';
 
 /** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
@@ -47,11 +48,6 @@ export default function Layout({ children }) {
   const location = useLocation();
   const online = useOnlineStatus();
 
-  const knownSaleIds = useRef(new Set());
-  const initialLoadDone = useRef(false);
-  const knownUserIds = useRef(new Set());
-  const initialUsersDone = useRef(false);
-
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
 
   // الاشتراك في تفضيلات إشعارات الهاتف لتحديث الأيقونة فوراً
@@ -67,21 +63,22 @@ export default function Layout({ children }) {
     const unsubscribe = onSnapshot(
       usersCol,
       (snapshot) => {
-        // في أول قراءة نحفظ المستخدمين الموجودين مسبقاً
-        if (!initialUsersDone.current) {
-          snapshot.docs.forEach((d) => knownUserIds.current.add(d.id));
-          initialUsersDone.current = true;
-          return;
-        }
-
-        // فحص المستندات المضافة حديثاً
         snapshot.docChanges().forEach((change) => {
-          if (change.type === 'added' && !knownUserIds.current.has(change.doc.id)) {
-            knownUserIds.current.add(change.doc.id);
+          if (change.type === 'added') {
             const data = change.doc.data() || {};
+            const docId = change.doc.id;
+            const createdMs = data.createdAt?.toMillis?.()
+              || data.created_at?.toMillis?.()
+              || (data.createdAt ? new Date(data.createdAt).getTime() : Date.now());
+
+            // التأكد من أن هذا المشترك جديد فعلاً ولم يُنبه عنه سابقاً
+            if (!shouldAlertNewEvent('user', docId, createdMs)) {
+              return;
+            }
+
             const netName = data.networkName || data.name || data.phone || data.phoneNumber || 'مشترك جديد';
             const phone = data.phone || data.phoneNumber || '';
-            const userAlertObj = { id: change.doc.id, name: netName, phone };
+            const userAlertObj = { id: docId, name: netName, phone };
 
             // إرسال إشعار حي لشريط إشعارات الهاتف
             dispatchPhoneNotification({
@@ -89,17 +86,16 @@ export default function Layout({ children }) {
               body: phone
                 ? `تم تسجيل شبكة جديدة: ${netName} (${phone})`
                 : `تم تسجيل شبكة جديدة: ${netName}`,
-              url: `/users/${change.doc.id}`,
+              url: `/users/${docId}`,
               type: 'user',
-              tag: `user-${change.doc.id}`,
+              tag: `user-${docId}`,
             });
 
             // شريط عائم في أعلى الشاشة داخل التطبيق
             setIncomingUserAlert(userAlertObj);
-            emitAppRefresh();
 
             setTimeout(() => {
-              setIncomingUserAlert((curr) => (curr?.id === change.doc.id ? null : curr));
+              setIncomingUserAlert((curr) => (curr?.id === docId ? null : curr));
             }, 7000);
           }
         });
@@ -111,7 +107,6 @@ export default function Layout({ children }) {
 
     return () => unsubscribe();
   }, []);
-
 
   // مراقبة وصول المبيعات في الوقت الفعلي في جميع الشاشات
   useEffect(() => {
@@ -129,21 +124,14 @@ export default function Layout({ children }) {
           });
         });
 
-        // في أول تحميل نجمع المعرفات السابقة فقط
-        if (!initialLoadDone.current) {
-          allCompletedSales.forEach((s) => {
-            const sid = s.id || s.saleId;
-            if (sid) knownSaleIds.current.add(sid);
-          });
-          initialLoadDone.current = true;
-          return;
-        }
-
         // فحص هل هناك مبيعات جديدة دخلت للتو
         for (const sale of allCompletedSales) {
           const sid = sale.id || sale.saleId;
-          if (sid && !knownSaleIds.current.has(sid)) {
-            knownSaleIds.current.add(sid);
+          const createdMs = sale.createdAt?.toMillis?.()
+            || sale.createdAtMs
+            || (sale.createdAt ? new Date(sale.createdAt).getTime() : Date.now());
+
+          if (sid && shouldAlertNewEvent('sale', sid, createdMs)) {
             setIncomingSaleAlert(sale);
 
             // إرسال إشعار حي إلى شريط إشعارات الهاتف
@@ -155,8 +143,6 @@ export default function Layout({ children }) {
               tag: `sale-${sid}`,
             });
 
-            // بث التحديث لجميع الشاشات
-            emitAppRefresh();
             // إخفاء التنبيه تلقائياً بعد 6 ثوانٍ
             setTimeout(() => {
               setIncomingSaleAlert((curr) => ((curr?.id || curr?.saleId) === sid ? null : curr));
@@ -166,9 +152,7 @@ export default function Layout({ children }) {
         }
       },
       () => {},
-      () => {
-        initialLoadDone.current = true;
-      }
+      () => {}
     );
     return () => unsubscribe();
   }, []);
