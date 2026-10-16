@@ -230,7 +230,7 @@ export default function DashboardPage() {
           <span className="dash-error__icon" aria-hidden="true"><AlertTriangle className="w-5 h-5" /></span>
           <div className="dash-error__body">
             <p className="dash-error__title">تفصيل الأشهر غير مكتمل</p>
-            <p className="dash-error__msg">الإجماليات الكلية متاحة، لكن تعذر تحميل بيانات الأشهر لبعض الشبكات. تحقّق من اتصال Firestore وفهرس المبيعات المركّب.</p>
+            <p className="dash-error__msg">الإجماليات المالية محفوظة. يجري استعادة التفصيل الشهري من سجلات المبيعات عند غياب بيانات التجميع؛ إذا استمر التحذير، افتح تفاصيل الفشل لمعرفة الشبكة وسبب الخطأ بدقة.</p>
             {partialErrors.length > 0 && (
               <details className="dash-error__details">
                 <summary>عرض تفاصيل الفشل ({partialErrors.length})</summary>
