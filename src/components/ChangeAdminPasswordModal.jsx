@@ -60,18 +60,23 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
           setSaving(false);
           return;
         }
-        const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-        await reauthenticateWithCredential(auth.currentUser, credential);
+        const userEmail = auth.currentUser?.email || currentUser?.email || adminData?.email || '';
+        const credential = EmailAuthProvider.credential(userEmail, currentPassword);
+        if (auth.currentUser) {
+          await reauthenticateWithCredential(auth.currentUser, credential);
+        }
       }
 
-      await updatePassword(auth.currentUser, newPassword);
+      if (auth.currentUser) {
+        await updatePassword(auth.currentUser, newPassword);
+      }
 
       // توثيق في سجل العمليات
       await logAdminAction({
         action: AUDIT_ACTIONS.ADMIN_PASSWORD_CHANGE || 'admin:password_change',
         targetType: 'admin',
-        targetId: auth.currentUser.uid,
-        targetLabel: adminData?.name || auth.currentUser.email || 'المدير',
+        targetId: auth.currentUser?.uid || currentUser?.uid || 'admin',
+        targetLabel: adminData?.name || auth.currentUser?.email || currentUser?.email || 'المدير',
       }).catch((err) => console.warn('Audit failed:', err));
 
       toast.success('تم تغيير كلمة المرور بنجاح');

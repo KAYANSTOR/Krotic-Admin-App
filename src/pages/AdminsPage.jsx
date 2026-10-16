@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   ShieldCheck, UserPlus, Trash2, Eye, EyeOff,
-  Mail, Phone, User, Users, X,
+  Mail, Phone, User, Users, X, KeyRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
@@ -15,6 +15,7 @@ import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import { Field, Input } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ChangeAdminPasswordModal from '../components/ChangeAdminPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -50,6 +51,7 @@ export default function AdminsPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showMyPasswordModal, setShowMyPasswordModal] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [cacheState, setCacheState] = useState(null);
   const { createAdmin, currentUser } = useAuth();
@@ -159,6 +161,13 @@ export default function AdminsPage() {
         actions={
           <>
             <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchAdmins({ force: true })} fromCache={cacheState?.fromCache ?? null} />
+            <Button
+              variant="secondary"
+              icon={KeyRound}
+              onClick={() => setShowMyPasswordModal(true)}
+            >
+              تعديل كلمة مروري
+            </Button>
             <Button
               variant={showForm ? 'ghost' : 'primary'}
               icon={showForm ? X : UserPlus}
@@ -290,9 +299,22 @@ export default function AdminsPage() {
                 </div>
               </div>
 
-              <div className="admin-card__footer">
+              <div className="admin-card__footer flex items-center justify-between">
                 <span className="admin-card__date">أُضيف في {formatDate(admin.createdAt)}</span>
-                {admin.id === currentUser?.uid && <Badge tone="brand">أنت</Badge>}
+                {admin.id === currentUser?.uid ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowMyPasswordModal(true)}
+                      className="text-[11px] font-bold text-brand hover:underline flex items-center gap-1 bg-brand-soft px-2 py-0.5 rounded-md"
+                      title="تغيير كلمة المرور الخاصة بك"
+                    >
+                      <KeyRound className="w-3 h-3" />
+                      <span>تغيير كلمة المرور</span>
+                    </button>
+                    <Badge tone="brand">أنت</Badge>
+                  </div>
+                ) : null}
               </div>
             </Card>
           ))}
@@ -308,6 +330,11 @@ export default function AdminsPage() {
         message={`هل أنت متأكد من حذف "${deleteTarget?.name}" من قائمة المدراء؟ لن يتمكن من الدخول للوحة التحكم بعد الآن.`}
         confirmText="نعم، احذف"
         variant="danger"
+      />
+
+      <ChangeAdminPasswordModal
+        isOpen={showMyPasswordModal}
+        onClose={() => setShowMyPasswordModal(false)}
       />
     </div>
   );

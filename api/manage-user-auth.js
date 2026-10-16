@@ -229,13 +229,56 @@ export default async function handler(req, res) {
   if (action === 'reset-link') {
     try {
       const record = await getAuth().getUser(uid);
-      if (!record.email) {
+      let targetEmail = record.email;
+
+      // إذا لم يكن هناك بريد، نحاول اشتقاقه من رقم هاتف العميل وتحديث حسابه
+      if (!targetEmail) {
+        try {
+          const userSnap = await getFirestore().collection('users').doc(uid).get();
+          const uData = userSnap.exists ? userSnap.data() : {};
+          const phone = (uData.phone || uData.phoneNumber || record.phoneNumber || '').replace(/[^0-9]/g, '');
+          if (phone) {
+            targetEmail = `${phone}@krotak.app`;
+            await getAuth().updateUser(uid, { email: targetEmail });
+          }
+        } catch (fetchErr) {
+          console.warn('manage-user-auth: could not derive email from phone', fetchErr);
+        }
+      }
+
+      if (!targetEmail) {
         return res.status(400).json({ success: false, error: 'no_login_email' });
       }
 
-      // رابط فقط، دون إرسال أي بريد: يسلّمه المدير للعميل (واتساب/SMS).
-      const link = await getAuth().generatePasswordResetLink(record.email);
-      return res.status(200).json({ success: true, link, email: record.email });
+      let link = null;
+      try {
+        link = await getAuth().generatePasswordResetLink(targetEmail);
+      } catch (linkErr) {
+        console.warn('Standard generatePasswordResetLink failed, attempting fallback URL:', linkErr);
+        try {
+          const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || 'krotak.app';
+          link = await getAuth().generatePasswordResetLink(targetEmail, {
+            url: `https://${host}/login`,
+            handleCodeInApp: false,
+          });
+        } catch (secondErr) {
+          console.warn('ActionCodeSettings link also failed:', secondErr);
+        }
+      }
+
+      // إذا تعذر توليد الرابط من مزود Firebase، نولد كلمة مرور مؤقتة صالحة فوراً دون إحباط المدير
+      if (!link) {
+        const tempPassword = 'kp-' + Math.random().toString(36).slice(2, 6) + '-' + Math.floor(1000 + Math.random() * 9000);
+        await getAuth().updateUser(uid, { password: tempPassword });
+        return res.status(200).json({
+          success: true,
+          tempPassword,
+          mode: 'temporary_password',
+          email: targetEmail,
+        });
+      }
+
+      return res.status(200).json({ success: true, link, email: targetEmail });
     } catch (error) {
       if (error?.code === 'auth/user-not-found') {
         return res.status(404).json({ success: false, error: 'user_not_found' });

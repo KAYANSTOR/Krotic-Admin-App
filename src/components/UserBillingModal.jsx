@@ -46,7 +46,7 @@ function newIdempotencyKey(uid) {
   return `${uid.slice(0, 20)}-${random}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 128);
 }
 
-export default function UserBillingModal({ isOpen, onClose, user }) {
+export default function UserBillingModal({ isOpen, onClose, user, initialMonth }) {
   const userUid = user?.uid;
   const [sales, setSales] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -58,7 +58,7 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
   const refreshRequestId = useRef(0);
 
   const [payAmount, setPayAmount] = useState('');
-  const [payMonth, setPayMonth] = useState(() => getCurrentMonthKey());
+  const [payMonth, setPayMonth] = useState(() => initialMonth || getCurrentMonthKey());
   const [payMode, setPayMode] = useState('full'); // 'full' | 'partial'
   const [payKey, setPayKey] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
@@ -92,7 +92,7 @@ export default function UserBillingModal({ isOpen, onClose, user }) {
     setLoadedForUid(null);
     setPayAmount('');
     setPayMode('full');
-    setPayMonth(getCurrentMonthKey());
+    setPayMonth(initialMonth || getCurrentMonthKey());
     setPayKey(newIdempotencyKey(userUid));
     setSendNotification(true);
     setCustomNotificationMessage('');

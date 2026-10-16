@@ -181,16 +181,13 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      <section className="dash-hello" aria-label="ترحيب">
-        <div className="dash-hello__main">
-          <span className="dash-hello__kicker">
-            <Sparkles className="w-4 h-4" aria-hidden="true" />
-            لوحة الإدارة
-          </span>
-          <h1 className="dash-hello__title">أهلاً، {adminName}</h1>
-          <p className="dash-hello__sub">
-            نظرة سريعة على نشاط الشبكة والمؤشرات الرئيسية.
-          </p>
+      <section className="flex items-center justify-between gap-2 px-1 py-1.5 mb-2.5" aria-label="ترحيب">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="النظام متصل" />
+          <h1 className="text-base sm:text-lg font-black text-ink truncate">
+            أهلاً، {adminName}
+          </h1>
+          <span className="text-[11px] font-bold text-muted hidden sm:inline">• الإدارة</span>
         </div>
         <DataFreshness
           updatedAt={updatedAt}

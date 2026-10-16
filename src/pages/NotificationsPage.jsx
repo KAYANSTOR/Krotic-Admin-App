@@ -6,8 +6,9 @@ import { db, auth } from '../firebase';
 import {
   Bell, Send, Users, User, Globe, History, RefreshCw,
   AlertCircle, Inbox, CheckCircle2, Radio, ShieldCheck, Trash2,
-  FileText, Plus, Sparkles, Clock, Search, X
+  FileText, Plus, Sparkles, Clock, Search, X, Smartphone,
 } from 'lucide-react';
+import PhoneNotificationModal from '../components/PhoneNotificationModal';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -93,6 +94,7 @@ export default function NotificationsPage() {
   const [scheduledAt, setScheduledAt] = useState('');
   const [activeTab, setActiveTab] = useState('compose'); // 'compose' | 'history' | 'templates'
   const [historySearch, setHistorySearch] = useState('');
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
   const latestRequestId = useRef(0);
 
   useEffect(() => {
@@ -416,12 +418,22 @@ export default function NotificationsPage() {
         subtitle="بث تنبيهات push مباشرة لهواتف العملاء ومتابعة السجل"
         meta={`${users.length} شبكة مسجّلة • ${recentNotifications.length} إشعار في السجل`}
         actions={
-          <DataFreshness
-            updatedAt={updatedAt}
-            refreshing={loading || refreshing}
-            onRefresh={() => fetchData({ force: true })}
-            fromCache={cacheState?.fromCache ?? null}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              icon={Smartphone}
+              onClick={() => setPhoneModalOpen(true)}
+              className="font-bold text-xs"
+            >
+              إشعارات هاتفي الحية
+            </Button>
+            <DataFreshness
+              updatedAt={updatedAt}
+              refreshing={loading || refreshing}
+              onRefresh={() => fetchData({ force: true })}
+              fromCache={cacheState?.fromCache ?? null}
+            />
+          </div>
         }
       />
 
@@ -842,6 +854,11 @@ export default function NotificationsPage() {
         message={`هل أنت متأكد من حذف الإشعار "${deleteTarget?.title || ''}" من السجل؟ لا يمكن التراجع عن هذا الإجراء.`}
         confirmText={deleting ? 'جارٍ الحذف...' : 'نعم، احذف'}
         variant="danger"
+      />
+
+      <PhoneNotificationModal
+        isOpen={phoneModalOpen}
+        onClose={() => setPhoneModalOpen(false)}
       />
     </div>
   );

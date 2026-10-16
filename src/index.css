@@ -31,12 +31,14 @@
     --ui-ease: cubic-bezier(.2,.75,.25,1);
   }
 
-  html { direction: rtl; -webkit-text-size-adjust: 100%; }
+  html { direction: rtl; -webkit-text-size-adjust: 100%; font-family: 'Tajawal', sans-serif; }
+  body, *, input, button, select, textarea, optgroup {
+    font-family: 'Tajawal', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  }
   body {
     margin: 0;
     background: var(--ui-paper);
     color: var(--ui-ink);
-    font-family: 'Tajawal', sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -2226,5 +2228,47 @@ body { background: var(--ui-paper); }
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* حركة وصول مبيعات جديدة في الوقت الفعلي */
+@keyframes saleSlideDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes saleGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4), 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0), 0 14px 30px -5px rgba(16, 185, 129, 0.3);
+  }
+}
+
+.sale-pill-enter {
+  animation: saleSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards, saleGlowPulse 2s ease-in-out infinite;
+}
+
+@keyframes highlightSaleRow {
+  0% {
+    background-color: rgba(16, 185, 129, 0.15);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.sale-arrival-highlight {
+  animation: highlightSaleRow 3s ease-out forwards;
 }
 

@@ -8,8 +8,17 @@ import toast from 'react-hot-toast';
 import { db } from '../firebase';
 import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
-  ShieldCheck, AlertTriangle, Users,
+  ShieldCheck, AlertTriangle, Users, KeyRound,
+  Bell, Smartphone, Volume2, Vibrate, CheckCircle2, Send,
 } from 'lucide-react';
+import {
+  getNotificationPreferences,
+  saveNotificationPreferences,
+  subscribeNotificationPreferences,
+  getNotificationPermission,
+  requestNotificationPermission,
+  sendTestPhoneNotification,
+} from '../lib/phoneNotifications';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -19,6 +28,7 @@ import Switch from '../components/ui/Switch';
 import DataFreshness from '../components/ui/DataFreshness';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ChangeAdminPasswordModal from '../components/ChangeAdminPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
@@ -56,7 +66,62 @@ export default function SettingsPage() {
   const [updatedAt, setUpdatedAt] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [cacheState, setCacheState] = useState(null);
+
+  // إعدادات وتفضيلات إشعارات الهاتف الحية
+  const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
+  const [notifPermission, setNotifPermission] = useState(() => getNotificationPermission());
+  const [testingNotif, setTestingNotif] = useState(false);
+
+  useEffect(() => {
+    return subscribeNotificationPreferences((prefs) => {
+      setNotifPrefs(prefs);
+    });
+  }, []);
+
+  const handleNotifToggle = (key, value) => {
+    const next = { ...notifPrefs, [key]: value };
+    setNotifPrefs(next);
+    saveNotificationPreferences(next);
+    if (key === 'enabled') {
+      if (value) {
+        toast.success('تم تشغيل إشعارات الهاتف الحية');
+        if (notifPermission !== 'granted') {
+          handleRequestNotifPermission();
+        }
+      } else {
+        toast('تم إيقاف إشعارات الهاتف مؤقتاً', { icon: '🔕' });
+      }
+    }
+  };
+
+  const handleRequestNotifPermission = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPermission(res);
+    if (res === 'granted') {
+      toast.success('تم منح إذن إشعارات الهاتف بنجاح!');
+    } else if (res === 'denied') {
+      toast.error('تم حظر الإشعارات في المتصفح. يرجى تفعيلها من إعدادات المتصفح');
+    }
+  };
+
+  const handleSendTestNotif = async () => {
+    setTestingNotif(true);
+    try {
+      const res = await sendTestPhoneNotification();
+      setNotifPermission(res.permission);
+      if (res.permission === 'denied') {
+        toast.error('يرجى السماح بالإشعارات من إعدادات المتصفح أو الموقع أولاً');
+      } else {
+        toast.success('تم إرسال إشعار تجريبي! تفقّد شريط إشعارات هاتفك');
+      }
+    } catch {
+      toast.error('حدث خطأ أثناء إرسال الإشعار التجريبي');
+    } finally {
+      setTestingNotif(false);
+    }
+  };
 
   // For batch update expiry
   const [batchDate, setBatchDate] = useState('');
@@ -417,6 +482,153 @@ export default function SettingsPage() {
           يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ الحسابات التجريبية.
         </p>
       </Card>
+
+      {/* ===== أمان حساب المدير ===== */}
+      <Card>
+        <CardHeader
+          icon={KeyRound}
+          title="أمان حساب المدير"
+          description="إدارة كلمة المرور وحماية لوحة الإدارة."
+        />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-surface-sunken border border-line mt-2">
+          <div>
+            <p className="font-extrabold text-xs text-ink">تعديل كلمة مرور حساب المدير</p>
+            <p className="text-[11px] text-muted mt-0.5">يمكنك تغيير كلمة المرور الحالية وتحديثها فوراً لتأمين حسابك.</p>
+          </div>
+          <Button
+            variant="secondary"
+            icon={KeyRound}
+            onClick={() => setShowPasswordModal(true)}
+            className="font-bold shrink-0"
+          >
+            تعديل كلمة المرور
+          </Button>
+        </div>
+      </Card>
+
+      {/* ===== إشعارات الهاتف الحية ===== */}
+      <Card>
+        <CardHeader
+          icon={Smartphone}
+          title="إشعارات الهاتف الحية"
+          description="تصلك تنبيهات حية ومباشرة في شريط إشعارات هاتفك عند تسجيل أي مستخدم جديد أو وصول مبيعات جديدة."
+          action={
+            <Badge tone={notifPrefs.enabled ? 'success' : 'neutral'} dot>
+              {notifPrefs.enabled ? 'مفعّلة' : 'متوقفة'}
+            </Badge>
+          }
+        />
+
+        <div className="space-y-3.5 mt-3">
+          {/* المفتاح العام */}
+          <div className="p-3.5 rounded-2xl bg-brand/5 border border-brand/20 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${notifPrefs.enabled ? 'bg-brand text-white' : 'bg-line text-ink-muted'}`}>
+                <Bell className="w-4 h-4" />
+              </span>
+              <div>
+                <p className="font-extrabold text-xs text-ink">تشغيل إشعارات الهاتف الحية</p>
+                <p className="text-[11px] text-ink-muted">المفتاح الرئيسي لتشغيل أو إيقاف وصول الإشعارات إلى هاتفك.</p>
+              </div>
+            </div>
+            <Switch
+              checked={notifPrefs.enabled}
+              onChange={(val) => handleNotifToggle('enabled', val)}
+              aria-label="تشغيل إشعارات الهاتف الحية"
+            />
+          </div>
+
+          {/* الخيارات التفصيلية */}
+          <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity ${notifPrefs.enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-ink">إشعارات المبيعات الحية 💰</p>
+                <p className="text-[10px] text-ink-muted">تنبيه فوري لشريط هاتفك عند بيع أي كرت في أي شبكة</p>
+              </div>
+              <Switch
+                checked={notifPrefs.salesAlerts}
+                onChange={(val) => handleNotifToggle('salesAlerts', val)}
+                disabled={!notifPrefs.enabled}
+                aria-label="إشعارات المبيعات الحية"
+              />
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-ink">إشعارات تسجيل مستخدم جديد 🎉</p>
+                <p className="text-[10px] text-ink-muted">تنبيه فوري لشريط هاتفك عندما يسجل أي شخص حسابه</p>
+              </div>
+              <Switch
+                checked={notifPrefs.userAlerts}
+                onChange={(val) => handleNotifToggle('userAlerts', val)}
+                disabled={!notifPrefs.enabled}
+                aria-label="إشعارات تسجيل مستخدم جديد"
+              />
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-ink">نغمة صوتية للتنبيه</p>
+                <p className="text-[10px] text-ink-muted">نغمة خفيفة ومبهجة عند وصول أي إشعار</p>
+              </div>
+              <Switch
+                checked={notifPrefs.sound}
+                onChange={(val) => handleNotifToggle('sound', val)}
+                disabled={!notifPrefs.enabled}
+                aria-label="نغمة صوتية للتنبيه"
+              />
+            </div>
+
+            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-ink">اهتزاز الهاتف</p>
+                <p className="text-[10px] text-ink-muted">اهتزاز الهاتف عند وصول التنبيه</p>
+              </div>
+              <Switch
+                checked={notifPrefs.vibrate}
+                onChange={(val) => handleNotifToggle('vibrate', val)}
+                disabled={!notifPrefs.enabled}
+                aria-label="اهتزاز الهاتف"
+              />
+            </div>
+          </div>
+
+          {/* فحص الإذن وزر الاختبار */}
+          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-line/60">
+            <div className="flex items-center gap-2 text-[11px]">
+              {notifPermission === 'granted' ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-emerald-700 font-bold">إذن إشعارات المتصفح/الهاتف مفعّل بنجاح</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="text-ink-muted">الإشعارات بحاجة إلى إذن من المتصفح لتظهر في شريط هاتفك</span>
+                  <button
+                    type="button"
+                    onClick={handleRequestNotifPermission}
+                    className="text-brand font-bold underline hover:text-brand-deep mr-1"
+                  >
+                    السماح الآن
+                  </button>
+                </>
+              )}
+            </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Send}
+              loading={testingNotif}
+              onClick={handleSendTestNotif}
+              className="font-bold shrink-0"
+            >
+              تجربة إشعار فوري على الهاتف
+            </Button>
+          </div>
+        </div>
+      </Card>
       </Section>
 
       {/* ===== نوافذ التأكيد ===== */}
@@ -439,6 +651,11 @@ export default function SettingsPage() {
         confirmText="نعم، قم بالتحديث"
         variant="primary"
         requireText="تأكيد"
+      />
+
+      <ChangeAdminPasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
       />
     </div>
   );

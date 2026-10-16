@@ -1,13 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import PullToRefresh from './PullToRefresh';
-import { Download, Menu, LogOut, WifiOff } from 'lucide-react';
+import ChangeAdminPasswordModal from './ChangeAdminPasswordModal';
+import PhoneNotificationModal from './PhoneNotificationModal';
+import {
+  Download, Menu, LogOut, WifiOff, KeyRound, TrendingUp, X,
+  Bell, BellOff, UserPlus,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
+import { subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { formatNumber } from '../lib/format';
+import {
+  getNotificationPreferences,
+  subscribeNotificationPreferences,
+  dispatchPhoneNotification,
+} from '../lib/phoneNotifications';
 
 /** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
 const PAGE_TITLES = {
@@ -23,12 +37,141 @@ const PAGE_TITLES = {
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [phoneNotifModalOpen, setPhoneNotifModalOpen] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
+  const [incomingSaleAlert, setIncomingSaleAlert] = useState(null);
+  const [incomingUserAlert, setIncomingUserAlert] = useState(null);
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const online = useOnlineStatus();
 
+  const knownSaleIds = useRef(new Set());
+  const initialLoadDone = useRef(false);
+  const knownUserIds = useRef(new Set());
+  const initialUsersDone = useRef(false);
+
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
+
+  // الاشتراك في تفضيلات إشعارات الهاتف لتحديث الأيقونة فوراً
+  useEffect(() => {
+    return subscribeNotificationPreferences((prefs) => {
+      setNotifPrefs(prefs);
+    });
+  }, []);
+
+  // مراقبة تسجيل أي مستخدم جديد في الوقت الفعلي وإرسال إشعار حي للهاتف
+  useEffect(() => {
+    const usersCol = collection(db, 'users');
+    const unsubscribe = onSnapshot(
+      usersCol,
+      (snapshot) => {
+        // في أول قراءة نحفظ المستخدمين الموجودين مسبقاً
+        if (!initialUsersDone.current) {
+          snapshot.docs.forEach((d) => knownUserIds.current.add(d.id));
+          initialUsersDone.current = true;
+          return;
+        }
+
+        // فحص المستندات المضافة حديثاً
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'added' && !knownUserIds.current.has(change.doc.id)) {
+            knownUserIds.current.add(change.doc.id);
+            const data = change.doc.data() || {};
+            const netName = data.networkName || data.name || data.phone || data.phoneNumber || 'مشترك جديد';
+            const phone = data.phone || data.phoneNumber || '';
+            const userAlertObj = { id: change.doc.id, name: netName, phone };
+
+            // إرسال إشعار حي لشريط إشعارات الهاتف
+            dispatchPhoneNotification({
+              title: '🎉 مستخدم جديد سجّل حسابه!',
+              body: phone
+                ? `تم تسجيل شبكة جديدة: ${netName} (${phone})`
+                : `تم تسجيل شبكة جديدة: ${netName}`,
+              url: `/users/${change.doc.id}`,
+              type: 'user',
+              tag: `user-${change.doc.id}`,
+            });
+
+            // شريط عائم في أعلى الشاشة داخل التطبيق
+            setIncomingUserAlert(userAlertObj);
+            emitAppRefresh();
+
+            setTimeout(() => {
+              setIncomingUserAlert((curr) => (curr?.id === change.doc.id ? null : curr));
+            }, 7000);
+          }
+        });
+      },
+      (error) => {
+        console.warn('Realtime users subscription error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+
+  // مراقبة وصول المبيعات في الوقت الفعلي في جميع الشاشات
+  useEffect(() => {
+    const unsubscribe = subscribeNetworkSalesRealtime(
+      (networks) => {
+        const allCompletedSales = [];
+        networks.forEach((net) => {
+          (net.sales || []).forEach((sale) => {
+            if (sale.status === 'COMPLETED') {
+              allCompletedSales.push({
+                ...sale,
+                networkName: net.networkName || 'شبكة المشترك',
+              });
+            }
+          });
+        });
+
+        // في أول تحميل نجمع المعرفات السابقة فقط
+        if (!initialLoadDone.current) {
+          allCompletedSales.forEach((s) => {
+            const sid = s.id || s.saleId;
+            if (sid) knownSaleIds.current.add(sid);
+          });
+          initialLoadDone.current = true;
+          return;
+        }
+
+        // فحص هل هناك مبيعات جديدة دخلت للتو
+        for (const sale of allCompletedSales) {
+          const sid = sale.id || sale.saleId;
+          if (sid && !knownSaleIds.current.has(sid)) {
+            knownSaleIds.current.add(sid);
+            setIncomingSaleAlert(sale);
+
+            // إرسال إشعار حي إلى شريط إشعارات الهاتف
+            dispatchPhoneNotification({
+              title: '💰 عملية بيع جديدة!',
+              body: `${sale.networkName || 'شبكة المشترك'} • مبيعات بقيمة ${formatNumber(sale.faceValue)} ر.ي`,
+              url: '/sales',
+              type: 'sale',
+              tag: `sale-${sid}`,
+            });
+
+            // بث التحديث لجميع الشاشات
+            emitAppRefresh();
+            // إخفاء التنبيه تلقائياً بعد 6 ثوانٍ
+            setTimeout(() => {
+              setIncomingSaleAlert((curr) => ((curr?.id || curr?.saleId) === sid ? null : curr));
+            }, 6000);
+            break;
+          }
+        }
+      },
+      () => {},
+      () => {
+        initialLoadDone.current = true;
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // أعلِن عند عودة الاتصال، وأعد النبض لكل صفحة عبر حدث التحديث العام.
   useEffect(() => {
@@ -77,6 +220,98 @@ export default function Layout({ children }) {
       <a href="#main-content" className="skip-link">تخطي إلى المحتوى</a>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
+      {/* شريط عائم عند تسجيل مستخدم جديد */}
+      {incomingUserAlert && (
+        <aside
+          role="status"
+          aria-label="تنبيه تسجيل مستخدم جديد"
+          className="fixed top-3 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-96 z-50 sale-pill-enter bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 rounded-2xl border border-sky-500/50 shadow-2xl backdrop-blur-md cursor-pointer transition-all select-none"
+          onClick={() => {
+            navigate(`/users/${incomingUserAlert.id}`);
+            setIncomingUserAlert(null);
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-8 h-8 rounded-full bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                <UserPlus className="w-4 h-4 animate-bounce" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-black text-sky-400">مستخدم جديد سجّل حسابه!</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                </div>
+                <p className="text-xs text-slate-100 font-bold truncate mt-0.5">
+                  {incomingUserAlert.name} {incomingUserAlert.phone ? `• ${incomingUserAlert.phone}` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-bold text-sky-300 bg-sky-500/20 px-2 py-0.5 rounded-md hover:bg-sky-500/30">
+                عرض
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIncomingUserAlert(null);
+                }}
+                className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
+                aria-label="إغلاق التنبيه"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* شريط عائم احترافي يظهر فور وصول أي عملية بيع جديدة في جميع الشاشات */}
+      {incomingSaleAlert && (
+        <aside
+          role="status"
+          aria-label="تنبيه عملية بيع جديدة"
+          className="fixed top-3 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-96 z-50 sale-pill-enter bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 rounded-2xl border border-emerald-500/50 shadow-2xl backdrop-blur-md cursor-pointer transition-all select-none"
+          onClick={() => {
+            navigate('/sales');
+            setIncomingSaleAlert(null);
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4 animate-bounce" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-black text-emerald-400">عملية بيع جديدة الآن!</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                </div>
+                <p className="text-xs text-slate-100 font-bold truncate mt-0.5">
+                  {incomingSaleAlert.networkName} • {formatNumber(incomingSaleAlert.faceValue)} ر.ي
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md hover:bg-emerald-500/30">
+                عرض
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIncomingSaleAlert(null);
+                }}
+                className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
+                aria-label="إغلاق التنبيه"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+
       <div className="app-body lg:ms-72">
         <header className="app-header">
           <div className="app-header__inner">
@@ -93,13 +328,50 @@ export default function Layout({ children }) {
             </div>
 
             <div className="app-header__actions">
-              <div className="admin-chip">
+              {/* زر إعدادات وتشغيل/إلغاء إشعارات الهاتف الحية */}
+              <button
+                type="button"
+                onClick={() => setPhoneNotifModalOpen(true)}
+                className={`p-2 rounded-xl transition-all relative ${
+                  notifPrefs.enabled
+                    ? 'text-brand bg-brand/10 hover:bg-brand/20'
+                    : 'text-ink-secondary hover:text-ink hover:bg-surface-sunken opacity-70'
+                }`}
+                title={notifPrefs.enabled ? 'إشعارات الهاتف الحية: قيد التشغيل (اضغط للإلغاء أو التخصيص)' : 'إشعارات الهاتف الحية: متوقفة (اضغط للتشغيل)'}
+                aria-label="إعدادات وتشغيل إشعارات الهاتف الحية"
+              >
+                {notifPrefs.enabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+                {notifPrefs.enabled && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-surface animate-pulse" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(true)}
+                className="admin-chip hover:opacity-90 transition-opacity"
+                title="تعديل كلمة مرور المدير"
+                aria-label="تعديل كلمة مرور المدير"
+              >
                 <span className="admin-chip__avatar">{initial}</span>
-                <div className="hidden sm:block">
-                  <p className="admin-chip__name">{adminData?.name || 'المدير'}</p>
+                <div className="hidden sm:block text-right">
+                  <p className="admin-chip__name flex items-center gap-1">
+                    <span>{adminData?.name || 'المدير'}</span>
+                    <KeyRound className="w-3 h-3 text-brand" />
+                  </p>
                   <p className="admin-chip__email">{adminData?.email}</p>
                 </div>
-              </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(true)}
+                className="p-2 rounded-xl text-ink-secondary hover:text-brand hover:bg-surface-sunken transition-colors"
+                title="تعديل كلمة مرور المدير"
+                aria-label="تعديل كلمة مرور المدير"
+              >
+                <KeyRound className="w-4 h-4" />
+              </button>
 
               {installPrompt && (
                 <button type="button" onClick={handleInstall} className="app-header__install">
@@ -130,6 +402,17 @@ export default function Layout({ children }) {
         </main>
         <BottomNav />
       </div>
+
+      <ChangeAdminPasswordModal
+        isOpen={passwordModalOpen}
+        onClose={() => setPasswordModalOpen(false)}
+      />
+
+      <PhoneNotificationModal
+        isOpen={phoneNotifModalOpen}
+        onClose={() => setPhoneNotifModalOpen(false)}
+      />
     </div>
   );
 }
+

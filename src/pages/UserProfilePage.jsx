@@ -1,6 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban, UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users, Trash2 } from 'lucide-react';
+import {
+  ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban,
+  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
+  Trash2, ChevronDown, ChevronUp, Calendar, Receipt, Send, Sparkles,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -30,12 +34,24 @@ const accessLabel = {
   LOCKED_EXPIRED: { text: 'منتهي', tone: 'danger' },
 };
 
+function formatMonthArabic(monthKey) {
+  if (!monthKey || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) return monthKey || '';
+  const [year, month] = monthKey.split('-').map(Number);
+  const monthNames = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+  ];
+  return `${monthNames[month - 1]} ${year}`;
+}
+
 export default function UserProfilePage() {
   const { uid } = useParams();
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [history, setHistory] = useState({ sales: [], payments: [] });
   const [historyMonth, setHistoryMonth] = useState(() => getCurrentMonthKey());
+  const [selectedMonthForBilling, setSelectedMonthForBilling] = useState(null);
+  const [expandedMonths, setExpandedMonths] = useState(() => new Set([getCurrentMonthKey()]));
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -89,8 +105,6 @@ export default function UserProfilePage() {
     return unsubscribe;
   }, [uid]);
 
-
-
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
   const monthOptions = [...new Set([
@@ -102,6 +116,7 @@ export default function UserProfilePage() {
         : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
     )),
   ].filter(Boolean))].sort((a, b) => b.localeCompare(a));
+
   const sales = historyMonth === 'all'
     ? allSales
     : allSales.filter((sale) => monthKeyFromDate(sale.createdAt) === historyMonth);
@@ -112,10 +127,85 @@ export default function UserProfilePage() {
         ? payment.month
         : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
     ) === historyMonth);
+
   const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   const outstanding = sumOutstanding(sales);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+
+  // تفصيل الأشهر والعمولات لكل شهر مع إمكانية التوسيع وعرض العمليات
+  const monthlyBreakdown = useMemo(() => {
+    const buckets = {};
+    monthOptions.forEach((mKey) => {
+      if (mKey === 'all') return;
+      buckets[mKey] = {
+        month: mKey,
+        sales: [],
+        payments: [],
+        totalSales: 0,
+        commissionDue: 0,
+        totalPaid: 0,
+        outstanding: 0,
+      };
+    });
+
+    allSales.forEach((sale) => {
+      const mKey = monthKeyFromDate(sale.createdAt);
+      if (!mKey) return;
+      if (!buckets[mKey]) {
+        buckets[mKey] = {
+          month: mKey,
+          sales: [],
+          payments: [],
+          totalSales: 0,
+          commissionDue: 0,
+          totalPaid: 0,
+          outstanding: 0,
+        };
+      }
+      buckets[mKey].sales.push(sale);
+      buckets[mKey].totalSales += Number(sale.faceValue) || 0;
+      const comm = saleCommission(sale) || 0;
+      buckets[mKey].commissionDue += comm;
+      buckets[mKey].outstanding += (saleOutstanding(sale) ?? comm);
+    });
+
+    allPayments.forEach((pmt) => {
+      const mKey = /^\d{4}-(0[1-9]|1[0-2])$/.test(pmt.month || '')
+        ? pmt.month
+        : monthKeyFromDate(pmt.timestamp ?? pmt.createdAt);
+      if (!mKey) return;
+      if (!buckets[mKey]) {
+        buckets[mKey] = {
+          month: mKey,
+          sales: [],
+          payments: [],
+          totalSales: 0,
+          commissionDue: 0,
+          totalPaid: 0,
+          outstanding: 0,
+        };
+      }
+      buckets[mKey].payments.push(pmt);
+      buckets[mKey].totalPaid += Number(pmt.amount) || 0;
+    });
+
+    return Object.values(buckets).sort((a, b) => b.month.localeCompare(a.month));
+  }, [allSales, allPayments, monthOptions]);
+
+  const toggleMonthExpand = (mKey) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(mKey)) next.delete(mKey);
+      else next.add(mKey);
+      return next;
+    });
+  };
+
+  const handleOpenBillingForMonth = (mKey) => {
+    setSelectedMonthForBilling(mKey);
+    setBilling(true);
+  };
 
   const applyAccess = (patch, { successMessage, auditAction, details }) => {
     setConfirmAction({
@@ -198,7 +288,7 @@ export default function UserProfilePage() {
   const expired = isExpired(user.subscription_end_date);
 
   return (
-    <div className="users-page">
+    <div className="users-page pb-12">
       <PageHero
         icon={Users}
         kicker="ملف العميل"
@@ -219,24 +309,10 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      <div className="mb-4 max-w-xs">
-        <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
-        <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
-          <option value="all">كل الأشهر</option>
-          {monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}
-        </select>
-      </div>
-
-      <div className="grid-kpi">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
-        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle={historyMonth === "all" ? "كل العمولات" : "عمولة الشهر المحدد"} />
-        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle={historyMonth === "all" ? "المتبقي على العميل" : "المتبقي في الشهر المحدد"} />
-        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
-      </div>
-
+      {/* بطاقة الحساب والإجراءات السريعة */}
       <Section
         eyebrow="الحساب"
-        title="تفاصيل وإجراءات"
+        title="تفاصيل وإجراءات سريعة"
         action={
           <div className="flex items-center gap-2">
             <Badge tone={status.tone}>{status.text}</Badge>
@@ -248,29 +324,44 @@ export default function UserProfilePage() {
           <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
             <div className="user-card__meta-item">
               <dt>النسبة المضبوطة حالياً</dt>
-              <dd><span className="num">{user.commission_rate != null && user.commission_rate !== '' ? `${user.commission_rate}% (خاصة)` : 'عامة'}</span></dd>
+              <dd><span className="num font-bold">{user.commission_rate != null && user.commission_rate !== '' ? `${user.commission_rate}% (خاصة)` : 'عامة'}</span></dd>
             </div>
             <div className="user-card__meta-item">
               <dt>تاريخ التصفية</dt>
-              <dd className={expired ? 'text-danger-ink font-semibold' : ''}>{formatDate(user.subscription_end_date)}</dd>
+              <dd className={expired ? 'text-danger font-bold' : 'font-semibold'}>{formatDate(user.subscription_end_date)}</dd>
             </div>
             <div className="user-card__meta-item">
               <dt>معرّف الشبكة</dt>
-              <dd dir="ltr">{user.networkId || uid}</dd>
+              <dd dir="ltr" className="font-mono">{user.networkId || uid}</dd>
             </div>
             <div className="user-card__meta-item">
-              <dt>معرّف الحساب (UID)</dt>
-              <dd dir="ltr">{uid}</dd>
+              <dt>رقم الهاتف</dt>
+              <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || '—'}</dd>
             </div>
           </dl>
 
           <div className="user-card__actions" style={{ marginTop: '1rem' }}>
-            <button type="button" onClick={() => setBilling(true)} className="row-action row-action--success" aria-label="الفوترة والدفعات">
-              <DollarSign className="w-4 h-4" /><span className="text-xs font-medium">الفوترة والدفعات</span>
+            <button
+              type="button"
+              onClick={() => { setSelectedMonthForBilling(getCurrentMonthKey()); setBilling(true); }}
+              className="row-action row-action--success"
+              aria-label="الفوترة والتسويات"
+            >
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              <span className="text-xs font-bold">تسوية وعمولة</span>
             </button>
-            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك"><CalendarPlus className="w-4 h-4" /><span>تجديد</span></button>
-            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم"><Edit className="w-4 h-4" /><span>تعديل</span></button>
-            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول"><KeyRound className="w-4 h-4" /><span>الدخول</span></button>
+            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك">
+              <CalendarPlus className="w-4 h-4 text-brand" />
+              <span>تجديد</span>
+            </button>
+            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم">
+              <Edit className="w-4 h-4" />
+              <span>تعديل</span>
+            </button>
+            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول">
+              <KeyRound className="w-4 h-4" />
+              <span>الدخول</span>
+            </button>
             {user.is_trial && (
               <button
                 onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}
@@ -279,7 +370,8 @@ export default function UserProfilePage() {
                 title="تحويل لرسمي"
                 aria-label="تحويل المستخدم إلى رسمي"
               >
-                <CheckCircle className="w-4 h-4" /><span>رسمي</span>
+                <CheckCircle className="w-4 h-4 text-brand" />
+                <span>رسمي</span>
               </button>
             )}
             <button
@@ -302,89 +394,245 @@ export default function UserProfilePage() {
               title="حذف الحساب نهائياً"
               aria-label="حذف الحساب نهائياً"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4 text-danger" />
               <span>حذف الحساب</span>
             </button>
           </div>
         </Card>
       </Section>
 
+      {/* المؤشرات المالية العامة للعميل */}
+      <div className="grid-kpi my-4">
+        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
+        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle={historyMonth === "all" ? "كل العمولات" : "عمولة الشهر المحدد"} />
+        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle={historyMonth === "all" ? "المتبقي على العميل" : "المتبقي في الشهر المحدد"} />
+        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
+      </div>
 
-      <Section eyebrow="السجل" title="المبيعات" description="مبيعات العميل مع حالة التسوية. المسوّاة تظهر هنا في سجل العميل.">
-        {sales.length === 0 ? (
+      {/* تفصيل الشهور والعمولات مع التوسيع وعرض عمليات كل شهر (ميزة مطلوبة خصيصاً) */}
+      <Section
+        eyebrow="الشهور والتسويات"
+        title="تفاصيل الشهور والعمولات والمبيعات"
+        description="اضغط على كرت أي شهر لعرض عملياته وتفاصيل مبيعاته وعمولته وإمكانية تسويته فوراً."
+      >
+        {monthlyBreakdown.length === 0 ? (
           <Card>
             <div className="empty-state">
               <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg"><Inbox className="w-6 h-6" /></span>
-              <p className="empty-state__title">لا توجد مبيعات مسجّلة</p>
+              <p className="empty-state__title">لا توجد حركات مسجلة</p>
+              <p className="empty-state__desc">ستظهر الشهور والعمولات هنا بمجرد وصول أول عملية بيع من الشبكة.</p>
             </div>
           </Card>
         ) : (
-          <Card flush>
-            <div className="overflow-x-auto">
-              <table className="responsive-data-table w-full">
-                <thead>
-                  <tr className="table-header">
-                    <th className="text-right px-6 py-4">التاريخ</th>
-                    <th className="text-right px-6 py-4">الزبون</th>
-                    <th className="text-right px-6 py-4">قيمة البيع</th>
-                    <th className="text-right px-6 py-4">العمولة</th>
-                    <th className="text-right px-6 py-4">حالة التسوية</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {sales.slice().reverse().map((sale) => {
-                    const commission = saleCommission(sale);
-                    const settled = commission !== null && saleOutstanding(sale) === 0;
-                    return (
-                      <tr key={sale.id}>
-                        <td className="px-6 py-3 text-sm text-ink-soft" data-label="التاريخ">{formatDate(sale.createdAt, { withTime: true })}</td>
-                        <td className="px-6 py-3 text-sm" data-label="الزبون" dir="ltr">{sale.customerId || '—'}</td>
-                        <td className="px-6 py-3 text-sm font-medium" data-label="قيمة البيع">{formatNumber(sale.faceValue)}</td>
-                        <td className="px-6 py-3 text-sm font-medium" data-label="العمولة">{commission === null ? 'غير متحقق' : formatNumber(commission)}</td>
-                        <td className="px-6 py-3" data-label="حالة التسوية">
-                          {commission === null
-                            ? <Badge tone="neutral">غير متحقق</Badge>
-                            : settled ? <Badge tone="success">مسوّاة</Badge> : <Badge tone="warning">غير مسوّاة</Badge>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <div className="space-y-3">
+            {monthlyBreakdown.map((m) => {
+              const isExpanded = expandedMonths.has(m.month);
+              const remaining = Math.max(0, m.commissionDue - m.totalPaid);
+              const isFullySettled = m.commissionDue > 0 && m.totalPaid >= m.commissionDue;
+              const isPartiallySettled = m.totalPaid > 0 && m.totalPaid < m.commissionDue;
+
+              return (
+                <div
+                  key={m.month}
+                  className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                    isExpanded
+                      ? 'bg-surface border-brand shadow-sm ring-1 ring-brand/20'
+                      : 'bg-surface border-line hover:border-brand/40 hover:shadow-xs'
+                  }`}
+                >
+                  {/* شريط رأس كرت الشهر القابل للنقر للتوسيع */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleMonthExpand(m.month)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleMonthExpand(m.month);
+                      }
+                    }}
+                    className="p-4 cursor-pointer select-none"
+                    aria-expanded={isExpanded}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          isFullySettled
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : isPartiallySettled
+                            ? 'bg-amber-500/10 text-amber-600'
+                            : 'bg-brand/10 text-brand'
+                        }`}>
+                          <Calendar className="w-4 h-4" />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-black text-sm text-ink">{formatMonthArabic(m.month)}</h3>
+                            <span className="text-[10px] text-muted font-mono" dir="ltr">({m.month})</span>
+                          </div>
+                          <p className="text-[11px] text-muted mt-0.5">
+                            {m.sales.length} عملية بيع • {m.payments.length} دفعات مسجلة
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge
+                          tone={
+                            isFullySettled
+                              ? 'success'
+                              : isPartiallySettled
+                              ? 'warning'
+                              : m.commissionDue > 0
+                              ? 'danger'
+                              : 'neutral'
+                          }
+                        >
+                          {isFullySettled
+                            ? 'مسواة بالكامل'
+                            : isPartiallySettled
+                            ? 'مسواة جزئياً'
+                            : m.commissionDue > 0
+                            ? 'بانتظار التسوية'
+                            : 'لا توجد عمولة'}
+                        </Badge>
+                        <span className="p-1 text-muted hover:text-ink">
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* شبكة الأرقام السريعة الخاصة بهذا الشهر */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-line/60">
+                      <div className="bg-surface-sunken p-2.5 rounded-xl border border-line/40">
+                        <span className="text-[10px] text-muted block font-medium">مبيعات الشهر</span>
+                        <span className="text-xs sm:text-sm font-black font-mono text-ink">
+                          {formatNumber(m.totalSales)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
+                        </span>
+                      </div>
+                      <div className="bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20">
+                        <span className="text-[10px] text-amber-700 dark:text-amber-300 block font-bold">العمولة المستحقة</span>
+                        <span className="text-xs sm:text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                          {formatNumber(m.commissionDue)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
+                        </span>
+                      </div>
+                      <div className="bg-emerald-500/5 p-2.5 rounded-xl border border-emerald-500/20">
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 block font-bold">المسدد</span>
+                        <span className="text-xs sm:text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                          {formatNumber(m.totalPaid)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
+                        </span>
+                      </div>
+                      <div className="bg-rose-500/5 p-2.5 rounded-xl border border-rose-500/20">
+                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-bold">المتبقي</span>
+                        <span className="text-xs sm:text-sm font-black font-mono text-rose-600 dark:text-rose-400">
+                          {formatNumber(remaining)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* الجزء الموسّع الذي يعرض عمليات المبيعات بالتفصيل لهذا الشهر وزر التسوية */}
+                  {isExpanded && (
+                    <div className="p-4 bg-surface-sunken/60 border-t border-line space-y-4">
+                      {/* زر تسوية هذا الشهر مباشرة */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-surface p-3 rounded-xl border border-line">
+                        <div>
+                          <p className="font-extrabold text-xs text-ink">
+                            تسوية عمولة {formatMonthArabic(m.month)}
+                          </p>
+                          <p className="text-[11px] text-muted">
+                            المتبقي غير المسوى: <strong className="text-rose-600">{formatNumber(remaining)} ر.ي</strong>
+                          </p>
+                        </div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={DollarSign}
+                          onClick={() => handleOpenBillingForMonth(m.month)}
+                          className="font-black"
+                        >
+                          إنشاء تسوية لهذا الشهر
+                        </Button>
+                      </div>
+
+                      {/* عمليات مبيعات هذا الشهر */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-xs font-black text-ink flex items-center gap-1.5">
+                            <Receipt className="w-3.5 h-3.5 text-muted" />
+                            <span>عمليات المبيعات الخاصة بهذا الشهر ({m.sales.length})</span>
+                          </h4>
+                          <span className="text-[10px] text-muted">مرتبة من الأحدث للأقدم</span>
+                        </div>
+
+                        {m.sales.length === 0 ? (
+                          <div className="p-3 text-center text-xs text-muted bg-surface rounded-xl border border-dashed border-line">
+                            لا توجد عمليات بيع مسجلة في هذا الشهر
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {m.sales.slice().reverse().map((sale) => {
+                              const saleComm = saleCommission(sale);
+                              const isSaleSettled = saleComm !== null && saleOutstanding(sale) === 0;
+
+                              return (
+                                <div
+                                  key={sale.id || sale.saleId}
+                                  className="p-3 rounded-xl bg-surface border border-line flex items-center justify-between gap-3 text-xs"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono font-bold text-ink truncate" dir="ltr">
+                                        {sale.customerId || sale.voucherCode || 'كرت مبيعات'}
+                                      </span>
+                                      <Badge tone={isSaleSettled ? 'success' : 'warning'}>
+                                        {isSaleSettled ? 'مسواة' : 'غير مسواة'}
+                                      </Badge>
+                                    </div>
+                                    <span className="text-[10px] text-muted block mt-0.5">
+                                      {formatDate(sale.createdAt, { withTime: true })}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-left shrink-0">
+                                    <div className="font-mono font-black text-ink">
+                                      {formatNumber(sale.faceValue)} <small className="text-[9px] text-muted">ر.ي</small>
+                                    </div>
+                                    <div className="text-[10px] font-bold text-brand mt-0.5">
+                                      عمولة: {saleComm === null ? 'غير محتسب' : `${formatNumber(saleComm)} ر.ي`}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* دفعات هذا الشهر */}
+                      {m.payments.length > 0 && (
+                        <div className="pt-2 border-t border-line/60">
+                          <h4 className="text-xs font-black text-ink mb-2">الدفعات المسجلة لهذا الشهر ({m.payments.length})</h4>
+                          <div className="space-y-1.5">
+                            {m.payments.map((p) => (
+                              <div key={p.id} className="p-2.5 rounded-lg bg-surface border border-line flex items-center justify-between text-xs">
+                                <span className="text-muted text-[11px]">{formatDate(p.timestamp ?? p.createdAt, { withTime: true })}</span>
+                                <span className="font-mono font-black text-emerald-600">{formatNumber(p.amount)} ر.ي</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </Section>
 
-      <Section eyebrow="السجل" title="الدفعات والتسويات" description="الدفعات المسجّلة على هذا الحساب.">
-        {payments.length === 0 ? (
-          <Card><p className="text-sm text-ink-secondary">لا توجد دفعات مسجّلة.</p></Card>
-        ) : (
-          <Card flush>
-            <div className="overflow-x-auto">
-              <table className="responsive-data-table w-full">
-                <thead>
-                  <tr className="table-header">
-                    <th className="text-right px-6 py-4">التاريخ</th>
-                    <th className="text-right px-6 py-4">المبلغ</th>
-                    <th className="text-right px-6 py-4">الشهر</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {payments.slice().reverse().map((payment) => (
-                    <tr key={payment.id}>
-                      <td className="px-6 py-3 text-sm text-ink-soft" data-label="التاريخ">{formatDate(payment.timestamp ?? payment.createdAt, { withTime: true })}</td>
-                      <td className="px-6 py-3 text-sm font-medium" data-label="المبلغ">{formatNumber(payment.amount)}</td>
-                      <td className="px-6 py-3 text-sm" data-label="الشهر" dir="ltr">{payment.month || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-      </Section>
-
+      {/* المودالات */}
       {editing && (
         <UserEditModal
           isOpen={editing}
@@ -404,12 +652,34 @@ export default function UserProfilePage() {
           }}
         />
       )}
-      {billing && <UserBillingModal isOpen={billing} onClose={() => { setBilling(false); load({ force: true }); }} user={user} />}
-      {authModal && <UserAuthModal isOpen={authModal} onClose={() => setAuthModal(false)} user={user} />}
+
+      {billing && (
+        <UserBillingModal
+          isOpen={billing}
+          onClose={() => { setBilling(false); setSelectedMonthForBilling(null); load({ force: true }); }}
+          user={user}
+          initialMonth={selectedMonthForBilling}
+        />
+      )}
+
+      {authModal && (
+        <UserAuthModal
+          isOpen={authModal}
+          onClose={() => setAuthModal(false)}
+          user={user}
+        />
+      )}
+
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={async () => { if (!confirmAction?.action) return false; const result = await confirmAction.action(); if (result === false) return false; setConfirmAction(null); return true; }}
+        onConfirm={async () => {
+          if (!confirmAction?.action) return false;
+          const result = await confirmAction.action();
+          if (result === false) return false;
+          setConfirmAction(null);
+          return true;
+        }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
