@@ -53,8 +53,14 @@ export function computeRenewalEnd(previousEndMs, now, extensionDays = RENEWAL_DA
 export function validateNetworkInput(body) {
   const input = normalizeBody(body);
   const action = typeof input.action === 'string' ? input.action.trim() : '';
-  if (!['provision', 'update-access', 'renew', 'repair-access', 'batch-expiry'].includes(action)) {
+  if (!['provision', 'update-access', 'renew', 'repair-access', 'batch-expiry', 'delete'].includes(action)) {
     return { ok: false, error: 'unknown_action' };
+  }
+
+  if (action === 'delete') {
+    const uid = typeof input.uid === 'string' ? input.uid.trim() : '';
+    if (!UID_PATTERN.test(uid)) return { ok: false, error: 'uid_invalid' };
+    return { ok: true, value: { action, uid } };
   }
 
   if (action === 'repair-access') {
@@ -426,6 +432,83 @@ async function batchExpiry(db, { value, actorUid, now }) {
   return { status: 'batched', updated, networksUpdated };
 }
 
+async function deleteSubcollection(db, parentRef, subcollectionName) {
+  const subRef = parentRef.collection(subcollectionName);
+  const snap = await subRef.limit(100).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  if (snap.size === 100) {
+    await deleteSubcollection(db, parentRef, subcollectionName);
+  }
+}
+
+export async function deleteAccount(db, { uid, actorUid, now }) {
+  const userRef = db.collection('users').doc(uid);
+  const userSnap = await userRef.get();
+  const userData = userSnap.exists ? userSnap.data() : null;
+  const networkId = userData?.networkId || null;
+
+  // 1. Delete user subcollections
+  await deleteSubcollection(db, userRef, 'devices');
+  await deleteSubcollection(db, userRef, 'notifications');
+
+  // 2. Delete user doc
+  if (userSnap.exists) {
+    await userRef.delete();
+  }
+
+  // 3. Delete network doc & subcollections if any
+  const networksToDelete = [];
+  if (networkId) {
+    networksToDelete.push(db.collection('networks').doc(networkId));
+  }
+  const uidNetRef = db.collection('networks').doc(uid);
+  if (!networkId || networkId !== uid) {
+    networksToDelete.push(uidNetRef);
+  }
+  const ownedNetworks = await db.collection('networks').where('owner_uid', '==', uid).get();
+  ownedNetworks.forEach((d) => {
+    if (!networksToDelete.some((ref) => ref.id === d.id)) {
+      networksToDelete.push(d.ref);
+    }
+  });
+
+  for (const netRef of networksToDelete) {
+    const netSnap = await netRef.get();
+    if (netSnap.exists) {
+      await deleteSubcollection(db, netRef, 'sales');
+      await deleteSubcollection(db, netRef, 'payments');
+      await deleteSubcollection(db, netRef, 'settlements');
+      await deleteSubcollection(db, netRef, '_metadata');
+      await netRef.delete();
+    }
+  }
+
+  // 4. Delete admin aggregate if exists
+  await db.collection('admin_aggregates').doc(uid).delete().catch(() => {});
+
+  // 5. Try deleting Firebase Auth user
+  try {
+    await getAuth().deleteUser(uid);
+  } catch (authError) {
+    if (authError?.code !== 'auth/user-not-found') {
+      console.warn('deleteAccount: auth deleteUser warning', authError);
+    }
+  }
+
+  // 6. Audit log
+  await audit(db, {
+    action: 'NETWORK_DELETE',
+    actorUid,
+    uid,
+    details: { networkId, networkName: userData?.network_name || userData?.networkName || null },
+    now,
+  });
+
+  return { status: 'deleted', uid, networkId };
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -450,6 +533,7 @@ export default async function handler(req, res) {
     else if (parsed.value.action === 'update-access') result = await updateAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'renew') result = await renew(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'repair-access') result = await repairLegacyAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
+    else if (parsed.value.action === 'delete') result = await deleteAccount(db, { uid: parsed.value.uid, actorUid: caller.callerUid, now });
     else result = await batchExpiry(db, { value: parsed.value, actorUid: caller.callerUid, now });
 
     if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban, UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users, Calculator, Trash2 } from 'lucide-react';
+import { ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban, UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -20,7 +20,7 @@ import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
   fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData, subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
-import { renewNetwork, updateNetworkAccess, reconcileLegacyCommissions, deleteCustomer, adminApiError } from '../lib/adminApi';
+import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 const accessLabel = {
@@ -88,6 +88,9 @@ export default function UserProfilePage() {
     );
     return unsubscribe;
   }, [uid]);
+
+
+
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
   const monthOptions = [...new Set([
@@ -146,50 +149,27 @@ export default function UserProfilePage() {
     });
   };
 
-  const handleReconcileLegacyCommissions = () => {
+  const handleDelete = () => {
+    const targetName = user?.networkName || user?.network_name || user?.phone || uid;
     setConfirmAction({
-      title: 'إعادة احتساب عمولات المبيعات القديمة',
-      message: 'سيكتب الخادم العمولة الحالية على سجلات Android القديمة المكتملة التي لا تحمل عمولة خادمية، ثم يعيد بناء إجماليات الشبكة. ستُستخدم نسبة العميل الحالية، أو النسبة العامة الحالية إن لم توجد. لا تُعدّل المبيعات الحديثة أو السجلات التي سبق اعتماد عمولتها. اكتب UID العميل لتأكيد التنفيذ.',
-      confirmText: 'إعادة الاحتساب الآن',
-      requireText: uid,
+      title: 'حذف حساب المشترك والشبكة',
+      message: `هل أنت متأكد من حذف الحساب «${targetName}»؟ سيتم حذف جميع بيانات المشترك والشبكة وسجلاتها نهائياً ولا يمكن التراجع عن هذا الإجراء.`,
       variant: 'danger',
       action: async () => {
-        const result = await reconcileLegacyCommissions(uid);
+        const result = await deleteNetworkAccount(uid);
         if (!result.ok) {
-          toast.error(adminApiError(result.error, 'تعذر إعادة احتساب العمولة القديمة'));
+          toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
           return false;
         }
-        if (result.data.status === 'no_legacy_sales') {
-          toast.success('لم توجد مبيعات قديمة مطابقة؛ لم تُغيّر أي سجلات.');
-          return true;
-        }
+        await logAdminAction({
+          action: AUDIT_ACTIONS.USER_DELETE,
+          targetType: 'user',
+          targetId: uid,
+          targetLabel: targetName,
+          details: { networkId: user?.networkId || null },
+        }).catch(() => {});
+        toast.success(`تم حذف الحساب «${targetName}» بنجاح`);
         invalidateAdminUserData(uid);
-        const count = Number(result.data.updatedCount) || 0;
-        const rate = formatNumber(result.data.commissionRatePercent);
-        toast.success(count > 0
-          ? `تم احتساب العمولة على ${formatNumber(count)} مبيعة قديمة بنسبة ${rate}%.`
-          : `تمت إعادة بناء الإجماليات؛ لا توجد مبيعات جديدة للاحتساب (${rate}%).`);
-        await load({ force: true });
-        return true;
-      },
-    });
-  };
-
-  const handleDeleteCustomer = () => {
-    setConfirmAction({
-      title: 'حذف العميل نهائيًا',
-      message: 'سيُحذف حساب تسجيل الدخول وملف العميل والشبكة ومبيعاتها ودفعاتها وأجهزتها وبيانات التجميع والإشعارات وسجلات التدقيق المرتبطة. سيبقى فقط حدث تدقيق مجهول يثبت تنفيذ الحذف دون اسم العميل أو UID أو بياناته المالية. لا يمكن التراجع عن هذا الإجراء. اكتب UID العميل للتأكيد.',
-      confirmText: 'حذف العميل وكل بياناته',
-      requireText: uid,
-      variant: 'danger',
-      action: async () => {
-        const result = await deleteCustomer(uid, user.networkId || uid);
-        if (!result.ok) {
-          toast.error(adminApiError(result.error, 'تعذر حذف العميل'));
-          return false;
-        }
-        invalidateAdminUserData(uid);
-        toast.success('تم حذف حساب العميل وبياناته ومبيعاته نهائيًا.');
         navigate('/users');
         return true;
       },
@@ -238,6 +218,7 @@ export default function UserProfilePage() {
           تعذّر تحديث سجل المبيعات مباشرة؛ يُعرض آخر سجل متاح. حدّث الصفحة بعد التحقق من الاتصال.
         </div>
       )}
+
       <div className="mb-4 max-w-xs">
         <label htmlFor="financial-month-filter" className="label-field">الشهر المالي</label>
         <select id="financial-month-filter" className="input-field" value={historyMonth} onChange={(event) => setHistoryMonth(event.target.value)}>
@@ -245,18 +226,6 @@ export default function UserProfilePage() {
           {monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}
         </select>
       </div>
-
-      <Card className="mb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold text-ink">عمولات المبيعات القديمة</h2>
-            <p className="mt-1 text-sm text-ink-soft">إجراء فعلي يضيف العمولة الخادمية للمبيعات القديمة المطابقة ويحدّث إجماليات العميل، باستخدام النسبة الحالية.</p>
-          </div>
-          <Button variant="primary" icon={Calculator} onClick={handleReconcileLegacyCommissions} className="shrink-0">
-            إعادة احتساب العمولات القديمة
-          </Button>
-        </div>
-      </Card>
 
       <div className="grid-kpi">
         <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
@@ -326,8 +295,15 @@ export default function UserProfilePage() {
               {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
               <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
             </button>
-            <button type="button" onClick={handleDeleteCustomer} className="row-action row-action--danger" title="حذف العميل نهائيًا" aria-label="حذف العميل وكل بياناته">
-              <Trash2 className="w-4 h-4" /><span>حذف العميل</span>
+            <button
+              onClick={handleDelete}
+              type="button"
+              className="row-action row-action--danger"
+              title="حذف الحساب نهائياً"
+              aria-label="حذف الحساب نهائياً"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>حذف الحساب</span>
             </button>
           </div>
         </Card>
@@ -422,6 +398,10 @@ export default function UserProfilePage() {
             setEditing(false);
             load({ force: true });
           }}
+          onDelete={() => {
+            setEditing(false);
+            handleDelete();
+          }}
         />
       )}
       {billing && <UserBillingModal isOpen={billing} onClose={() => { setBilling(false); load({ force: true }); }} user={user} />}
@@ -433,8 +413,6 @@ export default function UserProfilePage() {
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
-        confirmText={confirmAction?.confirmText || 'تأكيد'}
-        requireText={confirmAction?.requireText || null}
       />
     </div>
   );

@@ -5,7 +5,7 @@ import Switch from './ui/Switch';
 import { Field, Input, Textarea } from './ui/Field';
 import { formatDateInput } from '../lib/format';
 
-export default function UserEditModal({ isOpen, onClose, user, onSave }) {
+export default function UserEditModal({ isOpen, onClose, user, onSave, onDelete }) {
   const [hasCustomWarning, setHasCustomWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   const [commissionRate, setCommissionRate] = useState('');
@@ -44,10 +44,21 @@ export default function UserEditModal({ isOpen, onClose, user, onSave }) {
       title={`تعديل بيانات: ${user.networkName || 'مستخدم'}`}
       size="md"
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>إلغاء</Button>
-          <Button variant="primary" type="submit" form="user-edit-form">حفظ التعديلات</Button>
-        </>
+        <div className="flex items-center justify-between w-full">
+          {onDelete ? (
+            <Button
+              variant="danger"
+              type="button"
+              onClick={() => onDelete(user)}
+            >
+              حذف الحساب
+            </Button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={onClose}>إلغاء</Button>
+            <Button variant="primary" type="submit" form="user-edit-form">حفظ التعديلات</Button>
+          </div>
+        </div>
       }
     >
       <form id="user-edit-form" onSubmit={handleSubmit} className="space-y-5">

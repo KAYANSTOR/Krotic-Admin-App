@@ -15,6 +15,7 @@ import {
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download, ArrowUpLeft,
+  Trash2, X, Phone, ShieldAlert, Sparkles, ExternalLink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
@@ -24,14 +25,14 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
-import { SkeletonLine, SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
+import { SkeletonLine, SkeletonPageHeader, SkeletonCard } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
 import { summarizeCompletedSales } from '../lib/commission';
-import { renewNetwork, updateNetworkAccess, repairAccessPage, adminApiError } from '../lib/adminApi';
+import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import useAppRefresh from '../lib/useAppRefresh';
@@ -56,25 +57,25 @@ function loadSavedFilter() {
   }
 }
 
-/** يسمح للتنبيهات الذكية بالربط مباشرة بتصفية محددة عبر ?filter= */
+const FILTERS = [
+  { value: 'all', label: 'الكل' },
+  { value: 'active', label: 'نشط' },
+  { value: 'official', label: 'رسمي' },
+  { value: 'trial', label: 'تجريبي' },
+  { value: 'expiring', label: 'ينتهي قريباً' },
+  { value: 'expired', label: 'منتهي' },
+  { value: 'blocked', label: 'محظور' },
+];
+
 function resolveInitialFilter() {
   try {
     const fromUrl = new URLSearchParams(window.location.search).get('filter');
     if (fromUrl && FILTERS.some((item) => item.value === fromUrl)) return fromUrl;
   } catch {
-    // تجاهل أي رابط غير صالح.
+    // safe fallback
   }
   return loadSavedFilter();
 }
-
-const FILTERS = [
-  { value: 'all', label: 'الكل' },
-  { value: 'trial', label: 'تجريبي' },
-  { value: 'official', label: 'رسمي' },
-  { value: 'expiring', label: 'ينتهي قريباً' },
-  { value: 'expired', label: 'منتهي' },
-  { value: 'blocked', label: 'محظور' },
-];
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -107,9 +108,6 @@ export default function UsersPage() {
     setError(null);
 
     try {
-      // Render the base user list as soon as users/config are available.
-      // Financial aggregates can fan out across many networks, so they refresh
-      // after the page is usable instead of blocking the whole phone screen.
       const [baseUsers, config] = await Promise.all([
         fetchAllUsers({ force }),
         fetchGlobalConfig({ force }),
@@ -159,9 +157,6 @@ export default function UsersPage() {
     setLoading(false);
   }), []);
 
-  // Keep the user-card financial counters tied to the live sale ledger. The
-  // aggregate document is optimized for summaries and can lag a newly-synced
-  // offline sale; each user row now refreshes as its sales snapshot arrives.
   useEffect(() => {
     const unsubscribe = subscribeNetworkSalesRealtime(
       (networks, freshness) => {
@@ -204,17 +199,16 @@ export default function UsersPage() {
     return () => { latestRequestId.current += 1; };
   }, [fetchData]);
 
-  // السحب للأسفل على الجوال يعيد جلب بيانات المستخدمين (force).
   useAppRefresh(() => fetchData({ force: true }));
 
   const handleToggleActive = (user) => {
     const newStatus = !user.is_active;
     setConfirmAction({
       user,
-      title: newStatus ? 'تفعيل المستخدم' : 'حظر المستخدم',
+      title: newStatus ? 'تفعيل المشترك' : 'حظر المشترك',
       message: newStatus
         ? `هل تريد تفعيل حساب "${user.networkName || user.uid}"؟`
-        : `هل تريد حظر "${user.networkName || user.uid}"؟ سيتم طرده من التطبيق فوراً.`,
+        : `هل تريد حظر "${user.networkName || user.uid}"؟ سيتم منعه من استخدام التطبيق فوراً.`,
       action: async () => {
         const result = await updateNetworkAccess({
           uid: user.uid,
@@ -240,7 +234,7 @@ export default function UsersPage() {
           targetId: user.uid,
           targetLabel: user.networkName || user.phoneNumber || user.uid,
         });
-        toast.success(newStatus ? 'تم تفعيل المستخدم' : 'تم حظر المستخدم');
+        toast.success(newStatus ? 'تم تفعيل الحساب' : 'تم حظر الحساب');
       },
       variant: newStatus ? 'success' : 'danger',
     });
@@ -249,8 +243,8 @@ export default function UsersPage() {
   const handleMakeOfficial = (user) => {
     setConfirmAction({
       user,
-      title: 'تحويل إلى رسمي',
-      message: `هل تريد تحويل "${user.networkName || user.uid}" من مستخدم تجريبي إلى رسمي؟`,
+      title: 'تحويل الحساب إلى رسمي',
+      message: `هل تريد تحويل "${user.networkName || user.uid}" من مستخدم تجريبي إلى حساب رسمي دائم؟`,
       action: async () => {
         const result = await updateNetworkAccess({ uid: user.uid, accessStatus: 'ACTIVE_PAID' });
         if (!result.ok) {
@@ -267,7 +261,7 @@ export default function UsersPage() {
           targetId: user.uid,
           targetLabel: user.networkName || user.phoneNumber || user.uid,
         });
-        toast.success('تم تحويل المستخدم إلى رسمي');
+        toast.success('تم تحويل الحساب إلى رسمي بنجاح');
       },
       variant: 'primary',
     });
@@ -276,8 +270,8 @@ export default function UsersPage() {
   const handleQuickRenew = (user) => {
     setConfirmAction({
       user,
-      title: 'تجديد سريع',
-      message: 'سيتم تمديد الوصول 30 يوماً عبر الخادم (يُضاف لتاريخ الانتهاء الحالي إن كان سارياً، وإلا يبدأ من الآن). هل أنت متأكد؟',
+      title: 'تجديد اشتراك سريع',
+      message: 'سيتم تمديد الوصول 30 يوماً إضافية للشبكة. هل أنت متأكد؟',
       action: async () => {
         const result = await renewNetwork(user.uid, 30);
         if (!result.ok) {
@@ -305,7 +299,7 @@ export default function UsersPage() {
           targetLabel: user.networkName || user.phoneNumber || user.uid,
           details: { subscriptionEndsAt: endMs },
         });
-        toast.success('تم التجديد بنجاح');
+        toast.success('تم تجديد الاشتراك بنجاح لمدة 30 يوماً');
       },
       variant: 'success',
     });
@@ -355,6 +349,33 @@ export default function UsersPage() {
     toast.success('تم حفظ التعديلات بنجاح');
   };
 
+  const handleDeleteUser = (user) => {
+    const targetName = user.networkName || user.network_name || user.phone || user.uid;
+    setConfirmAction({
+      title: 'حذف حساب المشترك والشبكة',
+      message: `هل أنت متأكد من حذف الحساب «${targetName}»؟ سيتم حذف جميع بيانات المشترك والشبكة وسجلاتها نهائياً ولا يمكن التراجع عن هذا الإجراء.`,
+      variant: 'danger',
+      action: async () => {
+        const result = await deleteNetworkAccount(user.uid);
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
+          return false;
+        }
+        await logAdminAction({
+          action: AUDIT_ACTIONS.USER_DELETE,
+          targetType: 'user',
+          targetId: user.uid,
+          targetLabel: targetName,
+          details: { networkId: user.networkId || null },
+        }).catch(() => {});
+        toast.success(`تم حذف الحساب «${targetName}» بنجاح`);
+        invalidateAdminUserData();
+        await fetchData({ force: true });
+        return true;
+      },
+    });
+  };
+
   const warningWindowMs = useMemo(() => {
     const days = Number(globalConfig?.warning_days_before_expiry) > 0
       ? Number(globalConfig.warning_days_before_expiry)
@@ -364,11 +385,13 @@ export default function UsersPage() {
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
+      const q = searchTerm.toLowerCase();
       const matchesSearch =
-        (user.networkName || '').includes(searchTerm) ||
-        (user.phoneNumber || '').includes(searchTerm) ||
-        user.uid.includes(searchTerm);
+        (user.networkName || '').toLowerCase().includes(q) ||
+        (user.phoneNumber || '').includes(q) ||
+        user.uid.toLowerCase().includes(q);
 
+      if (filterType === 'active') return matchesSearch && user.is_active !== false;
       if (filterType === 'trial') return matchesSearch && user.is_trial === true;
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
@@ -383,17 +406,15 @@ export default function UsersPage() {
     });
   }, [users, searchTerm, filterType, warningWindowMs]);
 
-  // نُعيد نافذة العرض إلى حجمها الأول عند تغيير البحث أو التصفية.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [searchTerm, filterType]);
 
-  // نتذكّر آخر تصفية استخدمها المدير.
   useEffect(() => {
     try {
       window.localStorage.setItem(FILTER_STORAGE_KEY, filterType);
     } catch {
-      // التخزين المحلي قد يكون معطّلاً؛ التصفية تعمل بدون حفظ.
+      // safe fallback
     }
   }, [filterType]);
 
@@ -406,13 +427,15 @@ export default function UsersPage() {
   const stats = useMemo(() => {
     const total = users.length;
     const trial = users.filter((u) => u.is_trial === true).length;
+    const official = users.filter((u) => u.is_trial === false).length;
     const active = users.filter((u) => u.is_active !== false).length;
     const blocked = users.filter((u) => u.is_active === false).length;
-    return { total, trial, active, blocked };
+    const expired = users.filter((u) => isExpired(u.subscription_end_date)).length;
+    return { total, trial, official, active, blocked, expired };
   }, [users]);
 
   const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
-  const liveSalesErrorCount = Object.keys(liveSalesErrors).length;
+
   const getUserBilling = (user) => {
     const live = liveBillingByUid[user.uid];
     if (live) {
@@ -436,58 +459,6 @@ export default function UsersPage() {
     return user;
   };
 
-  const handleRepairAccess = () => {
-    setConfirmAction({
-      title: 'إصلاح حالات الحظر القديمة',
-      message: `تم اكتشاف ${formatNumber(accessRepairCount)} سجل يحتاج إلى توحيد. سيعتمد الإصلاح حالة accessStatus الحالية ويحدّث الحقول القديمة والحسابات الشبكية المرتبطة دون إعادة تفعيل أي حساب موقوف. تُعالج السجلات على دفعات قابلة للاستئناف.`,
-      variant: 'danger',
-      action: async () => {
-        if (repairingAccess) return false;
-        setRepairingAccess(true);
-        const toastId = 'repair-access-state';
-        toast.loading('جارٍ إصلاح سجلات الوصول القديمة…', { id: toastId });
-        let cursor = null;
-        let scanned = 0;
-        let usersUpdated = 0;
-        let networksUpdated = 0;
-        let pages = 0;
-        try {
-          while (true) {
-            if (pages >= 1000) throw new Error('repair_page_limit_reached');
-            const result = await repairAccessPage(cursor, 100);
-            if (!result.ok) {
-              toast.error(adminApiError(result.error, 'تعذر إصلاح حالات الوصول'), { id: toastId });
-              return false;
-            }
-            const data = result.data || {};
-            scanned += Number(data.scanned) || 0;
-            usersUpdated += Number(data.usersUpdated) || 0;
-            networksUpdated += Number(data.networksUpdated) || 0;
-            pages += 1;
-            if (data.done === true) break;
-            if (typeof data.nextCursor !== 'string' || !data.nextCursor) {
-              throw new Error('repair_cursor_missing');
-            }
-            cursor = data.nextCursor;
-            toast.loading(`جارٍ فحص السجلات… ${formatNumber(scanned)}`, { id: toastId });
-          }
-          invalidateAdminUserData();
-          await fetchData({ force: true });
-          toast.success(
-            `اكتمل الإصلاح: فحص ${formatNumber(scanned)}، تحديث ${formatNumber(usersUpdated)} حساب و${formatNumber(networksUpdated)} شبكة.`,
-            { id: toastId, duration: 6000 },
-          );
-        } catch (error) {
-          console.error('access compatibility repair failed', error);
-          toast.error('توقف الإصلاح قبل اكتماله. أعد المحاولة؛ يمكن متابعة الدفعات بأمان.', { id: toastId });
-          return false;
-        } finally {
-          setRepairingAccess(false);
-        }
-      },
-    });
-  };
-
   const configuredGlobalCommission = Number(globalConfig?.default_commission_rate);
   const defaultCommission = globalConfig?.default_commission_rate != null
     && globalConfig.default_commission_rate !== ''
@@ -508,51 +479,50 @@ export default function UsersPage() {
       { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
       { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
       { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
-      { label: 'نسبة الإعداد الحالية (لا تثبت عمولة تاريخية)', value: (u) => (hasCustomCommission(u) ? u.commission_rate : defaultCommission) },
+      { label: 'نسبة العمولة (%)', value: (u) => (hasCustomCommission(u) ? u.commission_rate : defaultCommission) },
       { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
       { label: 'معرّف الحساب', value: (u) => u.uid },
     ]);
-    toast.success('تم تصدير بيانات المستخدمين');
+    toast.success('تم تصدير بيانات المشتركين كملف CSV');
   }, [filteredUsers, defaultCommission]);
 
   if (loading && users.length === 0) {
     return (
-      <div className="users-page">
+      <div className="users-page space-y-4">
         <SkeletonPageHeader />
-        <div className="grid-kpi">
+        <div className="grid grid-cols-2 gap-2.5">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="card stat-card">
-              <div className="stat-card__body space-y-2">
-                <SkeletonLine className="w-2/3" />
-                <SkeletonLine className="w-1/2 h-8" />
-              </div>
+            <div key={i} className="p-4 rounded-2xl bg-surface border border-line">
+              <SkeletonLine className="w-1/2 mb-2" />
+              <SkeletonLine className="w-3/4 h-6" />
             </div>
           ))}
         </div>
-        <Card flush><SkeletonTable rows={6} /></Card>
+        <SkeletonCard lines={6} />
       </div>
     );
   }
 
   return (
-    <div className="users-page">
+    <div className="users-page space-y-4 pb-24">
+      {/* Android Top Page Header */}
       <PageHero
         icon={Users}
-        title="إدارة المستخدمين والفوترة"
-        subtitle={`${users.length} مستخدم مسجل`}
+        title="دليل المشتركين والشبكات"
+        subtitle="إدارة حسابات الشبكات، الفوترة، وتجديد الاشتراكات"
+        meta={`${users.length} حساب مسجّل • ${stats.active} نشط`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {accessRepairCount > 0 && (
-              <Button
-                variant="secondary"
-                icon={RefreshCw}
-                disabled={repairingAccess || loading}
-                onClick={handleRepairAccess}
-              >
-                {repairingAccess ? 'جارٍ الإصلاح…' : `إصلاح الحالات القديمة (${formatNumber(accessRepairCount)})`}
-              </Button>
-            )}
-            <DataFreshness updatedAt={updatedAt} lastSyncedAt={cacheState?.lastSyncedAt} refreshing={loading || billingRefreshing} fromCache={cacheState?.fromCache} onRefresh={() => fetchData({ force: true })} />
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" icon={Download} onClick={handleExportUsers}>
+              تصدير CSV
+            </Button>
+            <DataFreshness
+              updatedAt={updatedAt}
+              lastSyncedAt={cacheState?.lastSyncedAt}
+              refreshing={loading || billingRefreshing}
+              fromCache={cacheState?.fromCache}
+              onRefresh={() => fetchData({ force: true })}
+            />
           </div>
         }
       />
@@ -579,341 +549,335 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-      {liveSalesReady && liveSalesErrorCount > 0 && (
-        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
-          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
-          <div className="users-error__body">
-            <p className="users-error__title">تعذر تحديث مباشر لبعض الشبكات</p>
-            <p className="users-error__msg">يستمر عرض آخر مجاميع متاحة للشبكات المتأثرة؛ راجع الاتصال والصلاحيات ثم حدّث الصفحة.</p>
-          </div>
-        </div>
-      )}
 
-      {billingRefreshing && users.length > 0 && (
-        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
-          جاري تحديث مؤشرات العمولة والدفعات من الخادم؛ تبقى قائمة المستخدمين متاحة أثناء التحديث.
+      {/* Android Material 3 KPI Header (4 كروت أندرويد مصممة للهاتف) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
+          <span className="text-[11px] font-bold text-muted block mb-1">إجمالي الشبكات</span>
+          <p className="text-xl font-black text-ink font-mono">{formatNumber(stats.total)}</p>
+          <span className="text-[10px] text-muted">حساب مسجل</span>
         </div>
-      )}
 
-      {partialErrors.length > 0 && (
-        <div className="users-error users-error--warning" role="status" aria-live="polite">
-          <span className="users-error__icon"><AlertCircle className="w-5 h-5" /></span>
-          <div className="users-error__body">
-            <p className="users-error__title">بعض بيانات الفوترة غير مكتملة</p>
-            <p className="users-error__msg">
-              تم عرض كل المستخدمين، لكن تعذّر جلب بعض مجاميع الفوترة. ستُعرض المؤشرات المباشرة للشبكات التي نجح تحميلها فقط.
-            </p>
-            <details className="users-error__details">
-              <summary>عرض التفاصيل</summary>
-              <ul>
-                {partialErrors.map((message, index) => (
-                  <li key={index} dir="ltr">{message}</li>
-                ))}
-              </ul>
-            </details>
-          </div>
+        <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
+          <span className="text-[11px] font-bold text-emerald-600 block mb-1">حسابات نشطة</span>
+          <p className="text-xl font-black text-emerald-600 font-mono">{formatNumber(stats.active)}</p>
+          <span className="text-[10px] text-muted">مفعّلة وتعمل</span>
         </div>
-      )}
 
-      <div className="grid-kpi">
-        <StatCard title="إجمالي المستخدمين" value={formatNumber(stats.total)} icon={Users} tone="brand" iconStart />
-        <StatCard title="حسابات تجريبية" value={formatNumber(stats.trial)} icon={Activity} tone="warning" iconStart />
-        <StatCard title="حسابات نشطة" value={formatNumber(stats.active)} icon={UserCheck} tone="success" iconStart />
-        <StatCard title="محظورون" value={formatNumber(stats.blocked)} icon={Ban} tone="neutral" iconStart />
+        <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
+          <span className="text-[11px] font-bold text-amber-600 block mb-1">حسابات تجريبية</span>
+          <p className="text-xl font-black text-amber-600 font-mono">{formatNumber(stats.trial)}</p>
+          <span className="text-[10px] text-muted">فترة تجريبية</span>
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
+          <span className="text-[11px] font-bold text-rose-600 block mb-1">محظورون / منتهية</span>
+          <p className="text-xl font-black text-rose-600 font-mono">{formatNumber(stats.blocked + stats.expired)}</p>
+          <span className="text-[10px] text-muted">بحاجة لمتابعة</span>
+        </div>
       </div>
 
+      {/* Android Top Search Bar with Clear Icon */}
+      <div className="relative">
+        <Search className="w-4 h-4 absolute right-3.5 top-3.5 text-muted pointer-events-none" />
+        <input
+          type="text"
+          placeholder="ابحث باسم الشبكة، رقم الهاتف، المعرّف..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pr-10 text-xs py-2.5 rounded-xl bg-surface shadow-xs"
+        />
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => setSearchTerm('')}
+            className="absolute left-3.5 top-3 text-muted hover:text-ink"
+            aria-label="مسح البحث"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
 
-      <Section
-        eyebrow="السجل"
-        title="قائمة المستخدمين"
-        description={`${formatNumber(filteredUsers.length)} من ${formatNumber(users.length)} مستخدم`}
-        className="users-list-section"
-        action={
-          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportUsers}>
-            تصدير CSV
-          </Button>
-        }
-      >
-      <Card className="users-toolbar-card">
-        <div className="users-toolbar">
-          <div className="users-search">
-            <Search className="field-affix field-affix--lead w-5 h-5" aria-hidden="true" />
-            <input
-              type="text"
-              placeholder="بحث بالاسم، رقم الهاتف..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field input-field--lead"
-              aria-label="بحث"
-            />
-          </div>
-          <div className="users-filters" role="tablist" aria-label="تصفية المستخدمين">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                role="tab"
-                aria-selected={filterType === f.value}
-                onClick={() => setFilterType(f.value)}
-                className={`users-filter ${filterType === f.value ? 'is-active' : ''}`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </Card>
+      {/* Android Horizontal Filter Chips Carousel with Count Badges (قابلة للتمرير بالأصبع) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar touch-pan-x">
+        {FILTERS.map((f) => {
+          let count = stats.total;
+          if (f.value === 'active') count = stats.active;
+          if (f.value === 'official') count = stats.official;
+          if (f.value === 'trial') count = stats.trial;
+          if (f.value === 'expired') count = stats.expired;
+          if (f.value === 'blocked') count = stats.blocked;
 
+          return (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilterType(f.value)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                filterType === f.value
+                  ? 'bg-brand text-white border-brand shadow-xs'
+                  : 'bg-surface text-ink-soft border-line hover:bg-surface-sunken'
+              }`}
+            >
+              <span>{f.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterType === f.value ? 'bg-white/20 text-white' : 'bg-surface-sunken text-muted'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Android Users List (Cards Only - No heavy desktop tables!) */}
       {filteredUsers.length === 0 ? (
-        <Card>
-          <div className="empty-state">
-            <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg">
-              <Inbox className="w-6 h-6" />
-            </span>
-            <p className="empty-state__title">لا يوجد مستخدمون مطابقون</p>
-            <p className="empty-state__desc">
-              {searchTerm || filterType !== 'all'
-                ? 'جرّب تعديل كلمة البحث أو التصفية.'
-                : 'لم يتم تسجيل أي مستخدم بعد.'}
-            </p>
-          </div>
+        <Card className="p-8 text-center rounded-2xl">
+          <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg mx-auto mb-3">
+            <Inbox className="w-6 h-6" />
+          </span>
+          <p className="font-bold text-ink">لا يوجد مشتركون مطابقون</p>
+          <p className="text-xs text-muted mt-1">
+            {searchTerm || filterType !== 'all'
+              ? 'جرّب تعديل كلمة البحث أو فلتر العرض.'
+              : 'لم يتم تسجيل أي شبكة حتى الآن.'}
+          </p>
         </Card>
       ) : (
-        <>
-          <Card flush className="users-table-card">
-            <div className="overflow-x-auto">
-              <table className="responsive-data-table w-full">
-                <thead>
-                  <tr className="table-header">
-                    <th className="text-right px-6 py-4">الشبكة</th>
-                    <th className="text-right px-6 py-4">النوع</th>
-                    <th className="text-right px-6 py-4">النسبة المضبوطة حالياً</th>
-                    <th className="text-right px-6 py-4">تاريخ التصفية</th>
-                    <th className="text-right px-6 py-4">الإجراءات السريعة</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {visibleUsers.map((user) => (
-                    <tr key={user.uid} className="hover:bg-surface-sunken transition-colors">
-                      <td className="px-6 py-4" data-label="الشبكة">
-                        <div>
-                          <p className="font-semibold text-ink">{user.networkName || '—'}</p>
-                          <p className="text-xs text-ink-tertiary mt-0.5" dir="ltr">{user.phoneNumber || '—'}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4" data-label="النوع">
-                        <div className="flex flex-col gap-1 items-start">
-                          {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
-                          {user.is_active === false && <Badge tone="danger">محظور</Badge>}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-ink-soft" data-label="العمولة">
-                        {hasCustomCommission(user)
-                          ? <span className="font-bold text-primary-600">{user.commission_rate}% (خاصة)</span>
-                          : defaultCommission != null ? `${defaultCommission}% (عامة)` : 'غير محددة'}
-                      </td>
-                      <td className="px-6 py-4" data-label="تاريخ التصفية">
-                        <span className={`text-sm ${isExpired(user.subscription_end_date) ? 'text-danger-ink font-semibold' : 'text-ink-soft'}`}>
-                          {formatDate(user.subscription_end_date)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4" data-label="الإجراءات السريعة">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <button type="button" onClick={() => setBillingUser(user)} className="row-action row-action--success" title="الفوترة والدفعات" aria-label={`الفوترة والدفعات: ${user.networkName || "المستخدم"}`}>
-                            <DollarSign className="w-4 h-4" />
-                            <span className="text-xs font-medium">الفوترة</span>
-                          </button>
-                          <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد لآخر يوم من الشهر القادم" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
-                            <CalendarPlus className="w-4 h-4" />
-                          </button>
-                          <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل الإعدادات" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
-                            <KeyRound className="w-4 h-4" />
-                          </button>
-                          {user.is_trial && (
-                            <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
-                              <CheckCircle className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleToggleActive(user)}
-                            className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
-                            title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
-                            aria-label={`${user.is_active === false ? 'إلغاء الحظر' : 'حظر'}: ${user.networkName || 'المستخدم'}`}
-                          >
-                            {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+        <div className="space-y-3">
+          {visibleUsers.map((user) => {
+            const billing = getUserBilling(user);
+            const expired = isExpired(user.subscription_end_date);
+            const networkTitle = user.networkName || `شبكة ${user.uid.slice(0, 8)}`;
+            const phoneStr = user.phoneNumber || user.phone || '';
 
-          <div className="users-cards">
-            {visibleUsers.map((user) => {
-              const expired = isExpired(user.subscription_end_date);
-              return (
-                <article
-                  key={user.uid}
-                  className="user-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/users/${user.uid}`)}
-                  onKeyDown={(event) => {
-                    // Nested action buttons are independent controls; do not
-                    // treat their Enter/Space keys as activation of the card.
-                    if (event.target !== event.currentTarget) return;
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      navigate(`/users/${user.uid}`);
-                    }
-                  }}
-                >
-                  <header className="user-card__head">
-                    <div className="user-card__identity">
-                      <p className="user-card__name">{user.networkName || '—'}</p>
-                      <p className="user-card__phone" dir="ltr">{user.phoneNumber || '—'}</p>
+            return (
+              <div
+                key={user.uid}
+                tabIndex={0}
+                role="button"
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigate(`/users/${user.uid}`);
+                  }
+                }}
+                className="p-3.5 sm:p-4 rounded-2xl bg-surface border border-line shadow-xs space-y-3 hover:border-brand/40 transition-all"
+              >
+                {/* رأس بطاقة المشترك */}
+                <div className="flex items-start justify-between gap-2">
+                  <div
+                    className="flex items-start gap-2.5 cursor-pointer flex-1 min-w-0"
+                    onClick={() => navigate(`/users/${user.uid}`)}
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/20 to-brand/5 border border-brand/20 text-brand-deep flex items-center justify-center font-black text-base flex-shrink-0">
+                      {networkTitle.charAt(0)}
                     </div>
-                    <div className="user-card__badges">
-                      {user.is_trial ? <Badge tone="warning">تجريبي</Badge> : <Badge tone="success">رسمي</Badge>}
-                      {user.is_active === false && <Badge tone="danger">محظور</Badge>}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-sm font-extrabold text-ink truncate leading-tight">{networkTitle}</h3>
+                        <ArrowUpLeft className="w-3.5 h-3.5 text-muted opacity-60 flex-shrink-0" />
+                      </div>
+                      {phoneStr ? (
+                        <a
+                          href={`tel:${phoneStr}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-muted hover:text-brand flex items-center gap-1 mt-0.5"
+                          dir="ltr"
+                        >
+                          <Phone className="w-3 h-3 text-muted" />
+                          <span>{phoneStr}</span>
+                        </a>
+                      ) : (
+                        <p className="text-xs text-muted mt-0.5">بدون هاتف</p>
+                      )}
                     </div>
-                  </header>
-
-                  <dl className="user-card__meta">
-                    <div className="user-card__meta-item">
-                      <dt>النسبة المضبوطة حالياً</dt>
-                      <dd>
-                        {hasCustomCommission(user)
-                          ? <span className="text-primary-600 font-bold">{user.commission_rate}% (خاصة)</span>
-                          : <span>{defaultCommission != null ? `${defaultCommission}% (عامة)` : 'غير محددة'}</span>}
-                      </dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>تاريخ التصفية</dt>
-                      <dd className={expired ? 'text-danger-ink font-semibold' : ''}>
-                        {formatDate(user.subscription_end_date)}
-                      </dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>مبيعات مكتملة (ريال)</dt>
-                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedSalesValue)}</span></dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>عدد المبيعات</dt>
-                      <dd><span className="num">{formatNumber(getUserBilling(user).reportedTransactions)}</span></dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>عمولته غير المسوّاة</dt>
-                      <dd><span className="num text-primary-600">{formatNumber(getUserBilling(user).outstandingCommission)}</span></dd>
-                    </div>
-                    <div className="user-card__meta-item">
-                      <dt>المسدّد</dt>
-                      <dd><span className="num">{formatNumber(getUserBilling(user).recordedPayments)}</span></dd>
-                    </div>
-                  </dl>
-
-                  <span className="user-card__cta">
-                    <ArrowUpLeft aria-hidden="true" />
-                    عرض الملف الكامل والمبيعات والسجل
-                  </span>
-
-                  <div className="user-card__actions" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => setBillingUser(user)} className="row-action row-action--success" aria-label={`الفوترة والدفعات: ${user.networkName || "المستخدم"}`}>
-                      <DollarSign className="w-4 h-4" />
-                      <span className="text-xs font-medium">الفوترة</span>
-                    </button>
-                    <button type="button" onClick={() => handleQuickRenew(user)} className="row-action row-action--brand" title="تجديد" aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}>
-                      <CalendarPlus className="w-4 h-4" />
-                      <span>تجديد</span>
-                    </button>
-                    <button type="button" onClick={() => setEditingUser(user)} className="row-action row-action--neutral" title="تعديل" aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}>
-                      <Edit className="w-4 h-4" />
-                      <span>تعديل</span>
-                    </button>
-                    <button type="button" onClick={() => setAuthUser(user)} className="row-action row-action--neutral" title="بيانات الدخول وكلمة المرور" aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}>
-                      <KeyRound className="w-4 h-4" />
-                      <span>الدخول</span>
-                    </button>
-                    {user.is_trial && (
-                      <button type="button" onClick={() => handleMakeOfficial(user)} className="row-action row-action--brand-soft" title="تحويل لرسمي" aria-label={`تحويل إلى رسمي: ${user.networkName || "المستخدم"}`}>
-                        <CheckCircle className="w-4 h-4" />
-                        <span>رسمي</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleActive(user)}
-                      className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
-                      title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
-                      aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
-                    >
-                      {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                      <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
-                    </button>
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        </>
-      )}
 
-      {filteredUsers.length > 0 && (
-        <div className="list-footer">
-          <p className="list-footer__count">
-            يُعرض {formatNumber(visibleUsers.length)} من {formatNumber(filteredUsers.length)} مستخدم
-          </p>
+                  {/* شارات الحالة */}
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                      user.is_trial ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    }`}>
+                      {user.is_trial ? 'تجريبي' : 'رسمي'}
+                    </span>
+                    {user.is_active === false && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">
+                        محظور
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* مقاييس البطاقة (2x2 Grid للموبايل واضحة جداً) */}
+                <div
+                  className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-surface-sunken/60 border border-line/60 cursor-pointer text-xs"
+                  onClick={() => navigate(`/users/${user.uid}`)}
+                >
+                  <div>
+                    <span className="text-[10px] text-muted block font-semibold">نسبة العمولة</span>
+                    <span className="font-bold text-ink">
+                      {hasCustomCommission(user)
+                        ? <span className="text-brand font-black">{user.commission_rate}% (خاصة)</span>
+                        : `${defaultCommission}% (عامة)`}
+                    </span>
+                  </div>
+
+                  <div className="text-left">
+                    <span className="text-[10px] text-muted block font-semibold">تاريخ الانتهاء</span>
+                    <span className={`font-bold ${expired ? 'text-rose-600 font-black' : 'text-ink-soft'}`}>
+                      {formatDate(user.subscription_end_date)}
+                    </span>
+                  </div>
+
+                  <div className="pt-1 border-t border-line/40">
+                    <span className="text-[10px] text-muted block font-semibold">المبيعات المكتملة</span>
+                    <span className="font-mono font-black text-ink">{formatNumber(billing.reportedSalesValue || 0)} ر.ي</span>
+                  </div>
+
+                  <div className="pt-1 border-t border-line/40 text-left">
+                    <span className="text-[10px] text-muted block font-semibold">العمولة المتبقية</span>
+                    <span className="font-mono font-black text-emerald-600">{formatNumber(billing.outstandingCommission || 0)} ر.ي</span>
+                  </div>
+                </div>
+
+                {/* شريط الإجراءات السريعة بنمط أندرويد (Touch targets مريحة) */}
+                <div
+                  className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1 border-t border-line/60"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {/* الفوترة */}
+                  <button
+                    type="button"
+                    onClick={() => setBillingUser(user)}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-colors text-[11px] font-bold gap-1 active:scale-95"
+                    title="الفوترة والدفعات"
+                  >
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>الفوترة</span>
+                  </button>
+
+                  {/* تجديد */}
+                  <button
+                    type="button"
+                    onClick={() => handleQuickRenew(user)}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-brand-soft/40 text-brand-deep hover:bg-brand-soft/60 transition-colors text-[11px] font-bold gap-1 active:scale-95"
+                    title="تجديد"
+                    aria-label={`تجديد اشتراك: ${user.networkName || "المستخدم"}`}
+                  >
+                    <CalendarPlus className="w-4 h-4 text-brand" />
+                    <span>تجديد</span>
+                  </button>
+
+                  {/* تعديل */}
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(user)}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-sunken text-ink hover:bg-line/40 transition-colors text-[11px] font-bold gap-1 active:scale-95"
+                    title="تعديل"
+                    aria-label={`تعديل إعدادات: ${user.networkName || "المستخدم"}`}
+                  >
+                    <Edit className="w-4 h-4 text-muted" />
+                    <span>تعديل</span>
+                  </button>
+
+                  {/* بيانات الدخول */}
+                  <button
+                    type="button"
+                    onClick={() => setAuthUser(user)}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-sunken text-ink hover:bg-line/40 transition-colors text-[11px] font-bold gap-1 active:scale-95"
+                    title="بيانات الدخول"
+                    aria-label={`بيانات الدخول وكلمة المرور: ${user.networkName || "المستخدم"}`}
+                  >
+                    <KeyRound className="w-4 h-4 text-muted" />
+                    <span>الدخول</span>
+                  </button>
+
+                  {/* حظر / تفعيل */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(user)}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl text-[11px] font-bold gap-1 active:scale-95 transition-colors ${
+                      user.is_active === false
+                        ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                    }`}
+                    title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
+                    aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
+                  >
+                    {user.is_active === false ? <UserCheck className="w-4 h-4 text-emerald-600" /> : <Ban className="w-4 h-4 text-rose-600" />}
+                    <span>{user.is_active === false ? 'تفعيل' : 'حظر'}</span>
+                  </button>
+
+                  {/* حذف الحساب (تجريبي أو نهائي) */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUser(user)}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-rose-50 text-rose-800 hover:bg-rose-100 transition-colors text-[11px] font-bold gap-1 active:scale-95"
+                    title="حذف الحساب نهائياً"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>حذف</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
           {hasMore && (
             <Button
               variant="secondary"
-              icon={ChevronDown}
-              onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+              size="md"
+              block
+              onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+              className="rounded-xl font-bold mt-2"
             >
-              عرض المزيد
+              عرض المزيد من المشتركين ({filteredUsers.length - visibleUsers.length} متبقٍ)
             </Button>
           )}
         </div>
       )}
-      </Section>
 
+      {/* Modals */}
       {editingUser && (
         <UserEditModal
+          user={editingUser}
           isOpen={!!editingUser}
           onClose={() => setEditingUser(null)}
-          user={editingUser}
           onSave={handleSaveEdit}
         />
       )}
 
       {billingUser && (
         <UserBillingModal
+          user={billingUser}
           isOpen={!!billingUser}
           onClose={() => setBillingUser(null)}
-          user={billingUser}
+          onRefresh={() => fetchData({ force: true })}
         />
       )}
 
       {authUser && (
         <UserAuthModal
+          user={authUser}
           isOpen={!!authUser}
           onClose={() => setAuthUser(null)}
-          user={authUser}
         />
       )}
 
       <ConfirmDialog
         isOpen={!!confirmAction}
         onClose={() => setConfirmAction(null)}
-        onConfirm={async () => { if (!confirmAction?.action) return false; const result = await confirmAction.action(); if (result === false) return false; setConfirmAction(null); return true; }}
+        onConfirm={async () => {
+          if (!confirmAction?.action) return false;
+          const result = await confirmAction.action();
+          if (result === false) return false;
+          setConfirmAction(null);
+          return true;
+        }}
         title={confirmAction?.title || ''}
         message={confirmAction?.message || ''}
-        variant={confirmAction?.variant || 'danger'}
+        variant={confirmAction?.variant || 'primary'}
       />
     </div>
   );

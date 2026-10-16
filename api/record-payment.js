@@ -1,7 +1,6 @@
 // ============================================================
-// Krotak Pro — shared internal payment handler
-// POST /api/record-payment remains the public, backward-compatible path.
-// Vercel rewrites it to /api/settlement to stay within the Hobby limit.
+// Krotak Pro — Vercel Serverless Function
+// POST /api/record-payment — تسجيل دفعة/تسوية آمنة (idempotent)
 // ------------------------------------------------------------
 // المسار الخادمي الوحيد المسموح لكتابة `networks/{uid}/payments`,
 // لأن قواعد Firestore تمنع الكتابة من العميل (DEPLOY GATE).
@@ -18,9 +17,9 @@
 import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './firebaseAdmin.js';
-import { parseNetworkId } from './networkId.js';
-import { monthlySalesQuery, settleNetworkPayment } from './networkLedger.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
+import { parseNetworkId } from './_lib/networkId.js';
+import { monthlySalesQuery, settleNetworkPayment } from './_lib/networkLedger.js';
 
 const MAX_AMOUNT = 1_000_000_000_000;
 const MAX_KEY_LENGTH = 128;

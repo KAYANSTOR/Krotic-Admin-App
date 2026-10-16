@@ -28,7 +28,6 @@
 - **المصدر المالي الوحيد:** الرصيد التراكمي على مستند `networks/{networkId}`:
   `totalSalesAmount`, `totalCommissionDue`, `totalPaidAmount`, `outstandingBalance`.
 - **الكتابة المالية والتسوية:** خادمية فقط (`/api/record-payment`, `/api/settlement`, `/api/sales/ingest`)؛ قواعد Firestore تمنع العميل.
-- للحفاظ على حد Vercel Hobby، يعاد توجيه `/api/record-payment` داخليًا إلى وظيفة `/api/settlement` عبر `vercel.json`. يظل عنوان الطلب وطريقته وبياناته واستجابته متوافقة؛ لا يلزم تحديث تطبيق Android.
 - **الوصول والتجربة:** خادمي فقط (`/api/networks`)، والقواعد تمنع كتابة العميل على حقول الصلاحية.
 
 ## 3. بوابة الفحص قبل النشر (Deploy Gate)

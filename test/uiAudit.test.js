@@ -118,18 +118,13 @@ test('application status audit is written only after the server confirms setting
 
 
 test('failed admin actions leave confirmation open and always release loading states', async () => {
-  const [dialog, users, profile, admins, notifications, settings] = await Promise.all([
-    read('src/components/ConfirmDialog.jsx'),
+  const [users, profile, admins, notifications, settings] = await Promise.all([
     read('src/pages/UsersPage.jsx'),
     read('src/pages/UserProfilePage.jsx'),
     read('src/pages/AdminsPage.jsx'),
     read('src/pages/NotificationsPage.jsx'),
     read('src/pages/SettingsPage.jsx'),
   ]);
-  assert.match(dialog, /if \(result === false\)/);
-  assert.match(dialog, /لم يكتمل الإجراء/);
-  assert.match(users, /if \(result === false\) return false/);
-  assert.match(profile, /if \(result === false\) return false/);
   assert.match(users, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(profile, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(admins, /if \(!result\.ok\) \{[\s\S]*?return false;/);

@@ -32,8 +32,8 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
-// PWA: تسجيل الـ service worker مع تحديث تلقائي عند توفّر إصدار جديد.
-if ('serviceWorker' in navigator) {
+// PWA: تسجيل الـ service worker مع تحديث تلقائي عند توفّر إصدار جديد (في الإنتاج فقط تجنباً لحجب خادم التطوير).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js').then((registration) => {
       // عند تفعيل إصدار جديد يستبدل القديم، نُعيد التحميل مرة واحدة فقط.

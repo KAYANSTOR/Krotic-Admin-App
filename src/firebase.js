@@ -10,19 +10,23 @@ import {
 
 // All values must come from environment variables.
 // Create a .env file based on .env.example and fill in your NEW Firebase project credentials.
+export const isFirebaseConfigured = Boolean(
+  import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_PROJECT_ID
+);
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoPlaceholderKeyForInitOnly000',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-krotak-pro.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-krotak-pro',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'demo-krotak-pro.appspot.com',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:123456789012:web:demo1234567890',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-DEMO',
 };
 
-// Safety check – fail early if config is missing
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error(
+// Safety check – warn if config is missing
+if (!isFirebaseConfigured) {
+  console.warn(
     'Firebase config is missing. Please create a .env file with your Firebase project credentials (see .env.example).'
   );
 }

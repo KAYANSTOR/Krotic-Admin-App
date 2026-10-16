@@ -1,6 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/record-payment", "destination": "/api/settlement?__apiRoute=record-payment" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "crons": [

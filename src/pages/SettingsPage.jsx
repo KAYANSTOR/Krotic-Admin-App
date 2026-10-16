@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { db } from '../firebase';
 import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
-  ShieldCheck, AlertTriangle, Users, KeyRound,
+  ShieldCheck, AlertTriangle, Users,
 } from 'lucide-react';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -19,7 +19,6 @@ import Switch from '../components/ui/Switch';
 import DataFreshness from '../components/ui/DataFreshness';
 import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
-import ChangeOwnPasswordModal from '../components/ChangeOwnPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
@@ -58,7 +57,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [cacheState, setCacheState] = useState(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // For batch update expiry
   const [batchDate, setBatchDate] = useState('');
@@ -105,7 +103,7 @@ export default function SettingsPage() {
   useAppRefresh(() => fetchConfig({ force: true }));
 
   const handleSave = async () => {
-    if (saving) return false;
+    if (saving) return;
     setSaving(true);
     try {
       // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
@@ -193,13 +191,13 @@ export default function SettingsPage() {
       const updated = Number(result.data?.updated) || 0;
       if (updated > 0) {
         invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
-        void logAdminAction({
+        await logAdminAction({
           action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
           targetType: 'settings',
           targetId: 'global_config',
           targetLabel: 'تواريخ الانتهاء المجمّعة',
           details: { affected_users: updated, new_date: batchDate },
-        }).catch((error) => console.warn('Batch expiry audit failed:', error));
+        });
         toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
       } else {
         toast.error('لا يوجد حسابات رسمية لتحديثها');
@@ -208,7 +206,7 @@ export default function SettingsPage() {
       return true;
     } catch (error) {
       console.error('Batch expiry update failed:', error);
-      toast.error('تعذر إكمال تحديث التواريخ. تحقق من الاتصال ثم حاول مرة أخرى.');
+      toast.error('تعذر إكمال تحديث التواريخ. لم يتم تأكيد نجاح العملية.');
       return false;
     } finally {
       setUpdatingBatch(false);
@@ -234,9 +232,6 @@ export default function SettingsPage() {
               onRefresh={handleRefresh}
               fromCache={cacheState?.fromCache ?? null}
             />
-            <Button variant="secondary" icon={KeyRound} onClick={() => setShowPasswordModal(true)}>
-              تغيير كلمة المرور
-            </Button>
             <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
               إدارة المدراء
             </Button>
@@ -444,11 +439,6 @@ export default function SettingsPage() {
         confirmText="نعم، قم بالتحديث"
         variant="primary"
         requireText="تأكيد"
-      />
-
-      <ChangeOwnPasswordModal
-        isOpen={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
       />
     </div>
   );

@@ -48,20 +48,6 @@ export function saleCommissionMinor(sale, commissionRatePercent = 5) {
   return commissionFor(saleFaceValue(sale), commissionRatePercent);
 }
 
-/** Legacy Android records carry client-side zero placeholders, not verified dues. */
-export function isLegacyCommissionCandidate(sale) {
-  if (sale?.source !== 'krotak_app' || sale?.status !== 'COMPLETED') return false;
-  if (Number(sale.moneyPolicyVersion) === 2) return false;
-  // Preserve an explicit server snapshot, including a legitimate zero commission.
-  if (sale.commissionRiyal !== null && sale.commissionRiyal !== undefined) return false;
-  const legacyValues = [sale.commissionMinor, sale.commissionAmount, sale.commission];
-  return !legacyValues.some((raw) => {
-    if (raw === null || raw === undefined || raw === '') return false;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0;
-  });
-}
-
 function isCompleted(sale) {
   return !sale?.status || sale.status === 'COMPLETED';
 }
@@ -104,7 +90,7 @@ export function computeAggregate(sales = [], commissionRatePercent = 5) {
     totalFaceValue += face;
     totalTransactions += 1;
     totalCommissionDue += commission;
-    const key = monthKeyOf(sale?.createdAt ?? sale?.created_at ?? sale?.createdAtMs ?? sale?.timestamp);
+    const key = monthKeyOf(sale?.createdAt);
     if (!key) continue;
     const bucket = monthly[key] || { face: 0, count: 0 };
     bucket.face += face;

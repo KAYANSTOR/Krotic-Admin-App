@@ -343,16 +343,111 @@
   .sidebar__footer p { text-align:center; font-size:.75rem; color:#78716C; }
 
   /* ===== القائمة السفلية ===== */
-  .bottom-nav { position:fixed; inset-inline:8px; bottom:max(8px, env(safe-area-inset-bottom)); z-index:40; max-width:720px; margin-inline:auto; padding:6px 4px; border-radius:18px; background:var(--ui-surface); border:1px solid rgba(217,119,87,.22); box-shadow:0 12px 32px rgba(41,37,36,.13); contain:layout paint; }
-  @media (min-width:1024px) { .bottom-nav { display:none; } }
-  .bottom-nav-row { position:relative; z-index:2; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:2px; width:100%; }
-  .bottom-nav-item { position:relative; display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:56px; padding:6px 2px; border:0; border-radius:13px; background:transparent; color:var(--ui-muted); font:inherit; font-size:11px; font-weight:700; line-height:1.15; text-align:center; text-decoration:none; cursor:pointer; transition:color .2s var(--ui-ease), transform .2s var(--ui-ease); }
-  .bottom-nav-item:hover { color:var(--ui-brand-deep); }
-  .bottom-nav-item:active { transform:translateY(1px); }
-  .bottom-nav-item.is-active { color:#fff; background:linear-gradient(135deg,var(--ui-brand),var(--ui-brand-deep)); box-shadow:0 6px 14px -8px rgba(184,92,62,.8); transform:translateY(-2px); }
-  .bottom-nav-quick { position:relative; z-index:3; display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:1px; min-height:56px; padding:0 2px; border:0; background:transparent; color:var(--ui-brand-deep); font:inherit; font-size:11px; font-weight:800; cursor:pointer; }
-  .bottom-nav-quick__icon { display:grid; place-items:center; width:48px; height:48px; margin-top:-22px; border:5px solid var(--ui-surface); border-radius:999px; background:linear-gradient(135deg,var(--ui-brand),var(--ui-brand-deep)); color:#fff; box-shadow:0 8px 18px -8px rgba(184,92,62,.85); }
-  .bottom-nav-quick.is-active .bottom-nav-quick__icon { transform:translateY(-2px); }
+  .bottom-nav {
+    position: fixed;
+    inset-inline: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 40;
+    max-width: 620px;
+    width: calc(100% - 20px);
+    height: 70px;
+    margin-inline: auto;
+    padding: 4px 6px;
+    border-radius: 22px;
+    background: var(--ui-surface);
+    border: 1px solid rgba(217, 119, 87, 0.22);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    overflow: visible;
+  }
+  @media (min-width: 1024px) { .bottom-nav { display: none; } }
+  .bottom-nav-row {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    align-items: flex-end;
+    padding-bottom: 4px;
+    overflow: visible;
+  }
+  .bottom-nav-item {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    padding: 6px 2px;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--ui-muted);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.15;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color .2s var(--ui-ease), transform .2s var(--ui-ease);
+  }
+  .bottom-nav-item:hover { color: var(--ui-brand-deep); }
+  .bottom-nav-item:active { transform: translateY(1px); }
+  .bottom-nav-item.is-active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--ui-brand), var(--ui-brand-deep));
+    box-shadow: 0 6px 14px -8px rgba(184, 92, 62, .8);
+    transform: translateY(-2px);
+  }
+  .bottom-nav-quick {
+    position: relative;
+    z-index: 60;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    padding: 0 2px 2px;
+    border: 0;
+    background: transparent;
+    color: var(--ui-brand-deep);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    overflow: visible !important;
+  }
+  .bottom-nav-quick__icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    min-height: 64px;
+    margin-top: -38px;
+    margin-bottom: 2px;
+    border: 4.5px solid var(--ui-surface);
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--ui-brand), var(--ui-brand-deep));
+    color: #fff;
+    box-shadow: 0 12px 28px -4px rgba(229, 107, 80, 0.8), 0 4px 10px rgba(0, 0, 0, 0.15);
+    transition: transform 0.22s var(--ui-ease), box-shadow 0.22s var(--ui-ease);
+    z-index: 65;
+  }
+  .bottom-nav-quick:hover .bottom-nav-quick__icon,
+  .bottom-nav-quick:active .bottom-nav-quick__icon {
+    transform: translateY(-5px) scale(1.06);
+    box-shadow: 0 16px 32px -4px rgba(229, 107, 80, 0.95);
+  }
+  .bottom-nav-quick.is-active .bottom-nav-quick__icon {
+    transform: translateY(-4px) rotate(45deg);
+    background: linear-gradient(135deg, var(--ui-brand-deep), #8b3a20);
+  }
   .sheet--quick { padding-bottom:1rem; }
   .sheet__quick-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.625rem; padding:0 1rem 1rem; }
   .sheet__quick-item { display:flex; align-items:center; gap:.625rem; min-height:64px; padding:.75rem; border:1px solid var(--ui-line); border-radius:16px; background:var(--ui-surface); color:var(--ui-ink); font:inherit; font-size:.75rem; font-weight:800; text-align:right; cursor:pointer; }
@@ -1995,3 +2090,141 @@ body { background: var(--ui-paper); }
   .card { padding: 1rem; border-radius: 16px; }
   .card--flush { padding: 0; }
 }
+
+/* ===== نمط تطبيق أندرويد للهواتف المحمولة (Android Mobile Native Theme) ===== */
+.android-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  background: var(--ui-sunken);
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+}
+.android-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 0.6rem 0.875rem;
+  border: 0;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s var(--ui-ease);
+}
+.android-tab:hover {
+  color: var(--ui-ink);
+}
+.android-tab.is-active {
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  font-weight: 800;
+  border: 1px solid var(--ui-line);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+}
+.android-tab__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  background: var(--ui-brand-soft);
+  color: var(--ui-brand-deep);
+}
+
+.android-sale-card {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.android-sale-card:active {
+  transform: scale(0.99);
+  background: #f8fafc;
+}
+
+@media (max-width: 768px) {
+  /* تحسين شريط التصفية السريعة ليصبح مثل رقائق أندرويد القابلة للسحب بالأصبع */
+  .sales-filters__presets,
+  .users-filters {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 4px 2px;
+  }
+  .sales-filters__presets::-webkit-scrollbar,
+  .users-filters::-webkit-scrollbar {
+    display: none;
+  }
+  .sales-preset,
+  .users-filter {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 0.45rem 1rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    border: 1px solid var(--ui-line);
+    background: var(--ui-surface);
+    color: var(--ui-ink-soft);
+  }
+  .sales-preset.is-active,
+  .users-filter.is-active {
+    background: linear-gradient(135deg, var(--ui-brand), var(--ui-brand-deep));
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 12px -3px rgba(229, 107, 80, 0.6);
+  }
+
+  /* تكبير بطاقات المستخدمين على الجوال وتسهيل الضغط */
+  .user-card {
+    border-radius: 20px;
+    border: 1px solid var(--ui-line);
+    box-shadow: 0 4px 16px -6px rgba(15, 23, 42, 0.07);
+    padding: 1.1rem;
+    background: var(--ui-surface);
+  }
+  .user-card__actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 0.875rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--ui-line);
+  }
+  .user-card__actions .row-action {
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px;
+  }
+}
+
+/* سحب أفقي ناعم بدون شريط تمرير للأجهزة المحمولة */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+

@@ -60,6 +60,7 @@ export default function BottomNav() {
   }, [quickOpen]);
 
   const navigateTo = (path) => {
+    setQuickOpen(false);
     preloadRoute(path);
     navigate(path);
   };
@@ -96,7 +97,7 @@ export default function BottomNav() {
             </NavLink>
           ))}
           <button ref={quickTriggerRef} type="button" className={`bottom-nav-quick ${quickOpen ? 'is-active' : ''}`} onClick={() => setQuickOpen((open) => !open)} aria-expanded={quickOpen} aria-haspopup="dialog" aria-label="الإجراءات السريعة">
-            <span className="bottom-nav-quick__icon"><Plus className="w-6 h-6" /></span>
+            <span className="bottom-nav-quick__icon"><Plus className="w-8 h-8" strokeWidth={2.6} /></span>
             <span className="bottom-nav-label">إجراءات</span>
           </button>
           {primaryItems.slice(2).map(({ path, label, icon: Icon }) => (
