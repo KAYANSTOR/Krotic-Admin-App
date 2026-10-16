@@ -8,6 +8,28 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 
+// Short-lived membership cache limits repeated Admins/{uid} reads from client retry bursts.
+// Membership changes take effect within at most 15 seconds; Firestore failures are never cached.
+const ADMIN_MEMBERSHIP_CACHE_TTL_MS = 15_000;
+const ADMIN_MEMBERSHIP_CACHE_MAX = 500;
+const adminMembershipCache = new Map();
+
+export async function isAdminUid(uid, getFirestore) {
+  const now = Date.now();
+  const cached = adminMembershipCache.get(uid);
+  if (cached && cached.expiresAt > now) return cached.isAdmin;
+  if (cached) adminMembershipCache.delete(uid);
+
+  const snap = await getFirestore().collection('Admins').doc(uid).get();
+  const data = snap.exists ? snap.data() : null;
+  const isAdmin = Boolean(data && data.uid === uid);
+  adminMembershipCache.set(uid, { isAdmin, expiresAt: now + ADMIN_MEMBERSHIP_CACHE_TTL_MS });
+  while (adminMembershipCache.size > ADMIN_MEMBERSHIP_CACHE_MAX) {
+    adminMembershipCache.delete(adminMembershipCache.keys().next().value);
+  }
+  return isAdmin;
+}
+
 export function ensureFirebaseAdmin() {
   if (getApps().length > 0) return { ok: true };
 
@@ -57,11 +79,12 @@ export async function authenticateAdmin(req, { getAuth, getFirestore }) {
   }
 
   try {
-    const adminSnap = await getFirestore().collection('Admins').doc(callerUid).get();
-    const admin = adminSnap.exists ? adminSnap.data() : null;
-    if (!admin || admin.uid !== callerUid) return { ok: false, status: 403, error: 'not_admin' };
+    if (!(await isAdminUid(callerUid, getFirestore))) return { ok: false, status: 403, error: 'not_admin' };
   } catch (error) {
-    console.error('admin check failed', error);
+    console.error('admin check failed', { code: error?.code, message: error?.message });
+    if (error?.code === 8 || error?.code === 'RESOURCE_EXHAUSTED') {
+      return { ok: false, status: 503, error: 'firestore_quota_exceeded' };
+    }
     return { ok: false, status: 500, error: 'admin_check_failed' };
   }
   return { ok: true, callerUid };
