@@ -3,7 +3,7 @@
 // POST /api/admin-session — جلسة المدير والمزامنة الشاملة لمستخدمي النظام
 // ------------------------------------------------------------
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
   ensureFirebaseAdmin,
   getAppFirestore,
@@ -225,6 +225,51 @@ export default async function handler(req, res) {
         }
 
         syncedUsers.push(userData);
+      }
+
+      // Ensure broadcast notifications exist in all users' notification inboxes
+      try {
+        const broadcastSnaps = await targetDb
+          .collection('notification_deliveries')
+          .get()
+          .catch(() => ({ docs: [] }));
+
+        const globalBroadcasts = broadcastSnaps.docs.filter((d) => {
+          const t = d.data()?.target || '';
+          return t.startsWith('topic:') || d.data()?.audienceType === 'global';
+        });
+
+        if (globalBroadcasts.length > 0) {
+          for (const u of syncedUsers) {
+            const userNotifs = await targetDb.collection('users').doc(u.uid).collection('notifications').limit(1).get().catch(() => ({ empty: true }));
+            if (userNotifs.empty) {
+              const batch = targetDb.batch();
+              const defBatch = defaultDb.batch();
+              globalBroadcasts.forEach((bDoc) => {
+                const bData = bDoc.data() || {};
+                const item = {
+                  title: bData.title || '',
+                  body: bData.body || bData.message || '',
+                  message: bData.body || bData.message || '',
+                  is_read: false,
+                  timestamp: bData.timestamp || (bData.createdAt && typeof bData.createdAt.toMillis === 'function' ? bData.createdAt.toMillis() : Date.now()),
+                  createdAt: bData.createdAt || FieldValue.serverTimestamp(),
+                  route: '/account-notifications',
+                  source: 'admin_broadcast',
+                  audienceType: 'global',
+                };
+                const ref = targetDb.collection('users').doc(u.uid).collection('notifications').doc(bDoc.id);
+                batch.set(ref, item, { merge: true });
+                const defRef = defaultDb.collection('users').doc(u.uid).collection('notifications').doc(bDoc.id);
+                defBatch.set(defRef, item, { merge: true });
+              });
+              await batch.commit().catch(() => null);
+              await defBatch.commit().catch(() => null);
+            }
+          }
+        }
+      } catch (seedErr) {
+        console.warn('Seeding broadcast notifications to inboxes warning:', seedErr);
       }
 
       return res.status(200).json({

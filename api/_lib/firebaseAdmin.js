@@ -219,6 +219,57 @@ export async function syncDatabaseInstancesIfNeeded() {
 
       console.log(`[syncDatabase] Successfully replicated data to ${targetDbId}.`);
     }
+
+    // Always replicate notification deliveries and app notifications if missing in targetDb
+    const targetDeliveries = await targetDb.collection('notification_deliveries').limit(1).get().catch(() => null);
+    if (!targetDeliveries || targetDeliveries.empty) {
+      const defaultDeliveries = await defaultDb.collection('notification_deliveries').get().catch(() => ({ docs: [] }));
+      for (const doc of defaultDeliveries.docs) {
+        await targetDb.collection('notification_deliveries').doc(doc.id).set(doc.data(), { merge: true });
+      }
+
+      const defaultGlobalNotifs = await defaultDb.collection('app_settings').doc('global_config').collection('notifications').get().catch(() => ({ docs: [] }));
+      for (const doc of defaultGlobalNotifs.docs) {
+        await targetDb.collection('app_settings').doc('global_config').collection('notifications').doc(doc.id).set(doc.data(), { merge: true });
+      }
+
+      // Ensure broadcast notifications are present in all users' notifications inboxes
+      const broadcastNotifs = defaultDeliveries.docs.filter((d) => {
+        const t = d.data()?.target || '';
+        return t.startsWith('topic:') || d.data()?.audienceType === 'global';
+      });
+
+      const allUsers = await targetDb.collection('users').get().catch(() => ({ docs: [] }));
+      for (const u of allUsers.docs) {
+        const userNotifsSnap = await u.ref.collection('notifications').limit(1).get().catch(() => ({ empty: true }));
+        if (userNotifsSnap.empty && broadcastNotifs.length > 0) {
+          const batch = targetDb.batch();
+          const defBatch = defaultDb.batch();
+          broadcastNotifs.forEach((bDoc) => {
+            const bData = bDoc.data() || {};
+            const item = {
+              title: bData.title || '',
+              body: bData.body || bData.message || '',
+              message: bData.body || bData.message || '',
+              is_read: false,
+              timestamp: bData.timestamp || (bData.createdAt && typeof bData.createdAt.toMillis === 'function' ? bData.createdAt.toMillis() : Date.now()),
+              createdAt: bData.createdAt || FieldValue.serverTimestamp(),
+              route: '/account-notifications',
+              source: 'admin_broadcast',
+              audienceType: 'global',
+            };
+            const ref = targetDb.collection('users').doc(u.id).collection('notifications').doc(bDoc.id);
+            batch.set(ref, item, { merge: true });
+            const defRef = defaultDb.collection('users').doc(u.id).collection('notifications').doc(bDoc.id);
+            defBatch.set(defRef, item, { merge: true });
+          });
+          await batch.commit().catch(() => null);
+          await defBatch.commit().catch(() => null);
+        }
+      }
+
+      console.log(`[syncDatabase] Replicated ${defaultDeliveries.docs.length} notifications to ${targetDbId}.`);
+    }
   } catch (err) {
     console.warn('[syncDatabase] Warning during database replication:', err?.message);
   }

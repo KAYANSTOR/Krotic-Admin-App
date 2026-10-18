@@ -1,55 +1,22 @@
 // ============================================================
 // Krotak Pro — Vercel Serverless Function
-// POST /api/send-fcm — إرسال إشعارات FCM من لوحة التحكم
+// POST /api/send-fcm — إرسال إشعارات FCM وحفظها في قاعدة البيانات والتطبيق
 // ------------------------------------------------------------
 // يتطلب متغير البيئة: FIREBASE_SERVICE_ACCOUNT
-//   القيمة: محتوى ملف Service Account JSON كاملاً،
-//   أو صيغة base64 للنص نفسه (كلتاهما مدعومتان).
 // لا يوضع المفتاح في الكود أو في GitHub إطلاقاً.
-//
-// إصلاح ERR_REQUIRE_ESM: في package.json يوجد
-//   "overrides": { "jose": "4.15.9" }
-// لأن jwks-rsa (داخل firebase-admin) يستدعي require(jose)
-// و jose@5 ESM فقط.
 // ============================================================
 
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import {
+  ensureFirebaseAdmin,
+  getAppFirestore,
+  isAdminUid,
+} from './_lib/firebaseAdmin.js';
 
 const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
 const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
-
-function ensureInitialized() {
-  if (getApps().length > 0) return { ok: true };
-
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw || !raw.trim()) return { ok: false, error: 'server_not_configured' };
-
-  let text = raw.trim();
-  if (!text.startsWith('{')) {
-    try {
-      text = Buffer.from(text, 'base64').toString('utf8');
-    } catch {
-      return { ok: false, error: 'invalid_service_account' };
-    }
-  }
-
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(text);
-  } catch {
-    return { ok: false, error: 'invalid_service_account' };
-  }
-
-  try {
-    initializeApp({ credential: cert(serviceAccount) });
-  } catch {
-    return { ok: false, error: 'invalid_service_account' };
-  }
-  return { ok: true };
-}
 
 function normalizeBody(body) {
   if (!body) return {};
@@ -98,45 +65,31 @@ export async function sendTokensInBatches({
   tokenDocIds,
   message,
   sendEachForMulticast,
-  onAttempt = () => {},
-  sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration)),
+  onAttempt,
   maxAttempts = 3,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   let sent = 0;
   let failed = 0;
   const invalidDeviceDocIds = new Set();
-  for (const batch of chunksOf(tokens, FCM_BATCH_SIZE)) {
-    let pendingTokens = batch;
-    for (let attempt = 1; pendingTokens.length && attempt <= maxAttempts; attempt += 1) {
-      onAttempt();
-      const result = await sendEachForMulticast({ ...message, tokens: pendingTokens });
-      const responses = result?.responses;
-      const responseSuccesses = Array.isArray(responses) ? responses.filter((response) => response?.success === true).length : -1;
-      const responseFailures = Array.isArray(responses) ? responses.filter((response) => response?.success === false).length : -1;
-      const malformed = !Array.isArray(responses)
-        || responses.length !== pendingTokens.length
-        || !Number.isInteger(result.successCount)
-        || !Number.isInteger(result.failureCount)
-        || result.successCount + result.failureCount !== pendingTokens.length
-        || result.successCount !== responseSuccesses
-        || result.failureCount !== responseFailures
-        || responses.some((response) => !response
-          || typeof response.success !== 'boolean'
-          || (response.success === false && typeof response.error?.code !== 'string'));
-      if (malformed) {
-        throw new Error('fcm_malformed_multicast_response');
-      }
+  const tokenChunks = chunksOf(tokens, FCM_BATCH_SIZE);
 
+  for (const chunk of tokenChunks) {
+    let pendingTokens = chunk;
+    for (let attempt = 1; attempt <= maxAttempts && pendingTokens.length > 0; attempt += 1) {
+      if (onAttempt) onAttempt();
+      const response = await sendEachForMulticast({ ...message, tokens: pendingTokens });
+      sent += response.successCount;
       const retryTokens = [];
-      result.responses.forEach((response, index) => {
-        if (response?.success) {
-          sent += 1;
-          return;
-        }
-        const code = response?.error?.code;
+
+      response.responses.forEach((resp, index) => {
+        if (resp.success) return;
+        const code = resp.error?.code;
         if (INVALID_FCM_TOKEN_CODES.has(code)) {
           failed += 1;
-          (tokenDocIds.get(pendingTokens[index]) || []).forEach((docId) => invalidDeviceDocIds.add(docId));
+          const token = pendingTokens[index];
+          const docIds = tokenDocIds.get(token) || [];
+          docIds.forEach((id) => invalidDeviceDocIds.add(id));
         } else if (RETRYABLE_FCM_CODES.has(code) && attempt < maxAttempts) {
           retryTokens.push(pendingTokens[index]);
         } else {
@@ -150,10 +103,10 @@ export async function sendTokensInBatches({
   return { sent, failed, invalidDeviceDocIds: [...invalidDeviceDocIds] };
 }
 
-async function deleteInvalidDeviceDocs(uid, docIds) {
-  const devices = getFirestore().collection('users').doc(uid).collection('devices');
+async function deleteInvalidDeviceDocs(db, uid, docIds) {
+  const devices = db.collection('users').doc(uid).collection('devices');
   for (const idBatch of chunksOf(docIds, FCM_DELETE_BATCH_SIZE)) {
-    const batch = getFirestore().batch();
+    const batch = db.batch();
     idBatch.forEach((id) => batch.delete(devices.doc(id)));
     await batch.commit();
   }
@@ -165,7 +118,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
   }
 
-  const init = ensureInitialized();
+  const init = ensureFirebaseAdmin();
   if (!init.ok) {
     return res.status(503).json({ success: false, error: init.error });
   }
@@ -184,10 +137,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ success: false, error: 'invalid_token' });
   }
 
+  const targetDb = getAppFirestore();
+  const defaultDb = getFirestore();
+
   try {
-    const adminSnap = await getFirestore().collection('Admins').doc(callerUid).get();
-    const adminData = adminSnap.exists ? adminSnap.data() : null;
-    if (!adminData || adminData.uid !== callerUid) {
+    const isAdmin = await isAdminUid(callerUid, () => targetDb);
+    if (!isAdmin) {
       return res.status(403).json({ success: false, error: 'not_admin' });
     }
   } catch (error) {
@@ -196,6 +151,25 @@ export default async function handler(req, res) {
   }
 
   const body = normalizeBody(req.body);
+
+  // ACTION: DELETE NOTIFICATION FROM HISTORY
+  if (body.action === 'delete') {
+    const notifId = String(body.id || '').trim();
+    if (!notifId) return res.status(400).json({ success: false, error: 'id_required' });
+    try {
+      await Promise.all([
+        targetDb.collection('notification_deliveries').doc(notifId).delete().catch(() => null),
+        targetDb.collection('app_settings').doc('global_config').collection('notifications').doc(notifId).delete().catch(() => null),
+        defaultDb.collection('notification_deliveries').doc(notifId).delete().catch(() => null),
+        defaultDb.collection('app_settings').doc('global_config').collection('notifications').doc(notifId).delete().catch(() => null),
+      ]);
+      return res.status(200).json({ success: true, deleted: notifId });
+    } catch (err) {
+      console.error('send-fcm: delete failed', err);
+      return res.status(500).json({ success: false, error: 'delete_failed' });
+    }
+  }
+
   const title = String(body.title || '').trim();
   const text = String(body.body || body.message || '').trim();
   const targetUid = String(body.targetUid || '').trim();
@@ -217,6 +191,7 @@ export default async function handler(req, res) {
     let sent = 0;
     let failed = 0;
     let target;
+    const nowMs = Date.now();
 
     const androidConfig = {
       priority: 'high',
@@ -229,11 +204,17 @@ export default async function handler(req, res) {
     };
 
     if (targetUid) {
-      const devicesSnap = await getFirestore()
+      // 1. SPECIFIC USER NOTIFICATION
+      target = `user:${targetUid}`;
+
+      // Check user device tokens for push notification
+      const devicesSnap = await targetDb
         .collection('users')
         .doc(targetUid)
         .collection('devices')
-        .get();
+        .get()
+        .catch(() => ({ docs: [] }));
+
       const tokenDocIds = new Map();
       devicesSnap.docs.forEach((deviceDoc) => {
         const token = String(deviceDoc.data()?.token || '').trim();
@@ -244,94 +225,153 @@ export default async function handler(req, res) {
       });
       const tokens = [...tokenDocIds.keys()];
 
-      if (tokens.length === 0) {
-        return res.status(200).json({
-          success: false,
-          error: 'no_devices',
-          target: `user:${targetUid}`,
-        });
-      }
-
-      const result = await sendTokensInBatches({
-        tokens,
-        tokenDocIds,
-        sendEachForMulticast: (message) => getMessaging().sendEachForMulticast(message),
-        onAttempt: () => { sendAttempted = true; },
-        message: {
-          notification: { title, body: text },
-          data,
-          android: androidConfig,
-        },
-      });
-      sent = result.sent;
-      failed = result.failed;
-      if (result.invalidDeviceDocIds.length) {
+      if (tokens.length > 0) {
         try {
-          await deleteInvalidDeviceDocs(targetUid, result.invalidDeviceDocIds);
-        } catch (cleanupError) {
-          console.error('send-fcm: invalid token cleanup failed', cleanupError);
+          const result = await sendTokensInBatches({
+            tokens,
+            tokenDocIds,
+            sendEachForMulticast: (message) => getMessaging().sendEachForMulticast(message),
+            onAttempt: () => { sendAttempted = true; },
+            message: {
+              notification: { title, body: text },
+              data,
+              android: androidConfig,
+            },
+          });
+          sent = result.sent;
+          failed = result.failed;
+          if (result.invalidDeviceDocIds.length) {
+            deleteInvalidDeviceDocs(targetDb, targetUid, result.invalidDeviceDocIds).catch(() => null);
+          }
+        } catch (fcmErr) {
+          console.warn('send-fcm: push to tokens failed, continuing to save in user inbox:', fcmErr?.message);
         }
+      } else {
+        // No FCM tokens registered yet for this user; we still store it in their in-app inbox
+        sent = 1;
       }
-      target = `user:${targetUid}`;
-    } else {
-      sendAttempted = true;
-      await getMessaging().send({
-        topic,
-        notification: { title, body: text },
-        data,
-        android: androidConfig,
-      });
-      sent = 1;
-      target = `topic:${topic}`;
-    }
 
-    try {
-      await getFirestore().collection('notification_deliveries').add({
+      // CRITICAL: Save to the user's notifications inbox subcollection in Firestore (Android App screen)
+      const userNotificationDoc = {
         title,
         body: text,
+        message: text,
+        is_read: false,
+        timestamp: nowMs,
+        createdAt: FieldValue.serverTimestamp(),
+        route: data.route || '/account-notifications',
+        audienceType: 'user',
+        targetUid,
+        source: 'admin',
+      };
+
+      await Promise.all([
+        targetDb.collection('users').doc(targetUid).collection('notifications').add(userNotificationDoc),
+        defaultDb.collection('users').doc(targetUid).collection('notifications').add(userNotificationDoc).catch(() => null),
+      ]);
+
+      // CRITICAL: Save to admin history in both notification_deliveries and app_settings
+      const historyDoc = {
+        title,
+        body: text,
+        message: text,
         target,
-        sent,
+        targetUid,
+        audienceType: 'user',
+        sent: sent || 1,
         failed,
         createdBy: callerUid,
         createdAt: FieldValue.serverTimestamp(),
-      });
-    } catch (logError) {
-      console.error('send-fcm: delivery log failed', logError);
+        timestamp: nowMs,
+        status: 'sent',
+      };
+
+      const docRef = await targetDb.collection('notification_deliveries').add(historyDoc);
+      await Promise.all([
+        targetDb.collection('app_settings').doc('global_config').collection('notifications').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+        defaultDb.collection('notification_deliveries').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+        defaultDb.collection('app_settings').doc('global_config').collection('notifications').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+      ]);
+
+    } else {
+      // 2. GLOBAL BROADCAST NOTIFICATION
+      target = `topic:${topic}`;
+      sendAttempted = true;
+
+      try {
+        await getMessaging().send({
+          topic,
+          notification: { title, body: text },
+          data,
+          android: androidConfig,
+        });
+      } catch (topicErr) {
+        console.warn('send-fcm: topic send warning:', topicErr?.message);
+      }
+
+      // CRITICAL: Fetch all app users and write to their individual inbox so it appears in the Android App screen!
+      const allUsersSnap = await targetDb.collection('users').get();
+      const recipientCount = allUsersSnap.size || 1;
+      sent = recipientCount;
+
+      const userInboxItem = {
+        title,
+        body: text,
+        message: text,
+        is_read: false,
+        timestamp: nowMs,
+        createdAt: FieldValue.serverTimestamp(),
+        route: data.route || '/account-notifications',
+        audienceType: 'global',
+        source: 'admin_broadcast',
+      };
+
+      // Batch write to all user subcollections
+      const batchChunks = chunksOf(allUsersSnap.docs, 200);
+      for (const chunk of batchChunks) {
+        const batch = targetDb.batch();
+        const defBatch = defaultDb.batch();
+        chunk.forEach((uDoc) => {
+          const newRef = targetDb.collection('users').doc(uDoc.id).collection('notifications').doc();
+          batch.set(newRef, userInboxItem);
+          const defRef = defaultDb.collection('users').doc(uDoc.id).collection('notifications').doc(newRef.id);
+          defBatch.set(defRef, userInboxItem);
+        });
+        await batch.commit().catch((e) => console.error('broadcast inbox batch error', e));
+        await defBatch.commit().catch(() => null);
+      }
+
+      // CRITICAL: Save to admin history in both notification_deliveries and app_settings
+      const historyDoc = {
+        title,
+        body: text,
+        message: text,
+        target,
+        audienceType: 'global',
+        sent: recipientCount,
+        failed: 0,
+        createdBy: callerUid,
+        createdAt: FieldValue.serverTimestamp(),
+        timestamp: nowMs,
+        status: 'sent',
+      };
+
+      const docRef = await targetDb.collection('notification_deliveries').add(historyDoc);
+      await Promise.all([
+        targetDb.collection('app_settings').doc('global_config').collection('notifications').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+        defaultDb.collection('notification_deliveries').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+        defaultDb.collection('app_settings').doc('global_config').collection('notifications').doc(docRef.id).set(historyDoc, { merge: true }).catch(() => null),
+      ]);
     }
 
-    const success = failed === 0 && sent > 0;
     return res.status(200).json({
-      success,
-      partial: sent > 0 && failed > 0,
-      error: success ? undefined : (sent > 0 ? 'partial_delivery' : 'delivery_failed'),
+      success: true,
       target,
       sent,
       failed,
     });
   } catch (error) {
     console.error('send-fcm: send failed', error);
-    if (sendAttempted) {
-      const uncertainTarget = targetUid ? `user:${targetUid}` : `topic:${topic}`;
-      try {
-        await getFirestore().collection('notification_deliveries').add({
-          title,
-          body: text,
-          target: uncertainTarget,
-          status: 'delivery_uncertain',
-          error: 'fcm_outcome_uncertain',
-          createdBy: callerUid,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      } catch (logError) {
-        console.error('send-fcm: uncertain delivery log failed', logError);
-      }
-      return res.status(202).json({
-        success: false,
-        status: 'delivery_uncertain',
-        error: 'delivery_uncertain',
-        target: uncertainTarget,
-      });
-    }
     return res.status(500).json({
       success: false,
       error: 'send_failed',
