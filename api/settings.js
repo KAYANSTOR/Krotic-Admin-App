@@ -12,7 +12,7 @@
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
 
 export const SETTINGS_BOUNDS = {
   default_trial_days: { min: 0, max: 30, integer: true },
