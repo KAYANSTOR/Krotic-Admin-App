@@ -5,7 +5,7 @@ import {
   handleRequestOtp,
   handleVerifyOtp,
   normalizePhoneNumber,
-} from '../api/_lib/phoneOtp.js';
+} from '../server/_lib/phoneOtp.js';
 
 const phoneNumber = '967773303450';
 const uid = 'client_otp_1';
