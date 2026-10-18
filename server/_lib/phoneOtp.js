@@ -1,5 +1,5 @@
 // ============================================================
-// Krotak Pro — Twilio Verify SMS phone-verification helpers
+// Krotak Pro — Twilio Verify phone-verification helpers
 // Import-only module; public routes are rewritten to the existing
 // /api/manage-user-auth Vercel function to stay within the Hobby limit.
 // ============================================================
@@ -71,6 +71,11 @@ function twilioConfigFrom(env) {
     return { accountSid, serviceSid, username: accountSid, password: authToken };
   }
   return null;
+}
+
+function verifyChannelFrom(env) {
+  const channel = env.TWILIO_VERIFY_CHANNEL ?? 'whatsapp';
+  return channel === 'whatsapp' || channel === 'sms' ? channel : null;
 }
 
 function rateLimitKey(kind, value, secret) {
@@ -210,7 +215,8 @@ function setAllowPost(res) {
 function genericRequestSuccess(res) {
   return respond(res, 200, {
     success: true,
-    message: 'If this number is registered, a verification code will be sent.',
+    deliveryStatus: 'unconfirmed',
+    message: 'If this number is eligible, a verification attempt will be made. This response does not confirm message delivery.',
   });
 }
 
@@ -230,6 +236,39 @@ function clientIpFromRequest(req) {
   return candidate;
 }
 
+function maskPhoneNumber(phoneNumber) {
+  const digits = String(phoneNumber || '').replace(/\D/g, '');
+  if (digits.length < 7) return null;
+  return `+${digits.slice(0, 3)}${'*'.repeat(Math.max(1, digits.length - 7))}${digits.slice(-4)}`;
+}
+
+function providerRequestId(response) {
+  const value = response?.headers?.get?.('Twilio-Request-Id')
+    || response?.headers?.get?.('twilio-request-id');
+  return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : null;
+}
+
+function twilioFailureReason(error) {
+  if (error?.twilioCode === 21608) return 'recipient_unverified_or_primary_compliance_not_approved';
+  if (error?.twilioCode === 60605) return 'verify_geo_permissions_blocked';
+  if (Number.isInteger(error?.status)) return 'provider_rejected_request';
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'provider_timeout';
+  return 'provider_transport_failure';
+}
+
+function logTwilioFailure(logger, error, { occurredAt, channel, phoneNumber, operation }) {
+  logger('otp: Twilio Verify request failed', {
+    occurredAt: new Date(occurredAt).toISOString(),
+    operation,
+    ...(channel ? { channel } : {}),
+    to: maskPhoneNumber(phoneNumber),
+    httpStatus: Number.isInteger(error?.status) ? error.status : null,
+    twilioCode: Number.isInteger(error?.twilioCode) ? error.twilioCode : null,
+    reason: twilioFailureReason(error),
+    twilioRequestId: error?.providerRequestId || null,
+  });
+}
+
 async function callTwilio({ config, resource, fields, fetchImpl }) {
   const endpoint = `https://verify.twilio.com/v2/Services/${config.serviceSid}/${resource}`;
   const credentials = Buffer.from(`${config.username}:${config.password}`).toString('base64');
@@ -244,16 +283,19 @@ async function callTwilio({ config, resource, fields, fetchImpl }) {
     signal: AbortSignal.timeout(10_000),
   });
   const result = await response.json().catch(() => ({}));
+  const requestId = providerRequestId(response);
   if (!response.ok) {
     const error = new Error('Twilio Verify request failed');
     error.status = response.status;
     error.twilioCode = Number.isInteger(result?.code) ? result.code : null;
+    error.providerRequestId = requestId;
     throw error;
   }
+  if (requestId && result && typeof result === 'object') result.__twilioRequestId = requestId;
   return result;
 }
 
-/** POST /api/request-otp — request an SMS code for a new pending registration. */
+/** POST /api/request-otp — request a one-time code for a new pending registration. */
 export async function handleRequestOtp(req, res, deps = {}) {
   if (req.method !== 'POST') {
     setAllowPost(res);
@@ -262,7 +304,8 @@ export async function handleRequestOtp(req, res, deps = {}) {
   const env = deps.env || process.env;
   const secret = otpSecretFrom(env);
   const config = twilioConfigFrom(env);
-  if (!secret || !config) {
+  const channel = verifyChannelFrom(env);
+  if (!secret || !config || !channel) {
     return respond(res, 503, { success: false, error: 'otp_service_not_configured' });
   }
   const input = normalizeBody(req.body);
@@ -295,7 +338,7 @@ export async function handleRequestOtp(req, res, deps = {}) {
       uid = await resolveClientUid(db, auth, phoneNumber);
     } catch (error) {
       // Keep registered and unknown numbers indistinguishable to callers.
-      (deps.logger || console.error)('sms-otp: account lookup failed', {
+      (deps.logger || console.error)('otp: account lookup failed', {
         code: error?.code || 'lookup_error',
       });
       return genericRequestSuccess(res);
@@ -308,27 +351,41 @@ export async function handleRequestOtp(req, res, deps = {}) {
     }
 
     try {
-      await callTwilio({
+      const verification = await callTwilio({
         config,
         resource: 'Verifications',
         fields: {
           To: `+${phoneNumber}`,
-          // Use Twilio's WhatsApp sender by default; SMS remains an explicit opt-in fallback.
-          Channel: env.TWILIO_VERIFY_CHANNEL === 'sms' ? 'sms' : 'whatsapp',
+          Channel: channel,
         },
         fetchImpl: deps.fetchImpl || globalThis.fetch,
       });
+      (deps.logger || console.error)('otp: Twilio Verify request accepted', {
+        occurredAt: new Date(now).toISOString(),
+        operation: 'start',
+        channel,
+        to: maskPhoneNumber(phoneNumber),
+        verificationStatus: ['pending', 'approved', 'canceled', 'expired', 'max_attempts_reached'].includes(verification?.status)
+          ? verification.status
+          : null,
+        verificationSid: typeof verification?.sid === 'string' && /^VE[0-9a-fA-F]{32}$/.test(verification.sid)
+          ? verification.sid
+          : null,
+        twilioRequestId: verification?.__twilioRequestId || null,
+      });
     } catch (error) {
-      // Never log recipient, OTP, credentials, or provider response body.
-      (deps.logger || console.error)('sms-otp: Twilio delivery failed', {
-        status: error?.status || null,
-        code: error?.twilioCode || null,
+      // Never log a full recipient, OTP, credentials, or the provider response body.
+      logTwilioFailure(deps.logger || console.error, error, {
+        occurredAt: now,
+        operation: 'start',
+        channel,
+        phoneNumber,
       });
     }
     // Same response for known/unknown clients and provider delivery failures.
     return genericRequestSuccess(res);
   } catch (error) {
-    (deps.logger || console.error)('sms-otp: request failed', {
+    (deps.logger || console.error)('otp: request failed', {
       code: error?.code || 'request_error',
     });
     return respond(res, 500, { success: false, error: 'otp_request_failed' });
@@ -392,9 +449,10 @@ export async function handleVerifyOtp(req, res, deps = {}) {
         res.setHeader('Retry-After', '60');
         return respond(res, 429, { success: false, error: 'too_many_requests' });
       }
-      (deps.logger || console.error)('sms-otp: Twilio verification failed', {
-        status: error?.status || null,
-        code: error?.twilioCode || null,
+      logTwilioFailure(deps.logger || console.error, error, {
+        occurredAt: now,
+        operation: 'check',
+        phoneNumber,
       });
       return respond(res, 503, { success: false, error: 'otp_verification_unavailable' });
     }
@@ -419,7 +477,7 @@ export async function handleVerifyOtp(req, res, deps = {}) {
     const customToken = await auth.createCustomToken(uid);
     return respond(res, 200, { success: true, customToken, uid });
   } catch (error) {
-    (deps.logger || console.error)('sms-otp: verify failed', {
+    (deps.logger || console.error)('otp: verify failed', {
       code: error?.code || 'verify_error',
     });
     return respond(res, 500, { success: false, error: 'otp_verification_failed' });

@@ -123,8 +123,13 @@ function request(body, method = 'POST') {
   return { method, headers: { 'x-real-ip': '203.0.113.10' }, body };
 }
 
-function providerResponse(body = { status: 'pending' }, status = 200) {
-  return { ok: status >= 200 && status < 300, status, async json() { return body; } };
+function providerResponse(body = { status: 'pending' }, status = 200, requestId = null) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get(name) { return name.toLowerCase() === 'twilio-request-id' ? requestId : null; } },
+    async json() { return body; },
+  };
 }
 
 test('phone input normalizes to the digits-only format already used by the app', () => {
@@ -156,7 +161,8 @@ test('request calls Twilio Verify WhatsApp and records verification before minti
   await handleRequestOtp(request({ phoneNumber: '+967 773 303 450' }), requestResponse, deps);
   assert.equal(requestResponse.statusCode, 200);
   assert.equal(requestResponse.body.success, true);
-  assert.match(requestResponse.body.message, /If this number is registered/);
+  assert.match(requestResponse.body.message, /If this number is eligible/);
+  assert.equal(requestResponse.body.deliveryStatus, 'unconfirmed');
   assert.equal(calls[0].url, `https://verify.twilio.com/v2/Services/${env.TWILIO_VERIFY_SERVICE_SID}/Verifications`);
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/x-www-form-urlencoded');
@@ -236,6 +242,38 @@ test('request enforces resend limits and does not disclose unknown phone numbers
   assert.equal(sent, 1);
 });
 
+test('only supported OTP channels are accepted; SMS must be configured explicitly', async () => {
+  const db = new FakeDb();
+  seedExistingClient(db);
+  const smsFields = [];
+  const smsResult = response();
+  await handleRequestOtp(request({ phoneNumber }), smsResult, {
+    db,
+    auth: fakeAuth(),
+    env: { ...env, TWILIO_VERIFY_CHANNEL: 'sms' },
+    fetchImpl: async (_url, options) => {
+      smsFields.push(new URLSearchParams(options.body));
+      return providerResponse();
+    },
+    logger() {},
+  });
+  assert.equal(smsResult.statusCode, 200);
+  assert.equal(smsFields[0].get('Channel'), 'sms');
+
+  const invalidResult = response();
+  let sent = false;
+  await handleRequestOtp(request({ phoneNumber }), invalidResult, {
+    db,
+    auth: fakeAuth(),
+    env: { ...env, TWILIO_VERIFY_CHANNEL: 'voice' },
+    fetchImpl: async () => { sent = true; return providerResponse(); },
+    logger() {},
+  });
+  assert.equal(invalidResult.statusCode, 503);
+  assert.equal(invalidResult.body.error, 'otp_service_not_configured');
+  assert.equal(sent, false);
+});
+
 test('legacy existing accounts without a pending-registration flag receive no OTP and cannot use OTP sign-in', async () => {
   const db = new FakeDb();
   seedExistingClient(db);
@@ -288,15 +326,36 @@ test('Twilio delivery failures do not reveal account existence or log phone/cred
     db,
     auth: fakeAuth(),
     env,
-    fetchImpl: async () => providerResponse({ code: 20003, message: 'sensitive provider detail' }, 401),
+    now: () => Date.UTC(2026, 9, 16, 0, 0, 0),
+    fetchImpl: async () => providerResponse({ code: 21608, message: 'sensitive provider detail' }, 403, 'RQ-test-21608'),
     logger: (...args) => logs.push(args),
   });
   assert.equal(result.statusCode, 200);
-  assert.match(result.body.message, /If this number is registered/);
+  assert.equal(result.body.deliveryStatus, 'unconfirmed');
+  assert.match(result.body.message, /does not confirm message delivery/);
+  assert.equal(logs[0][0], 'otp: Twilio Verify request failed');
+  assert.equal(logs[0][1].occurredAt, new Date(Date.UTC(2026, 9, 16, 0, 0, 0)).toISOString());
+  assert.equal(logs[0][1].operation, 'start');
+  assert.equal(logs[0][1].channel, 'whatsapp');
+  assert.equal(logs[0][1].to, '+967*****3450');
+  assert.equal(logs[0][1].httpStatus, 403);
+  assert.equal(logs[0][1].twilioCode, 21608);
+  assert.equal(logs[0][1].reason, 'recipient_unverified_or_primary_compliance_not_approved');
+  assert.equal(logs[0][1].twilioRequestId, 'RQ-test-21608');
   const renderedLogs = JSON.stringify(logs);
   assert.equal(renderedLogs.includes(phoneNumber), false);
   assert.equal(renderedLogs.includes(env.TWILIO_AUTH_TOKEN), false);
   assert.equal(renderedLogs.includes('sensitive provider detail'), false);
+  const retry = response();
+  await handleRequestOtp(request({ phoneNumber }), retry, {
+    db,
+    auth: fakeAuth(),
+    env,
+    now: () => Date.UTC(2026, 9, 16, 0, 0, 0),
+    fetchImpl: async () => { throw new Error('must not retry during cooldown'); },
+    logger() {},
+  });
+  assert.equal(retry.statusCode, 429);
 });
 
 test('missing Twilio credentials, unsupported methods, and malformed codes are rejected safely', async () => {
