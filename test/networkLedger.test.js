@@ -8,7 +8,7 @@ import {
   monthBounds,
   monthlySalesQuery,
   settleNetworkPayment,
-} from '../api/_lib/networkLedger.js';
+} from '../server/_lib/networkLedger.js';
 
 test('running balance is totalCommissionDue minus totalPaidAmount, never negative', () => {
   assert.equal(computeOutstanding(1000, 400), 600);
