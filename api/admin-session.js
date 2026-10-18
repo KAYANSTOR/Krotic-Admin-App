@@ -52,8 +52,7 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const action = body.action || 'bootstrap';
 
-  const targetDb = getAppFirestore();
-  const defaultDb = getFirestore();
+  const db = getAppFirestore();
 
   // 1. BOOTSTRAP / SELF-HEAL ADMIN ACCOUNT
   if (action === 'bootstrap') {
@@ -61,13 +60,8 @@ export default async function handler(req, res) {
       await syncDatabaseInstancesIfNeeded();
 
       // Check if caller already has an admin record
-      const [targetAdminSnap, defaultAdminSnap] = await Promise.all([
-        targetDb.collection('Admins').doc(callerUid).get().catch(() => null),
-        defaultDb.collection('Admins').doc(callerUid).get().catch(() => null),
-      ]);
-
-      const existingData = (targetAdminSnap?.exists ? targetAdminSnap.data() : null) ||
-                           (defaultAdminSnap?.exists ? defaultAdminSnap.data() : null);
+      const adminSnap = await db.collection('Admins').doc(callerUid).get().catch(() => null);
+      const existingData = adminSnap?.exists ? adminSnap.data() : null;
 
       if (existingData && (existingData.uid === callerUid || !existingData.uid)) {
         return res.status(200).json({
@@ -86,11 +80,8 @@ export default async function handler(req, res) {
       
       // Check if this account belongs to an app network client rather than an admin
       const isClientEmail = callerEmail.endsWith('@krotak.app');
-      const [userSnapTarget, userSnapDefault] = await Promise.all([
-        targetDb.collection('users').doc(callerUid).get().catch(() => null),
-        defaultDb.collection('users').doc(callerUid).get().catch(() => null),
-      ]);
-      const isExistingClient = Boolean(userSnapTarget?.exists || userSnapDefault?.exists);
+      const userSnap = await db.collection('users').doc(callerUid).get().catch(() => null);
+      const isExistingClient = Boolean(userSnap?.exists);
 
       if (!isPrimary && (isClientEmail || isExistingClient)) {
         return res.status(403).json({
@@ -100,7 +91,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // If primary admin or designated admin, create the doc across all databases
+      // If primary admin or designated admin, create the doc
       const adminRecord = {
         uid: callerUid,
         email: callerEmail,
@@ -111,10 +102,8 @@ export default async function handler(req, res) {
       };
 
       await Promise.all([
-        targetDb.collection('Admins').doc(callerUid).set(adminRecord, { merge: true }),
-        targetDb.collection('admins').doc(callerUid).set(adminRecord, { merge: true }),
-        defaultDb.collection('Admins').doc(callerUid).set(adminRecord, { merge: true }),
-        defaultDb.collection('admins').doc(callerUid).set(adminRecord, { merge: true }),
+        db.collection('Admins').doc(callerUid).set(adminRecord, { merge: true }),
+        db.collection('admins').doc(callerUid).set(adminRecord, { merge: true }),
       ]);
 
       return res.status(200).json({
@@ -131,15 +120,11 @@ export default async function handler(req, res) {
   if (action === 'sync-auth-users') {
     try {
       // Caller must be an admin
-      const [targetAdmin, defaultAdmin] = await Promise.all([
-        targetDb.collection('Admins').doc(callerUid).get().catch(() => null),
-        defaultDb.collection('Admins').doc(callerUid).get().catch(() => null),
-      ]);
+      const adminSnap = await db.collection('Admins').doc(callerUid).get().catch(() => null);
       const isAdmin = Boolean(
         callerEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() ||
         callerUid === PRIMARY_ADMIN_UID ||
-        targetAdmin?.exists ||
-        defaultAdmin?.exists
+        adminSnap?.exists
       );
 
       if (!isAdmin) {
@@ -163,8 +148,8 @@ export default async function handler(req, res) {
         const displayName = authUser.displayName || `مشترك (${phoneFormatted || authUser.uid.slice(0, 6)})`;
         const netName = authUser.displayName || `شبكة ${phoneFormatted || authUser.uid.slice(0, 6)}`;
 
-        // Check if user document exists in targetDb
-        const userDocRef = targetDb.collection('users').doc(authUser.uid);
+        // Check if user document exists in db
+        const userDocRef = db.collection('users').doc(authUser.uid);
         const userDocSnap = await userDocRef.get();
 
         let userData;
@@ -186,17 +171,13 @@ export default async function handler(req, res) {
             last_seen_at: new Date(authUser.metadata.lastSignInTime || now),
           };
 
-          // Save to targetDb & defaultDb
-          await Promise.all([
-            userDocRef.set(userData, { merge: true }),
-            defaultDb.collection('users').doc(authUser.uid).set(userData, { merge: true }).catch(() => null),
-          ]);
+          await userDocRef.set(userData, { merge: true });
         } else {
           userData = { uid: authUser.uid, ...userDocSnap.data() };
         }
 
         // Check if corresponding network exists
-        const netQuery = await targetDb.collection('networks').where('owner_uid', '==', authUser.uid).get();
+        const netQuery = await db.collection('networks').where('owner_uid', '==', authUser.uid).get();
         if (netQuery.empty) {
           const defaultNetId = `NET-${authUser.uid.slice(0, 8).toUpperCase()}`;
           const netRecord = {
@@ -215,10 +196,7 @@ export default async function handler(req, res) {
             updatedAt: new Date(now),
           };
 
-          await Promise.all([
-            targetDb.collection('networks').doc(defaultNetId).set(netRecord, { merge: true }),
-            defaultDb.collection('networks').doc(defaultNetId).set(netRecord, { merge: true }).catch(() => null),
-          ]);
+          await db.collection('networks').doc(defaultNetId).set(netRecord, { merge: true });
           userData.networkId = defaultNetId;
         } else {
           userData.networkId = netQuery.docs[0].id;

@@ -130,18 +130,10 @@ export async function authenticateAdmin(req, { getAuth, getFirestore }) {
   return { ok: true, callerUid, callerEmail };
 }
 
-/**
- * Ensures data is available in the target database instance (e.g. newly provisioned custom database),
- * replicating pre-existing data from (default) if the target is initially unpopulated.
- */
 export async function syncDatabaseInstancesIfNeeded() {
   const init = ensureFirebaseAdmin();
   if (!init.ok) return;
 
-  const targetDbId = getAppDatabaseId();
-  const targetDb = getAppFirestore();
-
-  // Always ensure primary admin document exists in both Admins and admins collections across database instances
   const adminDocData = {
     uid: PRIMARY_ADMIN_UID,
     email: PRIMARY_ADMIN_EMAIL,
@@ -151,75 +143,13 @@ export async function syncDatabaseInstancesIfNeeded() {
   };
 
   try {
-    const defaultDb = getBaseFirestore();
+    const db = getAppFirestore();
     await Promise.all([
-      targetDb.collection('Admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
-      targetDb.collection('admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
-      defaultDb.collection('Admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
-      defaultDb.collection('admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
+      db.collection('Admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
+      db.collection('admins').doc(PRIMARY_ADMIN_UID).set(adminDocData, { merge: true }).catch(() => null),
     ]);
   } catch (err) {
-    console.warn('Could not set primary admin doc:', err?.message);
-  }
-
-  if (!targetDbId || targetDbId === '(default)') return;
-
-  try {
-    const defaultDb = getBaseFirestore();
-    const targetUsers = await targetDb.collection('users').limit(1).get().catch(() => null);
-    if (!targetUsers || targetUsers.empty) {
-      console.log(`[syncDatabase] Replicating collections from (default) to ${targetDbId}...`);
-      // Copy Admins
-      const adminsSnap = await defaultDb.collection('Admins').get();
-      for (const doc of adminsSnap.docs) {
-        await targetDb.collection('Admins').doc(doc.id).set(doc.data(), { merge: true });
-      }
-
-      // Copy users
-      const usersSnap = await defaultDb.collection('users').get();
-      for (const doc of usersSnap.docs) {
-        await targetDb.collection('users').doc(doc.id).set(doc.data(), { merge: true });
-        const devs = await doc.ref.collection('devices').get().catch(() => ({ docs: [] }));
-        for (const d of devs.docs) {
-          await targetDb.collection('users').doc(doc.id).collection('devices').doc(d.id).set(d.data(), { merge: true });
-        }
-        const notifs = await doc.ref.collection('notifications').get().catch(() => ({ docs: [] }));
-        for (const n of notifs.docs) {
-          await targetDb.collection('users').doc(doc.id).collection('notifications').doc(n.id).set(n.data(), { merge: true });
-        }
-      }
-
-      // Copy networks
-      const networksSnap = await defaultDb.collection('networks').get();
-      for (const doc of networksSnap.docs) {
-        await targetDb.collection('networks').doc(doc.id).set(doc.data(), { merge: true });
-        const meta = await doc.ref.collection('_metadata').get().catch(() => ({ docs: [] }));
-        for (const m of meta.docs) {
-          await targetDb.collection('networks').doc(doc.id).collection('_metadata').doc(m.id).set(m.data(), { merge: true });
-        }
-        const sales = await doc.ref.collection('sales').get().catch(() => ({ docs: [] }));
-        for (const s of sales.docs) {
-          await targetDb.collection('networks').doc(doc.id).collection('sales').doc(s.id).set(s.data(), { merge: true });
-        }
-        const payments = await doc.ref.collection('payments').get().catch(() => ({ docs: [] }));
-        for (const p of payments.docs) {
-          await targetDb.collection('networks').doc(doc.id).collection('payments').doc(p.id).set(p.data(), { merge: true });
-        }
-        const settlements = await doc.ref.collection('settlements').get().catch(() => ({ docs: [] }));
-        for (const st of settlements.docs) {
-          await targetDb.collection('networks').doc(doc.id).collection('settlements').doc(st.id).set(st.data(), { merge: true });
-        }
-      }
-
-      // Copy audit logs
-      const logsSnap = await defaultDb.collection('admin_audit_logs').get().catch(() => ({ docs: [] }));
-      for (const doc of logsSnap.docs) {
-        await targetDb.collection('admin_audit_logs').doc(doc.id).set(doc.data(), { merge: true });
-      }
-
-      console.log(`[syncDatabase] Successfully replicated data to ${targetDbId}.`);
-    }
-  } catch (err) {
-    console.warn('[syncDatabase] Warning during database replication:', err?.message);
+    console.warn('Could not ensure primary admin doc:', err?.message);
   }
 }
+
