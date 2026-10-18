@@ -17,9 +17,9 @@
 import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
-import { parseNetworkId } from './_lib/networkId.js';
-import { monthlySalesQuery, settleNetworkPayment } from './_lib/networkLedger.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
+import { parseNetworkId } from '../server/_lib/networkId.js';
+import { monthlySalesQuery, settleNetworkPayment } from '../server/_lib/networkLedger.js';
 
 const MAX_AMOUNT = 1_000_000_000_000;
 const MAX_KEY_LENGTH = 128;
