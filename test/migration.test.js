@@ -5,7 +5,7 @@ import {
   computeNetworkTotals,
   computeAggregate,
   planUserMigration,
-} from '../api/_lib/migration.js';
+} from '../server/_lib/migration.js';
 import { validateMigrateInput } from '../api/migrate.js';
 
 const NOW = 1_700_000_000_000;
