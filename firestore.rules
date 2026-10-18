@@ -219,7 +219,13 @@ service cloud.firestore {
 
       // أي مجموعة فرعية أخرى: قراءة وحذف للمدير.
       match /{subcollection}/{documentId} {
-        allow read, delete: if isAdmin();
+        allow read: if isAdmin();
+        // Payment and settlement records are server-write-only, including deletes.
+        // Firestore combines overlapping matches with OR, so the admin catch-all
+        // must not re-enable deletes for these protected subcollections.
+        allow delete: if isAdmin()
+          && subcollection != 'payments'
+          && subcollection != 'settlements';
         allow create, update: if false;
       }
     }
