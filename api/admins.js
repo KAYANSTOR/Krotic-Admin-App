@@ -15,7 +15,7 @@
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
 
 const NAME_MAX = 120;
 const PHONE_MAX = 40;
