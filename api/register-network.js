@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { ensureFirebaseAdmin } from './_lib/firebaseAdmin.js';
-import { legacyAccessFields } from './_lib/accessStatus.js';
-import { formatNetworkId, nextNetworkSequence } from './_lib/networkId.js';
-import { encryptNetworkSecret, generateNetworkSecret } from './_lib/networkSecret.js';
+import { ensureFirebaseAdmin } from '../server/_lib/firebaseAdmin.js';
+import { legacyAccessFields } from '../server/_lib/accessStatus.js';
+import { formatNetworkId, nextNetworkSequence } from '../server/_lib/networkId.js';
+import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
