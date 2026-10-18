@@ -124,83 +124,16 @@ export async function fetchAuditLogs(options) {
   }, options);
 }
 
-/** أول صفحة من الإشعارات مع تخزين محلي (تدمج سجل الإرسال الفعلي وإعدادات التطبيق). */
+/** أول صفحة من الإشعارات العامة مع تخزين محلي. */
 export async function fetchNotificationHistory(options) {
   return readCached('notification-history', async ({ force = false } = {}) => {
-    const notifsMap = new Map();
-
-    // 1. جلب سجل تسليم الإشعارات (notification_deliveries)
-    try {
-      const delivQuery = query(
-        collection(db, 'notification_deliveries'),
-        orderBy('createdAt', 'desc'),
-        limit(50),
-      );
-      const snap = force ? await getDocsFromServer(delivQuery) : await getDocs(delivQuery);
-      snap.docs.forEach((d) => {
-        const data = d.data() || {};
-        const title = data.title || '';
-        const body = data.body || data.message || '';
-        const ts =
-          (data.createdAt && typeof data.createdAt.toMillis === 'function' ? data.createdAt.toMillis() : null) ||
-          data.timestamp ||
-          data.createdAtMs ||
-          Date.now();
-
-        notifsMap.set(d.id, {
-          id: d.id,
-          ...data,
-          title,
-          message: body,
-          body,
-          status: data.status || 'sent',
-          sentCount: data.sent ?? data.sentCount ?? 1,
-          displayTimestamp: ts,
-          timestamp: ts,
-        });
-      });
-    } catch (err) {
-      console.warn('Could not read notification_deliveries:', err);
-    }
-
-    // 2. جلب إشعارات التطبيق (app_settings/global_config/notifications)
-    try {
-      const historyQuery = query(
-        collection(db, 'app_settings', 'global_config', 'notifications'),
-        orderBy('timestamp', 'desc'),
-        limit(50),
-      );
-      const snap = force ? await getDocsFromServer(historyQuery) : await getDocs(historyQuery);
-      snap.docs.forEach((d) => {
-        if (!notifsMap.has(d.id)) {
-          const data = d.data() || {};
-          const title = data.title || '';
-          const body = data.body || data.message || '';
-          const ts =
-            data.timestamp ||
-            (data.createdAt && typeof data.createdAt.toMillis === 'function' ? data.createdAt.toMillis() : null) ||
-            Date.now();
-
-          notifsMap.set(d.id, {
-            id: d.id,
-            ...data,
-            title,
-            message: body,
-            body,
-            status: data.status || 'sent',
-            sentCount: data.sent ?? data.sentCount ?? 1,
-            displayTimestamp: ts,
-            timestamp: ts,
-          });
-        }
-      });
-    } catch (err) {
-      console.warn('Could not read app_settings notifications:', err);
-    }
-
-    const list = Array.from(notifsMap.values());
-    list.sort((a, b) => (b.displayTimestamp || 0) - (a.displayTimestamp || 0));
-    return list;
+    const historyQuery = query(
+      collection(db, 'app_settings', 'global_config', 'notifications'),
+      orderBy('timestamp', 'desc'),
+      limit(20),
+    );
+    const snap = force ? await getDocsFromServer(historyQuery) : await getDocs(historyQuery);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }, options);
 }
 

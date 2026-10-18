@@ -70,12 +70,7 @@ export function toNotificationMillis(value) {
 }
 
 export function notificationMillis(data) {
-  return (
-    toNotificationMillis(data?.displayTimestamp) ??
-    toNotificationMillis(data?.timestamp) ??
-    toNotificationMillis(data?.createdAt) ??
-    toNotificationMillis(data?.createdAtMs)
-  );
+  return toNotificationMillis(data?.timestamp) ?? toNotificationMillis(data?.createdAt);
 }
 
 export default function NotificationsPage() {
@@ -111,7 +106,7 @@ export default function NotificationsPage() {
     if (!Array.isArray(history)) return;
     setRecentNotifications(history.map((data) => ({
       ...data,
-      type: data.audienceType || (String(data.target || '').startsWith('user:') ? 'user' : 'global'),
+      type: 'global',
       displayTimestamp: notificationMillis(data),
     })));
     setCacheState(getAdminDataCacheState('notification-history'));
@@ -140,7 +135,7 @@ export default function NotificationsPage() {
       setUsers(usersData);
       const notifs = notificationHistory.map((data) => ({
         ...data,
-        type: data.audienceType || (String(data.target || '').startsWith('user:') ? 'user' : 'global'),
+        type: 'global',
         displayTimestamp: notificationMillis(data),
       }));
       setRecentNotifications(notifs);
@@ -253,7 +248,38 @@ export default function NotificationsPage() {
         return;
       }
 
-      invalidateNotificationHistory();
+      try {
+        const notificationData = {
+          title: title.trim(),
+          body: message.trim(),
+          message: message.trim(),
+          audienceType: type,
+          ...(type === 'user' ? { targetUid: selectedUser } : {}),
+          data: { route: '/account-notifications' },
+          createdBy: auth.currentUser?.uid || null,
+          status: 'sent',
+          sentCount: data.sent ?? 1,
+          createdAt: serverTimestamp(),
+        };
+
+        if (type === 'global') {
+          await addDoc(collection(db, 'app_settings', 'global_config', 'notifications'), {
+            ...notificationData,
+            timestamp: Date.now(),
+          });
+          invalidateNotificationHistory();
+        } else {
+          await addDoc(collection(db, 'users', selectedUser, 'notifications'), {
+            title: notificationData.title,
+            message: notificationData.message,
+            is_read: false,
+            timestamp: Date.now(),
+            createdAt: serverTimestamp(),
+          });
+        }
+      } catch (logError) {
+        console.warn('Notification history write failed', logError);
+      }
 
       logAdminAction({
         action: AUDIT_ACTIONS.NOTIFICATION_SEND,
@@ -319,22 +345,7 @@ export default function NotificationsPage() {
     if (!deleteTarget) return false;
     setDeleting(true);
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (idToken) {
-        await fetch('/api/send-fcm', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ action: 'delete', id: deleteTarget.id }),
-        }).catch(() => null);
-      }
-
-      await deleteDoc(doc(db, 'notification_deliveries', deleteTarget.id)).catch(() => null);
-      await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id)).catch(() => null);
-
-      invalidateNotificationHistory();
+      await deleteDoc(doc(db, 'app_settings', 'global_config', 'notifications', deleteTarget.id));
       setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
       void logAdminAction({
         action: AUDIT_ACTIONS.NOTIFICATION_DELETE,
@@ -836,10 +847,6 @@ export default function NotificationsPage() {
                       <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         {notif.status === 'sent' ? 'مرسل' : notif.status}
-                      </span>
-                      <span>•</span>
-                      <span className="px-1.5 py-0.5 rounded bg-surface-sunken text-[10px] font-semibold text-ink-soft">
-                        {notif.type === 'user' ? 'خاص بمشترك' : 'بث عام للجميع'}
                       </span>
                       <span>•</span>
                       <span>{notif.sentCount ?? 1} جهاز</span>

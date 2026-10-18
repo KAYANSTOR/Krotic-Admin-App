@@ -25,7 +25,6 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { sendTokensInBatches } from './send-fcm.js';
 import { expireOverdueSubscriptions } from './_lib/subscriptionExpiry.js';
-import { getAppFirestore, isAdminUid } from './_lib/firebaseAdmin.js';
 
 const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
 const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
@@ -154,21 +153,6 @@ async function dispatchOne(db, messaging, snapshot, now) {
         requestId, title, body, target: `user:${request.targetUid}`,
         sent: result.sent, failed: result.failed, createdAt: FieldValue.serverTimestamp(),
       });
-
-      // Write to recipient's notification inbox subcollection
-      await db.collection('users').doc(request.targetUid).collection('notifications').add({
-        title,
-        body,
-        message: body,
-        is_read: false,
-        timestamp: now,
-        createdAt: FieldValue.serverTimestamp(),
-        route: data.route || '/account-notifications',
-        audienceType: 'user',
-        targetUid: request.targetUid,
-        source: 'scheduled_dispatch',
-      }).catch(() => null);
-
       return;
     }
 
@@ -188,34 +172,6 @@ async function dispatchOne(db, messaging, snapshot, now) {
       requestId, title, body, target: `topic:${DEFAULT_TOPIC}`,
       sent: 1, failed: 0, createdAt: FieldValue.serverTimestamp(),
     });
-
-    // Write to all users' inboxes and app_settings history
-    const allUsersSnap = await db.collection('users').get().catch(() => ({ docs: [] }));
-    for (const u of allUsersSnap.docs) {
-      db.collection('users').doc(u.id).collection('notifications').add({
-        title,
-        body,
-        message: body,
-        is_read: false,
-        timestamp: now,
-        createdAt: FieldValue.serverTimestamp(),
-        route: data.route || '/account-notifications',
-        audienceType: 'global',
-        source: 'scheduled_broadcast',
-      }).catch(() => null);
-    }
-    await db.collection('app_settings').doc('global_config').collection('notifications').doc(requestId).set({
-      title,
-      body,
-      message: body,
-      target: `topic:${DEFAULT_TOPIC}`,
-      audienceType: 'global',
-      sent: allUsersSnap.docs.length || 1,
-      failed: 0,
-      timestamp: now,
-      createdAt: FieldValue.serverTimestamp(),
-      status: 'sent',
-    }, { merge: true }).catch(() => null);
   } catch (error) {
     // No FCM exactly-once: a failed outcome crossed the send boundary is terminal.
     await finalize(db, snapshot.ref, claimId, {
@@ -273,8 +229,9 @@ export default async function handler(req, res) {
     if (!token) return res.status(401).json({ success: false, error: 'missing_token' });
     try {
       const decoded = await getAuth().verifyIdToken(token);
-      const isAdmin = await isAdminUid(decoded.uid, () => getAppFirestore());
-      if (!isAdmin) {
+      const adminSnap = await getFirestore().collection('Admins').doc(decoded.uid).get();
+      const admin = adminSnap.exists ? adminSnap.data() : null;
+      if (!admin || admin.uid !== decoded.uid) {
         return res.status(403).json({ success: false, error: 'not_admin' });
       }
     } catch (error) {
@@ -286,7 +243,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const db = getAppFirestore();
+  const db = getFirestore();
   let subscriptionExpiry = null;
   let dispatchResult = null;
   let expiryFailed = false;
