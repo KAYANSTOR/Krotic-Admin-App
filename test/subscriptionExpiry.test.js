@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { expiryMillis, shouldLockExpiredAccount } from '../api/_lib/subscriptionExpiry.js';
+import { expiryMillis, shouldLockExpiredAccount } from '../server/_lib/subscriptionExpiry.js';
 
 const NOW = 1_800_000_000_000;
 
