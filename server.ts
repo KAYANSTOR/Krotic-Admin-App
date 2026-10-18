@@ -8,7 +8,7 @@ import adminsHandler from './api/admins.js';
 import manageUserAuthHandler from './api/manage-user-auth.js';
 import settingsHandler from './api/settings.js';
 import settlementHandler from './api/settlement.js';
-import recordPaymentHandler from './api/record-payment.js';
+import recordPaymentHandler from './server/record-payment.js';
 import registerNetworkHandler from './api/register-network.js';
 import salesIngestHandler from './api/sales/ingest.js';
 import sendFcmHandler from './api/send-fcm.js';
