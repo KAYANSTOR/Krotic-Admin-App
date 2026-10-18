@@ -5,7 +5,7 @@ import {
   encryptNetworkSecret,
   generateNetworkSecret,
   hasNetworkSecretMaster,
-} from '../api/_lib/networkSecret.js';
+} from '../server/_lib/networkSecret.js';
 
 const master = 'test-master-secret-with-more-than-32-bytes-0123456789';
 
