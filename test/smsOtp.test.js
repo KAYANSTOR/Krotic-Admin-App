@@ -135,7 +135,7 @@ test('phone input normalizes to the digits-only format already used by the app',
   assert.equal(normalizePhoneNumber('+967773303450x'), null);
 });
 
-test('request calls Twilio Verify SMS and records verification before minting a Firebase token', async () => {
+test('request calls Twilio Verify WhatsApp and records verification before minting a Firebase token', async () => {
   const db = new FakeDb();
   seedExistingClient(db);
   const now = Date.UTC(2026, 9, 16, 0, 0, 0);
@@ -161,7 +161,7 @@ test('request calls Twilio Verify SMS and records verification before minting a 
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.headers['Content-Type'], 'application/x-www-form-urlencoded');
   assert.equal(calls[0].fields.get('To'), `+${phoneNumber}`);
-  assert.equal(calls[0].fields.get('Channel'), 'sms');
+  assert.equal(calls[0].fields.get('Channel'), 'whatsapp');
   assert.equal(
     Buffer.from(calls[0].options.headers.Authorization.slice('Basic '.length), 'base64').toString(),
     `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
