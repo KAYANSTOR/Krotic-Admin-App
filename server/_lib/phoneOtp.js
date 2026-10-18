@@ -311,7 +311,11 @@ export async function handleRequestOtp(req, res, deps = {}) {
       await callTwilio({
         config,
         resource: 'Verifications',
-        fields: { To: `+${phoneNumber}`, Channel: 'sms' },
+        fields: {
+          To: `+${phoneNumber}`,
+          // Use Twilio's WhatsApp sender by default; SMS remains an explicit opt-in fallback.
+          Channel: env.TWILIO_VERIFY_CHANNEL === 'sms' ? 'sms' : 'whatsapp',
+        },
         fetchImpl: deps.fetchImpl || globalThis.fetch,
       });
     } catch (error) {
