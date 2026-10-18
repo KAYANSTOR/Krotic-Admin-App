@@ -17,6 +17,7 @@ import { isPositiveRiyal } from '../server/_lib/money.js';
 import { parseNetworkId } from '../server/_lib/networkId.js';
 import { monthlySalesQuery, settleNetworkPayment } from '../server/_lib/networkLedger.js';
 import { legacyAccessFields } from '../server/_lib/accessStatus.js';
+import recordPaymentHandler from '../server/record-payment.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -222,6 +223,8 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
 }
 
 export default async function handler(req, res) {
+  if (req.query?.__apiRoute === 'record-payment') return recordPaymentHandler(req, res);
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
