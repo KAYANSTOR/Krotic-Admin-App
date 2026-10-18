@@ -8,7 +8,7 @@ import {
   percentToBps,
   bpsToPercent,
   commissionFromBps,
-} from '../api/_lib/money.js';
+} from '../server/_lib/money.js';
 
 test('currency is whole-riyal YER with no fils', () => {
   assert.equal(CURRENCY, 'YER');
