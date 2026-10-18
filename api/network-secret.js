@@ -1,7 +1,7 @@
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { ensureFirebaseAdmin } from './_lib/firebaseAdmin.js';
-import { ensureNetworkSecret } from './_lib/networkSecretStore.js';
+import { ensureFirebaseAdmin } from '../server/_lib/firebaseAdmin.js';
+import { ensureNetworkSecret } from '../server/_lib/networkSecretStore.js';
 
 const DOC_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
