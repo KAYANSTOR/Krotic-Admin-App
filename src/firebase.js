@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
   getFirestore,
@@ -8,56 +8,78 @@ import {
   persistentMultipleTabManager,
 } from 'firebase/firestore';
 
-// All values must come from environment variables.
-// Create a .env file based on .env.example and fill in your NEW Firebase project credentials.
+import firebaseConfigJson from '../firebase-applet-config.json';
+
+export const firestoreDatabaseId =
+  import.meta.env.VITE_FIRESTORE_DATABASE_ID ||
+  firebaseConfigJson.firestoreDatabaseId ||
+  '(default)';
+
+// All values come from environment variables or the provisioned applet configuration.
 export const isFirebaseConfigured = Boolean(
-  import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_PROJECT_ID
+  (import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey) &&
+  (import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId)
 );
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoPlaceholderKeyForInitOnly000',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-krotak-pro.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'demo-krotak-pro',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'demo-krotak-pro.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:123456789012:web:demo1234567890',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-DEMO',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey || 'AIzaSyDemoPlaceholderKeyForInitOnly000',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain || 'kroty-434e3.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || 'kroty-434e3',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket || 'kroty-434e3.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId || '614239660563',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId || '1:614239660563:web:786dd69cda8b635fa7ede6',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigJson.measurementId || '',
 };
 
-// Safety check – warn if config is missing
-if (!isFirebaseConfigured) {
-  console.warn(
-    'Firebase config is missing. Please create a .env file with your Firebase project credentials (see .env.example).'
-  );
-}
-
-const app = initializeApp(firebaseConfig);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 const useEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
 if (useEmulators) {
   connectAuthEmulator(auth, `http://${import.meta.env.VITE_AUTH_EMULATOR_HOST || '127.0.0.1'}:${import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099}`, { disableWarnings: true });
 }
+
 // Keep Firestore documents in IndexedDB. The dashboard can render its last
 // known state immediately, while Firestore revalidates only what is missing.
 // Some embedded/private browser contexts do not support persistence, so the
 // fallback keeps the application functional without local caching.
 let db;
 try {
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  db = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    },
+    firestoreDatabaseId
+  );
 } catch (error) {
-  console.warn('Persistent Firestore cache unavailable; using memory cache.', error);
-  db = getFirestore(app);
+  console.warn('Persistent Firestore cache unavailable; using memory/default cache.', error);
+  try {
+    db = getFirestore(app, firestoreDatabaseId);
+  } catch (err2) {
+    console.warn('getFirestore failed, falling back to basic initializeFirestore:', err2);
+    try {
+      db = initializeFirestore(app, {}, firestoreDatabaseId);
+    } catch {
+      db = getFirestore(app, firestoreDatabaseId);
+    }
+  }
+}
+
+if (!db) {
+  try {
+    db = getFirestore(app, firestoreDatabaseId);
+  } catch {
+    db = initializeFirestore(app, {}, firestoreDatabaseId);
+  }
 }
 export { db };
 
 // Secondary app instance for creating new admin users without signing out the current admin
-const secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
+const secondaryApp = getApps().find((a) => a.name === 'SecondaryApp') || initializeApp(firebaseConfig, 'SecondaryApp');
 export const secondaryAuth = getAuth(secondaryApp);
-if (useEmulators) {
+if (useEmulators && db) {
   connectFirestoreEmulator(
     db,
     import.meta.env.VITE_FIRESTORE_EMULATOR_HOST || '127.0.0.1',

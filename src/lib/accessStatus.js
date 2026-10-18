@@ -40,6 +40,7 @@ export function isUserPhoneVerified(user) {
 }
 
 export function normalizeUserAccess(user) {
+  if (!user) return user;
   const raw = user?.accessStatus;
   const status = raw == null ? '' : String(raw).trim().toUpperCase();
   if (!status) return user;

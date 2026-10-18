@@ -154,9 +154,19 @@ async function fetchNetworkMeta(uid, options) {
     try {
       const userRef = doc(db, 'users', uid);
       const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
-      const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+      const userData = userSnapshot.exists() ? userSnapshot.data() : {};
+      const networkId = networkDocumentId({ uid, ...userData });
+      const fallbackName = userData.network_name || userData.networkName || userData.name || '';
+      const fallbackPhone = userData.phone || userData.phoneNumber || '';
       const snap = await getDoc(doc(db, 'networks', networkId, '_metadata', 'info'));
-      if (snap.exists()) { const data = snap.data(); return { networkName: data.name || '', phoneNumber: data.phoneNumber || '' }; }
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          networkName: data.name || data.networkName || fallbackName,
+          phoneNumber: data.phoneNumber || data.phone || fallbackPhone,
+        };
+      }
+      return { networkName: fallbackName, phoneNumber: fallbackPhone };
     } catch { /* optional */ }
     return { networkName: '', phoneNumber: '' };
   }, options);
@@ -226,9 +236,107 @@ export async function fetchUserBillingHistory(uid, options) {
 }
 export async function fetchAllUsers(options) {
   return readCached('all-users', async ({ force = false } = {}) => {
-    const usersRef = collection(db, 'users');
-    const snap = force ? await getDocsFromServer(usersRef) : await getDocs(usersRef);
-    return snap.docs.map((userDoc) => normalizeUserAccess({ uid: userDoc.id, ...userDoc.data() }));
+    const usersMap = new Map();
+
+    // 1. Load users from canonical 'users' collection
+    try {
+      const usersRef = collection(db, 'users');
+      const snap = force ? await getDocsFromServer(usersRef) : await getDocs(usersRef);
+      snap.docs.forEach((userDoc) => {
+        const data = userDoc.data() || {};
+        const netName =
+          data.network_name ||
+          data.networkName ||
+          data.name ||
+          data.displayName ||
+          data.networkTitle ||
+          data.network ||
+          data.username ||
+          '';
+        const phone = data.phone || data.phoneNumber || data.mobile || data.phone_number || '';
+        const normalized = normalizeUserAccess({
+          uid: userDoc.id,
+          ...data,
+          networkName: netName || `مشترك (${userDoc.id.slice(0, 8)})`,
+          network_name: netName || `مشترك (${userDoc.id.slice(0, 8)})`,
+          phoneNumber: phone,
+          phone: phone,
+        });
+        usersMap.set(userDoc.id, normalized);
+      });
+    } catch (err) {
+      console.warn('Error fetching users collection:', err);
+    }
+
+    // 2. Discover and merge all network records from 'networks' collection
+    try {
+      const networksRef = collection(db, 'networks');
+      const netSnap = force ? await getDocsFromServer(networksRef) : await getDocs(networksRef);
+      netSnap.docs.forEach((netDoc) => {
+        const netData = netDoc.data() || {};
+        const ownerUid = String(netData.owner_uid || netData.ownerUid || netData.uid || netData.userId || netDoc.id).trim();
+        const netName = netData.networkName || netData.network_name || netData.name || netData.networkTitle || `شبكة ${netDoc.id}`;
+        const phone = netData.phone || netData.phoneNumber || netData.mobile || '';
+
+        if (ownerUid) {
+          if (usersMap.has(ownerUid)) {
+            // Merge network ID and metadata into existing user document
+            const existing = usersMap.get(ownerUid);
+            usersMap.set(ownerUid, {
+              ...existing,
+              networkId: existing.networkId || netDoc.id,
+              networkName: existing.networkName && !existing.networkName.startsWith('مشترك (') ? existing.networkName : netName,
+              network_name: existing.network_name && !existing.network_name.startsWith('مشترك (') ? existing.network_name : netName,
+              phoneNumber: existing.phoneNumber || phone,
+              phone: existing.phone || phone,
+              is_active: existing.is_active ?? netData.is_active ?? true,
+              is_trial: existing.is_trial ?? netData.is_trial ?? false,
+              accessStatus: existing.accessStatus || netData.accessStatus || (netData.is_trial ? 'TRIAL' : 'ACTIVE_PAID'),
+              subscription_end_date: existing.subscription_end_date || netData.subscription_end_date || netData.subscriptionEndsAt || null,
+            });
+          } else {
+            // Add user from network document
+            usersMap.set(ownerUid, normalizeUserAccess({
+              uid: ownerUid,
+              networkId: netDoc.id,
+              networkName: netName,
+              network_name: netName,
+              phoneNumber: phone,
+              phone: phone,
+              is_active: netData.is_active ?? true,
+              is_trial: netData.is_trial ?? false,
+              accessStatus: netData.accessStatus || (netData.is_trial ? 'TRIAL' : 'ACTIVE_PAID'),
+              subscription_end_date: netData.subscription_end_date || netData.subscriptionEndsAt || null,
+            }));
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('Error fetching networks collection in fetchAllUsers:', err);
+    }
+
+    // 3. Fallback discovery from capitalized 'Users' collection if any client created documents there
+    try {
+      const usersCapRef = collection(db, 'Users');
+      const capSnap = force ? await getDocsFromServer(usersCapRef) : await getDocs(usersCapRef);
+      capSnap.docs.forEach((userDoc) => {
+        if (!usersMap.has(userDoc.id)) {
+          const data = userDoc.data() || {};
+          const netName = data.network_name || data.networkName || data.name || data.displayName || `مشترك (${userDoc.id.slice(0, 8)})`;
+          const phone = data.phone || data.phoneNumber || data.mobile || '';
+          usersMap.set(userDoc.id, normalizeUserAccess({
+            uid: userDoc.id,
+            ...data,
+            networkName: netName,
+            network_name: netName,
+            phoneNumber: phone,
+            phone: phone,
+          }));
+        }
+      });
+    } catch {}
+
+    return Array.from(usersMap.values());
   }, options);
 }
 function monthKey(input) {
@@ -367,13 +475,25 @@ export async function fetchUsersWithBilling(options) {
     const { values: enrichedUsers, errors } = await mapUsersSoft(users, 'Billing data', (user) => enrichUserForBilling(user, childOptions));
     // Keep every user row; a failed network shows zeroed aggregates but is still
     // listed, and the error is reported so the UI can flag incomplete data.
-    const completeUsers = enrichedUsers.map((enriched, index) => enriched ?? {
-      ...users[index],
-      networkName: '',
-      phoneNumber: '',
-      reportedSalesValue: 0,
-      reportedTransactions: 0,
-      recordedPayments: 0,
+    const completeUsers = enrichedUsers.map((enriched, index) => {
+      const u = users[index];
+      const fallbackNetName = u?.network_name || u?.networkName || u?.name || '';
+      const fallbackPhone = u?.phone || u?.phoneNumber || '';
+      if (!enriched) {
+        return {
+          ...u,
+          networkName: fallbackNetName,
+          phoneNumber: fallbackPhone,
+          reportedSalesValue: 0,
+          reportedTransactions: 0,
+          recordedPayments: 0,
+        };
+      }
+      return {
+        ...enriched,
+        networkName: enriched.networkName || fallbackNetName,
+        phoneNumber: enriched.phoneNumber || fallbackPhone,
+      };
     });
     const value = { users: completeUsers, globalConfig: config };
     return errors.length ? partialResult(value, errors) : value;
@@ -634,6 +754,18 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
 export async function fetchUsersForSelect(options) {
   return readCached('users-for-select', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
-    const users = await fetchAllUsers(childOptions); return mapUsersWithLimit(users, 'User selector', async (user) => { const meta = await fetchNetworkMeta(user.uid, childOptions); return { uid: user.uid, name: meta.networkName || user.uid }; });
+    const users = await fetchAllUsers(childOptions);
+    return mapUsersWithLimit(users, 'User selector', async (user) => {
+      const meta = await fetchNetworkMeta(user.uid, childOptions);
+      const name = meta.networkName || user.networkName || user.network_name || user.name || `مشترك (${user.uid.slice(0, 8)})`;
+      const phone = meta.phoneNumber || user.phoneNumber || user.phone || '';
+      return {
+        uid: user.uid,
+        name,
+        phone,
+        networkName: name,
+        phoneNumber: phone,
+      };
+    });
   }, options);
 }

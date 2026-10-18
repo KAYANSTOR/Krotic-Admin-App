@@ -448,7 +448,7 @@ export default function UsersPage() {
       message: `هل أنت متأكد من حذف الحساب «${targetName}»؟ سيتم حذف جميع بيانات المشترك والشبكة وسجلاتها نهائياً ولا يمكن التراجع عن هذا الإجراء.`,
       variant: 'danger',
       action: async () => {
-        const result = await deleteNetworkAccount(user.uid);
+        const result = await deleteNetworkAccount(user.uid, user);
         if (!result.ok) {
           toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
           return false;
@@ -480,7 +480,11 @@ export default function UsersPage() {
       const q = searchTerm.toLowerCase();
       const matchesSearch =
         (user.networkName || '').toLowerCase().includes(q) ||
+        (user.network_name || '').toLowerCase().includes(q) ||
+        (user.name || '').toLowerCase().includes(q) ||
         (user.phoneNumber || '').includes(q) ||
+        (user.phone || '').includes(q) ||
+        (user.networkId || '').toLowerCase().includes(q) ||
         user.uid.toLowerCase().includes(q);
 
       if (filterType === 'active') return matchesSearch && user.is_active !== false;

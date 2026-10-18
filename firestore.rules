@@ -111,10 +111,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Billing aggregates are private to admins and cannot be changed by clients.
+    // Billing aggregates are private to admins and cannot be changed by clients (can be deleted by admins).
     match /admin_aggregates/{userId} {
-      allow read: if isAdmin();
-      allow write: if false;
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
     }
 
     // سجل تعارضات الاستقبال الخادمي للمبيعات (idempotency + payload hash).
@@ -122,6 +122,11 @@ service cloud.firestore {
     match /sale_ingest_registry/{entryId} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    match /network_registration_phone_index/{phoneHash} {
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
     }
 
     match /admin_notification_history/{notificationId} {
@@ -137,12 +142,12 @@ service cloud.firestore {
     }
 
     match /notification_requests/{requestId} {
-      allow create, read: if isAdmin();
+      allow create, read, delete: if isAdmin();
       allow update: if false;
     }
 
     match /notification_deliveries/{deliveryId} {
-      allow read: if isAdmin();
+      allow read, delete: if isAdmin();
       allow write: if false;
     }
 
@@ -178,8 +183,8 @@ service cloud.firestore {
 
     match /networks/{networkId} {
       allow read: if isAdmin() || isNetworkOwner(networkId);
-      // هوية الشبكة والوصول والتسوية تُدار من الخادم فقط.
-      allow write: if false;
+      allow delete: if isAdmin();
+      allow create, update: if false;
 
       match /_metadata/{documentId} {
         allow read, write: if isAdmin() || isNetworkOwner(networkId);
@@ -206,10 +211,10 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // أي مجموعة فرعية أخرى: قراءة للمدير فقط، وكتابة من الخادم فقط.
+      // أي مجموعة فرعية أخرى: قراءة وحذف للمدير.
       match /{subcollection}/{documentId} {
-        allow read: if isAdmin();
-        allow write: if false;
+        allow read, delete: if isAdmin();
+        allow create, update: if false;
       }
     }
   }

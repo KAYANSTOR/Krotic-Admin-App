@@ -8,6 +8,7 @@ import {
   legacyAccessFields,
   updateAccess,
   repairLegacyAccess,
+  deleteAccount,
   TRIAL_DAYS,
   RENEWAL_DAYS,
 } from '../api/networks.js';
@@ -267,4 +268,115 @@ test('repairLegacyAccess fixes previously suspended user and network records wit
     assert.equal(value.subscription_end_date.toMillis(), timestamp.toMillis());
   }
   assert.equal(audits.length, 1);
+});
+
+test('deleteAccount purges client, network documents, sales subcollections, phone index and aggregate records', async () => {
+  const docs = new Map([
+    ['users/user_del', { uid: 'user_del', networkId: 'NET-99999', phone: '967771234567' }],
+    ['networks/NET-99999', { owner_uid: 'user_del', networkId: 'NET-99999' }],
+    ['admin_aggregates/user_del', { totalSales: 50 }],
+  ]);
+  const deletedDocs = new Set();
+  const audits = [];
+
+  function makeDocRef(path) {
+    return {
+      id: path.split('/').pop(),
+      path,
+      async get() {
+        const val = docs.get(path);
+        return { exists: val !== undefined && !deletedDocs.has(path), data: () => val, id: path.split('/').pop() };
+      },
+      async delete() {
+        deletedDocs.add(path);
+        docs.delete(path);
+      },
+      collection(subName) {
+        return makeColRef(`${path}/${subName}`);
+      },
+      async listCollections() {
+        return ['sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications'].map((s) => makeColRef(`${path}/${s}`));
+      },
+    };
+  }
+
+  function makeColRef(path) {
+    return {
+      limit() {
+        return this;
+      },
+      async get() {
+        return {
+          empty: true,
+          size: 0,
+          docs: [],
+        };
+      },
+      doc(id) {
+        return makeDocRef(`${path}/${id}`);
+      },
+      where() {
+        return {
+          async get() {
+            return { empty: true, size: 0, docs: [] };
+          },
+        };
+      },
+    };
+  }
+
+  const db = {
+    collection(name) {
+      return {
+        doc(id) {
+          return makeDocRef(`${name}/${id}`);
+        },
+        where(field, op, val) {
+          return {
+            async get() {
+              const matches = [];
+              for (const [k, v] of docs.entries()) {
+                if (k.startsWith(`${name}/`) && v && v[field] === val && !deletedDocs.has(k)) {
+                  matches.push({ id: k.split('/').pop(), ref: makeDocRef(k), data: () => v });
+                }
+              }
+              return { empty: matches.length === 0, size: matches.length, docs: matches };
+            },
+          };
+        },
+        async add(data) {
+          audits.push(data);
+          return { id: 'audit_new' };
+        },
+      };
+    },
+    batch() {
+      const ops = [];
+      return {
+        delete(ref) {
+          ops.push(ref);
+        },
+        async commit() {
+          for (const ref of ops) {
+            deletedDocs.add(ref.path);
+            docs.delete(ref.path);
+          }
+        },
+      };
+    },
+  };
+
+  const result = await deleteAccount(db, {
+    uid: 'user_del',
+    actorUid: 'admin_1',
+    now: 1_800_000_000_000,
+  });
+
+  assert.equal(result.status, 'deleted');
+  assert.equal(result.uid, 'user_del');
+  assert.equal(docs.has('users/user_del'), false);
+  assert.equal(docs.has('networks/NET-99999'), false);
+  assert.equal(docs.has('admin_aggregates/user_del'), false);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, 'NETWORK_DELETE');
 });

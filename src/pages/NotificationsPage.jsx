@@ -515,6 +515,68 @@ export default function NotificationsPage() {
 
           <Card className="notif-compose p-4 sm:p-6 rounded-2xl shadow-sm border border-line">
             <form onSubmit={handleSend} className="space-y-5" noValidate>
+              {/* قائمة اختيار القوالب الجاهزة للتعبئة التلقائية */}
+              <div className="space-y-1.5 p-3.5 bg-brand-soft/10 rounded-xl border border-brand/20">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-ink flex items-center gap-1.5" htmlFor="notif-template-select">
+                    <Sparkles className="w-4 h-4 text-brand" />
+                    <span>قوالب جاهزة للإشعارات (تعبئة تلقائية)</span>
+                  </label>
+                  {templateId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTemplateId('');
+                        setTitle('');
+                        setMessage('');
+                        toast('تم تفريغ الحقول', { icon: '🧹' });
+                      }}
+                      className="text-[11px] text-brand hover:underline font-bold"
+                    >
+                      تفريغ الحقول
+                    </button>
+                  )}
+                </div>
+                <select
+                  id="notif-template-select"
+                  value={templateId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      handleApplyTemplate(val);
+                    } else {
+                      setTemplateId('');
+                    }
+                  }}
+                  className="input-field bg-surface text-ink text-xs sm:text-sm font-semibold border-line focus:border-brand"
+                >
+                  <option value="">— اختر قالباً جاهزاً للتعبئة التلقائية (تنبيه صيانة، عرض خاص، تذكير تجديد...) —</option>
+                  <optgroup label="📋 القوالب الجاهزة المعتمدة">
+                    {templates
+                      .filter((t) => String(t.id).startsWith('builtin-'))
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} — {t.title.replace(/^[^\w\u0600-\u06FF]+/, '').slice(0, 45)}
+                        </option>
+                      ))}
+                  </optgroup>
+                  {templates.some((t) => !String(t.id).startsWith('builtin-')) && (
+                    <optgroup label="⭐ القوالب المحفوظة الخاصة بك">
+                      {templates
+                        .filter((t) => !String(t.id).startsWith('builtin-'))
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+                <p className="text-[11px] text-muted leading-tight">
+                  عند اختيار أي قالب، سيتم ملء حقل العنوان ونص الإشعار تلقائياً ويمكنك التعديل عليهما بحرية قبل الإرسال.
+                </p>
+              </div>
+
               {/* اختيار الجمهور بنمط أزرار أندرويد كبيرة ومريحة للمس */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-ink-soft">نوع الجمهور المستهدف</label>

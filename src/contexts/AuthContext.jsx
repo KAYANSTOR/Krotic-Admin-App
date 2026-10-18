@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDocFromCache, getDocFromServer, setDoc } from 'firebase/firestore';
-import { auth, db, secondaryAuth } from '../firebase';
+import { doc, getDocFromCache, getDocFromServer, getFirestore, setDoc } from 'firebase/firestore';
+import app, { auth, db, secondaryAuth, firestoreDatabaseId } from '../firebase';
 import { signOut as secondarySignOut } from 'firebase/auth';
 import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
@@ -22,19 +22,21 @@ export function AuthProvider({ children }) {
 
   // Admin documents are always addressed by the Firebase Auth UID.
   async function readVerifiedAdmin(uid) {
+    if (!uid) return { admin: null, fromCache: false };
     const toVerifiedAdmin = (adminDoc) => {
-      if (!adminDoc.exists()) return null;
+      if (!adminDoc || !adminDoc.exists()) return null;
       const data = adminDoc.data();
-      return data.uid === uid ? { ...data, uid } : null;
+      return data?.uid === uid ? { ...data, uid } : null;
     };
+    const targetDb = db || getFirestore(auth?.app || app, firestoreDatabaseId);
     try {
-      const adminDoc = await getDocFromServer(doc(db, 'Admins', uid));
+      const adminDoc = await getDocFromServer(doc(targetDb, 'Admins', uid));
       return { admin: toVerifiedAdmin(adminDoc), fromCache: false };
     } catch (error) {
       // Never use a cached Admin document after permission-denied or another
       // server/auth failure. `unavailable` is Firestore's real offline path.
       if (error?.code !== 'unavailable') throw error;
-      const cachedAdminDoc = await getDocFromCache(doc(db, 'Admins', uid));
+      const cachedAdminDoc = await getDocFromCache(doc(targetDb, 'Admins', uid));
       return {
         admin: toVerifiedAdmin(cachedAdminDoc),
         fromCache: true,

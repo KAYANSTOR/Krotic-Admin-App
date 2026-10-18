@@ -15,6 +15,7 @@
 // يتطلب FIREBASE_SERVICE_ACCOUNT.
 // ============================================================
 
+import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue, Timestamp, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
@@ -453,16 +454,29 @@ async function batchExpiry(db, { value, actorUid, now }) {
   return { status: 'batched', updated, networksUpdated };
 }
 
-async function deleteSubcollection(db, parentRef, subcollectionName) {
-  const subRef = parentRef.collection(subcollectionName);
-  const snap = await subRef.limit(100).get();
-  if (snap.empty) return;
-  const batch = db.batch();
-  snap.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
-  if (snap.size === 100) {
-    await deleteSubcollection(db, parentRef, subcollectionName);
+async function deleteSubcollection(db, colRef) {
+  while (true) {
+    const snap = await colRef.limit(100).get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    if (snap.size < 100) break;
   }
+}
+
+async function purgeDocAndAllSubcollections(db, docRef) {
+  try {
+    const subcollections = await docRef.listCollections();
+    for (const subCol of subcollections) {
+      await deleteSubcollection(db, subCol);
+    }
+  } catch {
+    for (const sub of ['sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications']) {
+      await deleteSubcollection(db, docRef.collection(sub));
+    }
+  }
+  await docRef.delete().catch(() => {});
 }
 
 export async function deleteAccount(db, { uid, actorUid, now }) {
@@ -470,47 +484,67 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
   const userSnap = await userRef.get();
   const userData = userSnap.exists ? userSnap.data() : null;
   const networkId = userData?.networkId || null;
+  const phone = userData?.phone || userData?.phoneNumber || null;
 
-  // 1. Delete user subcollections
-  await deleteSubcollection(db, userRef, 'devices');
-  await deleteSubcollection(db, userRef, 'notifications');
+  // 1. Purge user document and all subcollections (devices, notifications, etc.)
+  await purgeDocAndAllSubcollections(db, userRef);
 
-  // 2. Delete user doc
-  if (userSnap.exists) {
-    await userRef.delete();
-  }
-
-  // 3. Delete network doc & subcollections if any
-  const networksToDelete = [];
+  // 2. Discover all network documents related to this user/owner
+  const networksToDelete = new Map();
   if (networkId) {
-    networksToDelete.push(db.collection('networks').doc(networkId));
+    networksToDelete.set(networkId, db.collection('networks').doc(networkId));
   }
-  const uidNetRef = db.collection('networks').doc(uid);
-  if (!networkId || networkId !== uid) {
-    networksToDelete.push(uidNetRef);
-  }
-  const ownedNetworks = await db.collection('networks').where('owner_uid', '==', uid).get();
-  ownedNetworks.forEach((d) => {
-    if (!networksToDelete.some((ref) => ref.id === d.id)) {
-      networksToDelete.push(d.ref);
-    }
-  });
+  networksToDelete.set(uid, db.collection('networks').doc(uid));
 
-  for (const netRef of networksToDelete) {
-    const netSnap = await netRef.get();
-    if (netSnap.exists) {
-      await deleteSubcollection(db, netRef, 'sales');
-      await deleteSubcollection(db, netRef, 'payments');
-      await deleteSubcollection(db, netRef, 'settlements');
-      await deleteSubcollection(db, netRef, '_metadata');
-      await netRef.delete();
-    }
+  // Find any network where owner_uid == uid or ownerUid == uid
+  const ownedSnap1 = await db.collection('networks').where('owner_uid', '==', uid).get();
+  (ownedSnap1?.docs || ownedSnap1 || []).forEach((d) => networksToDelete.set(d.id, d.ref));
+  const ownedSnap2 = await db.collection('networks').where('ownerUid', '==', uid).get();
+  (ownedSnap2?.docs || ownedSnap2 || []).forEach((d) => networksToDelete.set(d.id, d.ref));
+
+  // 3. Purge all network documents and their subcollections (sales, payments, settlements, _metadata)
+  for (const [, netRef] of networksToDelete.entries()) {
+    await purgeDocAndAllSubcollections(db, netRef);
   }
 
-  // 4. Delete admin aggregate if exists
+  // 4. Purge admin billing aggregates
   await db.collection('admin_aggregates').doc(uid).delete().catch(() => {});
 
-  // 5. Try deleting Firebase Auth user
+  // 5. Purge phone registration index if exists
+  if (phone) {
+    try {
+      const hashedPhone = createHash('sha256').update(String(phone).trim(), 'utf8').digest('hex');
+      await db.collection('network_registration_phone_index').doc(hashedPhone).delete().catch(() => {});
+    } catch {}
+  }
+  try {
+    const indexMatches = await db.collection('network_registration_phone_index').where('uid', '==', uid).get();
+    if (!indexMatches.empty) {
+      const batch = db.batch();
+      indexMatches.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {}
+
+  // 6. Purge notification requests and deliveries targeting this user
+  try {
+    const notifReqs = await db.collection('notification_requests').where('targetUid', '==', uid).get();
+    if (!notifReqs.empty) {
+      const batch = db.batch();
+      notifReqs.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {}
+  try {
+    const notifDels = await db.collection('notification_deliveries').where('targetUid', '==', uid).get();
+    if (!notifDels.empty) {
+      const batch = db.batch();
+      notifDels.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch {}
+
+  // 7. Delete Firebase Auth user
   try {
     await getAuth().deleteUser(uid);
   } catch (authError) {
@@ -519,16 +553,25 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
     }
   }
 
-  // 6. Audit log
+  // 8. Audit log
   await audit(db, {
     action: 'NETWORK_DELETE',
     actorUid,
     uid,
-    details: { networkId, networkName: userData?.network_name || userData?.networkName || null },
+    details: {
+      networkId,
+      networkName: userData?.network_name || userData?.networkName || null,
+      networksPurged: Array.from(networksToDelete.keys()),
+    },
     now,
   });
 
-  return { status: 'deleted', uid, networkId };
+  return {
+    status: 'deleted',
+    uid,
+    networkId,
+    networksPurged: Array.from(networksToDelete.keys()),
+  };
 }
 
 export default async function handler(req, res) {

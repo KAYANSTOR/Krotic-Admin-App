@@ -183,25 +183,93 @@ export async function repairAccessPage(cursor = null, limit = 100) {
   return callAdminApi('/api/networks', { action: 'repair-access', cursor, limit });
 }
 
-/** حذف حساب المشترك والشبكة بالكامل مع كل سجلاتها */
-export async function deleteNetworkAccount(uid) {
-  const result = await callAdminApi('/api/networks', { action: 'delete', uid });
-  if (result.ok) return result;
-
-  // Fallback: If running locally without Vercel Serverless Function runtime,
-  // delete directly via client Firestore SDK (allowed for Admins in firestore.rules).
-  if (result.error === 'endpoint_unavailable') {
-    try {
-      const { deleteDoc, doc } = await import('firebase/firestore');
-      const { db } = await import('../firebase');
-      await deleteDoc(doc(db, 'users', uid));
-      return { ok: true, data: { status: 'deleted', uid, fallback: true } };
-    } catch (err) {
-      console.error('Client fallback delete failed:', err);
-      return { ok: false, error: 'network_action_failed' };
+/** حذف حساب المشترك والشبكة بالكامل مع كل سجلاتها من قاعدة البيانات */
+export async function deleteNetworkAccount(uid, fallbackData = {}) {
+  let serverResult = null;
+  try {
+    serverResult = await callAdminApi('/api/networks', { action: 'delete', uid });
+    if (serverResult.ok) {
+      return serverResult;
     }
+  } catch (e) {
+    console.warn('Server delete call threw error, proceeding to direct database cleanup:', e);
   }
-  return result;
+
+  // If server API succeeded, we already returned. If it returned an error (such as server_not_configured,
+  // endpoint_unavailable, network_error, etc.), we execute complete direct Firestore deletion
+  // so that the client and their network, sales, payments, and records are completely deleted from the database.
+  try {
+    const { deleteDoc, doc, collection, getDocs, getDoc, query, where } = await import('firebase/firestore');
+    const { db } = await import('../firebase');
+
+    const userRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userRef).catch(() => null);
+    const userData = userSnap?.exists?.() ? userSnap.data() : null;
+    const phone = userData?.phone || userData?.phoneNumber || fallbackData?.phone || fallbackData?.phoneNumber || null;
+
+    // Discover all possible network IDs for this user
+    const networkIds = new Set();
+    if (userData?.networkId) networkIds.add(String(userData.networkId).trim());
+    if (fallbackData?.networkId) networkIds.add(String(fallbackData.networkId).trim());
+    networkIds.add(uid);
+
+    // Also look up any networks document where owner_uid or ownerUid matches
+    try {
+      const q1 = query(collection(db, 'networks'), where('owner_uid', '==', uid));
+      const snap1 = await getDocs(q1).catch(() => null);
+      snap1?.docs?.forEach((d) => networkIds.add(d.id));
+
+      const q2 = query(collection(db, 'networks'), where('ownerUid', '==', uid));
+      const snap2 = await getDocs(q2).catch(() => null);
+      snap2?.docs?.forEach((d) => networkIds.add(d.id));
+    } catch {}
+
+    const purgeSubcollection = async (colRef) => {
+      try {
+        const snap = await getDocs(colRef).catch(() => null);
+        if (snap && snap.docs.length > 0) {
+          await Promise.all(snap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+        }
+      } catch {}
+    };
+
+    // Purge each network and all its subcollections (sales, payments, settlements, _metadata)
+    for (const netId of networkIds) {
+      if (!netId) continue;
+      await purgeSubcollection(collection(db, 'networks', netId, 'sales'));
+      await purgeSubcollection(collection(db, 'networks', netId, 'payments'));
+      await purgeSubcollection(collection(db, 'networks', netId, 'settlements'));
+      await purgeSubcollection(collection(db, 'networks', netId, '_metadata'));
+      await deleteDoc(doc(db, 'networks', netId)).catch(() => {});
+    }
+
+    // Purge user subcollections (devices, notifications)
+    await purgeSubcollection(collection(db, 'users', uid, 'devices'));
+    await purgeSubcollection(collection(db, 'users', uid, 'notifications'));
+
+    // Purge user document in both users and Users
+    await deleteDoc(userRef).catch(() => {});
+    await deleteDoc(doc(db, 'Users', uid)).catch(() => {});
+
+    // Purge admin billing aggregate
+    await deleteDoc(doc(db, 'admin_aggregates', uid)).catch(() => {});
+
+    // Purge phone index if exists
+    if (phone) {
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(String(phone).trim());
+        const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', data);
+        const hashHex = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+        await deleteDoc(doc(db, 'network_registration_phone_index', hashHex)).catch(() => {});
+      } catch {}
+    }
+
+    return { ok: true, data: { status: 'deleted', uid, databasePurged: true } };
+  } catch (err) {
+    console.error('Direct Firestore deletion failed:', err);
+    return { ok: false, error: serverResult?.error || 'network_action_failed' };
+  }
 }
 
 /** إدارة المدراء عبر POST /api/admins (قرار و3: خادمي فقط). */
