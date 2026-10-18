@@ -18,11 +18,11 @@
 import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue, Timestamp, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
-import { nextNetworkSequence, formatNetworkId, parseNetworkId } from './_lib/networkId.js';
-import { encryptNetworkSecret, generateNetworkSecret } from './_lib/networkSecret.js';
-import { ensureNetworkSecret } from './_lib/networkSecretStore.js';
-import { ACCESS_STATUSES, legacyAccessFields } from './_lib/accessStatus.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
+import { nextNetworkSequence, formatNetworkId, parseNetworkId } from '../server/_lib/networkId.js';
+import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
+import { ensureNetworkSecret } from '../server/_lib/networkSecretStore.js';
+import { ACCESS_STATUSES, legacyAccessFields } from '../server/_lib/accessStatus.js';
 
 export { ACCESS_STATUSES, legacyAccessFields };
 export const TRIAL_DAYS = 30;
