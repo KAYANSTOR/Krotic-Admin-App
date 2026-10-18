@@ -12,10 +12,10 @@
 
 import { getFirestore, FieldValue, Timestamp, FieldPath } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from './_lib/firebaseAdmin.js';
-import { planUserMigration, computeNetworkTotals, computeAggregate } from './_lib/migration.js';
-import { parseNetworkId } from './_lib/networkId.js';
-import { legacyAccessFields } from './_lib/accessStatus.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
+import { planUserMigration, computeNetworkTotals, computeAggregate } from '../server/_lib/migration.js';
+import { parseNetworkId } from '../server/_lib/networkId.js';
+import { legacyAccessFields } from '../server/_lib/accessStatus.js';
 
 export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all'];
 const DEFAULT_LIMIT = 100;
