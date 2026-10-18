@@ -336,6 +336,43 @@ export async function fetchAllUsers(options) {
       });
     } catch {}
 
+    // 4. Mزامنة وإظهار كافة المستخدمين المسجلين في Firebase Auth الذين قد تنقصهم مستندات Firestore
+    if (auth.currentUser) {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/admin-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ action: 'sync-auth-users' }),
+        });
+        if (res.ok) {
+          const syncResult = await res.json();
+          if (syncResult?.success && Array.isArray(syncResult.users)) {
+            syncResult.users.forEach((u) => {
+              if (usersMap.has(u.uid)) {
+                const existing = usersMap.get(u.uid);
+                usersMap.set(u.uid, {
+                  ...existing,
+                  networkId: existing.networkId || u.networkId,
+                  networkName: existing.networkName || u.networkName,
+                  network_name: existing.network_name || u.network_name,
+                  phoneNumber: existing.phoneNumber || u.phoneNumber || u.phone,
+                  phone: existing.phone || u.phone,
+                });
+              } else {
+                usersMap.set(u.uid, normalizeUserAccess(u));
+              }
+            });
+          }
+        }
+      } catch (authSyncErr) {
+        console.warn('Sync auth users in fetchAllUsers failed:', authSyncErr);
+      }
+    }
+
     return Array.from(usersMap.values());
   }, options);
 }

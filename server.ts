@@ -15,6 +15,7 @@ import sendFcmHandler from './api/send-fcm.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
 import migrateHandler from './api/migrate.js';
 import networkSecretHandler from './api/network-secret.js';
+import adminSessionHandler from './api/admin-session.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,7 @@ async function startServer() {
   // Mount API endpoints
   app.all('/api/networks', (req, res) => networksHandler(req, res));
   app.all('/api/admins', (req, res) => adminsHandler(req, res));
+  app.all('/api/admin-session', (req, res) => adminSessionHandler(req, res));
   app.all('/api/manage-user-auth', (req, res) => manageUserAuthHandler(req, res));
   app.all('/api/settings', (req, res) => settingsHandler(req, res));
   app.all('/api/settlement', (req, res) => settlementHandler(req, res));

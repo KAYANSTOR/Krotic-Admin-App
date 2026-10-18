@@ -43,8 +43,12 @@ export default function LoginPage() {
     } catch (error) {
       console.error('Admin sign-in failed:', error);
       const message = String(error?.message || '');
-      if (message.includes('ليس مسجلاً كمدير')) {
-        toast.error(message);
+      if (message.includes('صاحب شبكة')) {
+        toast.error(message, { duration: 6000 });
+        setFormError(message);
+      } else if (message.includes('ليس مسجلاً كمدير')) {
+        toast.error(message, { duration: 5000 });
+        setFormError(message);
       } else if (error?.code === 'permission-denied') {
         toast.error('تعذر التحقق من صلاحيات المدير. تواصل مع مسؤول النظام.');
       } else if (error?.code === 'auth/network-request-failed') {
@@ -58,7 +62,7 @@ export default function LoginPage() {
       } else if (error?.code === 'auth/too-many-requests') {
         toast.error('محاولات كثيرة. الرجاء الانتظار قليلاً.');
       } else {
-        toast.error('حدث خطأ أثناء تسجيل الدخول');
+        toast.error(message || 'حدث خطأ أثناء تسجيل الدخول');
       }
     } finally {
       setLoading(false);

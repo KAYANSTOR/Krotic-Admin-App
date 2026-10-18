@@ -26,22 +26,31 @@ export function AuthProvider({ children }) {
     const toVerifiedAdmin = (adminDoc) => {
       if (!adminDoc || !adminDoc.exists()) return null;
       const data = adminDoc.data();
-      return data?.uid === uid ? { ...data, uid } : null;
+      return (data?.uid === uid || !data?.uid) ? { ...data, uid } : null;
     };
     const targetDb = db || getFirestore(auth?.app || app, firestoreDatabaseId);
-    try {
-      const adminDoc = await getDocFromServer(doc(targetDb, 'Admins', uid));
-      return { admin: toVerifiedAdmin(adminDoc), fromCache: false };
-    } catch (error) {
-      // Never use a cached Admin document after permission-denied or another
-      // server/auth failure. `unavailable` is Firestore's real offline path.
-      if (error?.code !== 'unavailable') throw error;
-      const cachedAdminDoc = await getDocFromCache(doc(targetDb, 'Admins', uid));
-      return {
-        admin: toVerifiedAdmin(cachedAdminDoc),
-        fromCache: true,
-      };
+
+    // 1. Try canonical Admins collection, then fallback admins collection
+    for (const col of ['Admins', 'admins']) {
+      try {
+        const adminDoc = await getDocFromServer(doc(targetDb, col, uid));
+        if (adminDoc.exists()) {
+          const verified = toVerifiedAdmin(adminDoc);
+          if (verified) return { admin: verified, fromCache: false };
+        }
+      } catch (error) {
+        if (error?.code === 'unavailable') {
+          try {
+            const cachedDoc = await getDocFromCache(doc(targetDb, col, uid));
+            if (cachedDoc.exists()) {
+              const verified = toVerifiedAdmin(cachedDoc);
+              if (verified) return { admin: verified, fromCache: true };
+            }
+          } catch {}
+        }
+      }
     }
+    return { admin: null, fromCache: false };
   }
 
   async function verifyAdmin(uid) {
@@ -51,9 +60,45 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     try {
-      const { admin, fromCache } = await readVerifiedAdmin(userCredential.user.uid);
+      let { admin, fromCache } = await readVerifiedAdmin(userCredential.user.uid);
+
+      // Self-heal / Bootstrap admin account via server if document is not yet in active Firestore
       if (!admin) {
-        throw new Error('هذا الحساب ليس مسجلاً كمدير. يجب إنشاء المستند Admins/{UID} أولاً.');
+        try {
+          const idToken = await userCredential.user.getIdToken();
+          const response = await fetch('/api/admin-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ action: 'bootstrap' }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.success && data?.admin) {
+              admin = data.admin;
+              fromCache = false;
+            } else if (data?.error === 'client_account') {
+              throw new Error(data.message || 'هذا الحساب مسجل كصاحب شبكة/عميل في التطبيق وليس كمدير للنظام.');
+            }
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            if (errData?.error === 'client_account') {
+              throw new Error(errData.message || 'هذا الحساب مسجل كصاحب شبكة/عميل في التطبيق وليس كمدير للنظام.');
+            }
+          }
+        } catch (serverErr) {
+          if (serverErr?.message && serverErr.message.includes('صاحب شبكة')) {
+            throw serverErr;
+          }
+          console.warn('Server admin session bootstrap check failed:', serverErr);
+        }
+      }
+
+      if (!admin) {
+        throw new Error('هذا الحساب ليس مسجلاً كمدير في لوحة التحكم.');
       }
       if (auth.currentUser?.uid !== userCredential.user.uid) {
         throw new Error('تغيرت جلسة المصادقة أثناء تسجيل الدخول.');
