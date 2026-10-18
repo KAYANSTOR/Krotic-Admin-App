@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/record-payment", "destination": "/api/settlement?__apiRoute=record-payment" },
     { "source": "/api/request-otp", "destination": "/api/manage-user-auth?__apiRoute=request-otp" },
     { "source": "/api/verify-otp", "destination": "/api/manage-user-auth?__apiRoute=verify-otp" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
