@@ -6,7 +6,7 @@ import {
   parseNetworkId,
   isNetworkId,
   nextNetworkSequence,
-} from '../api/_lib/networkId.js';
+} from '../server/_lib/networkId.js';
 
 test('network ids are sequential and readable from NET-10001', () => {
   assert.equal(NETWORK_ID_START, 10001);
