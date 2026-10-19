@@ -39,6 +39,19 @@ const DETAIL_LABELS = {
   default_trial_days: 'الأيام التجريبية',
   warning_days_before_expiry: 'أيام التحذير',
   is_app_active: 'حالة التطبيق',
+  saleUuid: 'معرّف البيع',
+  reason: 'سبب التعارض',
+  previousHash: 'الهاش السابق',
+  incomingHash: 'الهاش الوارد',
+  locked: 'الاشتراكات المقفلة',
+  networksUpdated: 'الشبكات المحدثة',
+  scanned: 'الحسابات المفحوصة',
+  extensionDays: 'أيام التمديد',
+  settlementId: 'معرّف التسوية',
+  settledSalesCount: 'عدد المبيعات المسوّاة',
+  unallocated: 'المبلغ المتبقي',
+  version: 'الإصدار',
+  scope: 'النطاق',
 };
 
 const ACTION_ICONS = {
@@ -61,6 +74,18 @@ const ACTION_ICONS = {
   DEVICE_DELETE: Settings,
   USER_DELETE: ShieldAlert,
   ADMIN_PASSWORD_CHANGE: KeyRound,
+  SETTLEMENT_RECORD: DollarSign,
+  NETWORK_REGISTER: ShieldCheck,
+  NETWORK_RENEW: Calendar,
+  NETWORK_ACCESS_UPDATE: Settings,
+  NETWORK_DELETE: ShieldAlert,
+  SUBSCRIPTION_EXPIRY_CRON: Clock,
+  TEMPLATE_DRAFT_CREATE: ScrollText,
+  TEMPLATE_DRAFT_UPDATE: Settings,
+  TEMPLATE_DRAFT_DELETE: ShieldAlert,
+  TEMPLATE_RELEASE_PUBLISH: ShieldCheck,
+  TEMPLATE_RELEASE_ROLLBACK: Calendar,
+  SALE_CONFLICT_DETECTED: ShieldAlert,
 };
 
 function formatDetails(details) {
@@ -115,11 +140,11 @@ export function mergeAuditLogs(existing, incoming) {
 
 const CATEGORY_CHIPS = [
   { key: 'all', label: 'كل العمليات' },
-  { key: 'users', label: 'المستخدمين والاشتراكات', actions: ['USER_ACTIVATE', 'USER_BLOCK', 'USER_MAKE_OFFICIAL', 'USER_RENEW', 'USER_EDIT', 'USER_DELETE'] },
-  { key: 'financial', label: 'الدفعات والعمولات', actions: ['PAYMENT_ADD', 'SUBSCRIPTION_BATCH'] },
-  { key: 'security', label: 'كلمات المرور والأمان', actions: ['USER_PASSWORD_SET', 'USER_RESET_LINK', 'ADMIN_PASSWORD_CHANGE', 'ADMIN_CREATE', 'ADMIN_DELETE'] },
-  { key: 'notifications', label: 'الإشعارات', actions: ['NOTIFICATION_SEND', 'NOTIFICATION_DELETE', 'NOTIFICATION_SCHEDULE'] },
-  { key: 'system', label: 'إعدادات النظام', actions: ['SETTINGS_SAVE', 'APP_STATUS_CHANGE', 'DEVICE_DELETE'] },
+  { key: 'users', label: 'المستخدمين والاشتراكات', actions: ['USER_ACTIVATE', 'USER_BLOCK', 'USER_MAKE_OFFICIAL', 'USER_RENEW', 'USER_EDIT', 'USER_DELETE', 'NETWORK_ACCESS_UPDATE', 'NETWORK_RENEW', 'NETWORK_DELETE', 'NETWORK_REGISTER'] },
+  { key: 'financial', label: 'الدفعات والتسويات', actions: ['PAYMENT_ADD', 'SETTLEMENT_RECORD', 'SUBSCRIPTION_BATCH'] },
+  { key: 'security', label: 'الأمان والتعارضات', actions: ['USER_PASSWORD_SET', 'USER_RESET_LINK', 'ADMIN_PASSWORD_CHANGE', 'ADMIN_CREATE', 'ADMIN_DELETE', 'SALE_CONFLICT_DETECTED'] },
+  { key: 'templates', label: 'مركز القوالب', actions: ['TEMPLATE_DRAFT_CREATE', 'TEMPLATE_DRAFT_UPDATE', 'TEMPLATE_DRAFT_DELETE', 'TEMPLATE_RELEASE_PUBLISH', 'TEMPLATE_RELEASE_ROLLBACK'] },
+  { key: 'system', label: 'إعدادات النظام والكرون', actions: ['SETTINGS_SAVE', 'APP_STATUS_CHANGE', 'DEVICE_DELETE', 'SUBSCRIPTION_EXPIRY_CRON'] },
 ];
 
 export default function AuditPage() {

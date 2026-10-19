@@ -1,11 +1,35 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban,
+  ArrowRight, DollarSign, Clock3, Clock, AlertCircle, CalendarPlus, Edit, KeyRound, Ban,
   UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
   Trash2, ChevronDown, ChevronUp, Calendar, Receipt, Send, Sparkles,
   ShieldCheck, ShieldAlert,
 } from 'lucide-react';
+
+function SaleVerificationBadge({ sale }) {
+  const verified = isServerVerifiedSale(sale);
+  if (verified) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
+        title={`معتمد عبر خادم Ingest مع توقيع HMAC ومطابقة بصمة الهاش\nHash: ${sale.payloadHash || '—'}`}
+      >
+        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+        <span>معتمد خادمياً (Ingest)</span>
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300"
+      title="سجل بيع قديم من التطبيق غير متحقق منه خادمياً"
+    >
+      <Clock className="w-3 h-3 text-amber-600" />
+      <span>سجل قديم (غير موثّق)</span>
+    </span>
+  );
+}
 import toast from 'react-hot-toast';
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
@@ -20,7 +44,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
-import { saleCommission, saleOutstanding, sumOutstanding } from '../lib/commission';
+import { saleCommission, saleOutstanding, sumOutstanding, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
   fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData, subscribeNetworkSalesRealtime,
@@ -130,12 +154,18 @@ export default function UserProfilePage() {
         : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
     ) === historyMonth);
 
+  const verifiedSales = sales.filter(isServerVerifiedSale);
+  const legacySales = sales.filter((s) => !isServerVerifiedSale(s));
+  const verifiedCommissionDue = verifiedSales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
+  const legacyEstimatedCommission = legacySales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
+  const verifiedOutstanding = verifiedSales.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
+
   const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
   const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   const outstanding = sumOutstanding(sales);
   const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
 
-  // تفصيل الأشهر والعمولات لكل شهر مع إمكانية التوسيع وعرض العمليات
+  // تفصيل الأشهر والعمولات لكل شهر مع إمكانية التوسيع وعرض العمليات مع فصل السجلات القديمة
   const monthlyBreakdown = useMemo(() => {
     const buckets = {};
     monthOptions.forEach((mKey) => {
@@ -145,8 +175,15 @@ export default function UserProfilePage() {
         sales: [],
         payments: [],
         totalSales: 0,
+        verifiedSalesTotal: 0,
+        legacySalesTotal: 0,
+        verifiedCount: 0,
+        legacyCount: 0,
+        verifiedCommissionDue: 0,
+        legacyEstimatedCommission: 0,
         commissionDue: 0,
         totalPaid: 0,
+        verifiedOutstanding: 0,
         outstanding: 0,
       };
     });
@@ -160,16 +197,37 @@ export default function UserProfilePage() {
           sales: [],
           payments: [],
           totalSales: 0,
+          verifiedSalesTotal: 0,
+          legacySalesTotal: 0,
+          verifiedCount: 0,
+          legacyCount: 0,
+          verifiedCommissionDue: 0,
+          legacyEstimatedCommission: 0,
           commissionDue: 0,
           totalPaid: 0,
+          verifiedOutstanding: 0,
           outstanding: 0,
         };
       }
       buckets[mKey].sales.push(sale);
-      buckets[mKey].totalSales += Number(sale.faceValue) || 0;
+      const faceVal = Number(sale.faceValue) || 0;
+      buckets[mKey].totalSales += faceVal;
+
       const comm = saleCommission(sale) || 0;
-      buckets[mKey].commissionDue += comm;
-      buckets[mKey].outstanding += (saleOutstanding(sale) ?? comm);
+      const isVerified = isServerVerifiedSale(sale);
+      if (isVerified) {
+        buckets[mKey].verifiedCount += 1;
+        buckets[mKey].verifiedSalesTotal += faceVal;
+        buckets[mKey].verifiedCommissionDue += comm;
+        buckets[mKey].verifiedOutstanding += (saleOutstanding(sale) ?? comm);
+      } else {
+        buckets[mKey].legacyCount += 1;
+        buckets[mKey].legacySalesTotal += faceVal;
+        buckets[mKey].legacyEstimatedCommission += comm;
+      }
+      // العمولات المستحقة المعتمدة خادمياً فقط
+      buckets[mKey].commissionDue = buckets[mKey].verifiedCommissionDue;
+      buckets[mKey].outstanding = buckets[mKey].verifiedOutstanding;
     });
 
     allPayments.forEach((pmt) => {
@@ -183,8 +241,15 @@ export default function UserProfilePage() {
           sales: [],
           payments: [],
           totalSales: 0,
+          verifiedSalesTotal: 0,
+          legacySalesTotal: 0,
+          verifiedCount: 0,
+          legacyCount: 0,
+          verifiedCommissionDue: 0,
+          legacyEstimatedCommission: 0,
           commissionDue: 0,
           totalPaid: 0,
+          verifiedOutstanding: 0,
           outstanding: 0,
         };
       }
@@ -508,8 +573,20 @@ export default function UserProfilePage() {
       {/* المؤشرات المالية العامة للعميل */}
       <div className="grid-kpi my-4">
         <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
-        <StatCard title="العمولة المستحقة" value={formatNumber(commissionDue)} icon={Wallet} tone="warning" subtitle={historyMonth === "all" ? "كل العمولات" : "عمولة الشهر المحدد"} />
-        <StatCard title="غير المسوّاة" value={formatNumber(outstanding)} icon={Wallet} tone="success" subtitle={historyMonth === "all" ? "المتبقي على العميل" : "المتبقي في الشهر المحدد"} />
+        <StatCard
+          title="العمولة المعتمدة خادمياً"
+          value={formatNumber(verifiedCommissionDue)}
+          icon={Wallet}
+          tone="warning"
+          subtitle={legacyEstimatedCommission > 0 ? `+ ${formatNumber(legacyEstimatedCommission)} ر.ي قديمة للمراجعة` : (historyMonth === "all" ? "كل العمولات المعتمدة" : "عمولة الشهر المعتمدة")}
+        />
+        <StatCard
+          title="المتبقي غير المسوّى"
+          value={formatNumber(verifiedOutstanding)}
+          icon={Wallet}
+          tone="success"
+          subtitle="عمولة معتمدة خادمياً"
+        />
         <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
       </div>
 
@@ -589,15 +666,19 @@ export default function UserProfilePage() {
                               ? 'warning'
                               : m.commissionDue > 0
                               ? 'danger'
+                              : m.legacyCount > 0
+                              ? 'warning'
                               : 'neutral'
                           }
                         >
                           {isFullySettled
-                            ? 'مسواة بالكامل'
+                            ? 'مسواة بالكامل (معتمدة)'
                             : isPartiallySettled
                             ? 'مسواة جزئياً'
                             : m.commissionDue > 0
                             ? 'بانتظار التسوية'
+                            : m.legacyCount > 0
+                            ? 'سجلات قديمة للمراجعة'
                             : 'لا توجد عمولة'}
                         </Badge>
                         <span className="p-1 text-muted hover:text-ink">
@@ -606,19 +687,27 @@ export default function UserProfilePage() {
                       </div>
                     </div>
 
-                    {/* شبكة الأرقام السريعة الخاصة بهذا الشهر */}
+                    {/* شبكة الأرقام السريعة الخاصة بهذا الشهر مع إبراز التوثيق */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-line/60">
                       <div className="bg-surface-sunken p-2.5 rounded-xl border border-line/40">
                         <span className="text-[10px] text-muted block font-medium">مبيعات الشهر</span>
                         <span className="text-xs sm:text-sm font-black font-mono text-ink">
                           {formatNumber(m.totalSales)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
                         </span>
+                        <span className="text-[9px] text-muted block mt-0.5">
+                          {m.verifiedCount} معتمدة{m.legacyCount > 0 ? ` • ${m.legacyCount} قديمة` : ''}
+                        </span>
                       </div>
                       <div className="bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20">
-                        <span className="text-[10px] text-amber-700 dark:text-amber-300 block font-bold">العمولة المستحقة</span>
+                        <span className="text-[10px] text-amber-700 dark:text-amber-300 block font-bold">العمولة المعتمدة</span>
                         <span className="text-xs sm:text-sm font-black font-mono text-amber-600 dark:text-amber-400">
                           {formatNumber(m.commissionDue)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
                         </span>
+                        {m.legacyEstimatedCommission > 0 && (
+                          <span className="text-[9px] text-amber-800 font-semibold block mt-0.5 truncate" title="عمولات سجلات قديمة تتطلب مراجعة إدارية">
+                            + {formatNumber(m.legacyEstimatedCommission)} ر.ي قديمة
+                          </span>
+                        )}
                       </div>
                       <div className="bg-emerald-500/5 p-2.5 rounded-xl border border-emerald-500/20">
                         <span className="text-[10px] text-emerald-700 dark:text-emerald-300 block font-bold">المسدد</span>
@@ -627,7 +716,7 @@ export default function UserProfilePage() {
                         </span>
                       </div>
                       <div className="bg-rose-500/5 p-2.5 rounded-xl border border-rose-500/20">
-                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-bold">المتبقي</span>
+                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-bold">المتبقي المعتمد</span>
                         <span className="text-xs sm:text-sm font-black font-mono text-rose-600 dark:text-rose-400">
                           {formatNumber(remaining)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
                         </span>
@@ -659,6 +748,19 @@ export default function UserProfilePage() {
                         </Button>
                       </div>
 
+                      {/* تنبيه السجلات القديمة إن وُجدت */}
+                      {m.legacyCount > 0 && (
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="font-bold">تنبيه تدقيق: يتضمن هذا الشهر {m.legacyCount} سجلات بيع قديمة غير موثقة خادمياً ({formatNumber(m.legacySalesTotal)} ر.ي)</p>
+                            <p className="text-[11px] text-amber-800 mt-0.5">
+                              العمولة التقديرية المحتملة: {formatNumber(m.legacyEstimatedCommission)} ر.ي. لا تُحتسب تلقائياً في المستحقات لعدم وجود توقيع Ingest خادمي. يمكنك تسويتها استثنائياً عبر إنشاء تسوية للشهر مع تسجيل سبب التوثيق.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* عمليات مبيعات هذا الشهر */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
@@ -685,10 +787,11 @@ export default function UserProfilePage() {
                                   className="p-3 rounded-xl bg-surface border border-line flex items-center justify-between gap-3 text-xs"
                                 >
                                   <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <span className="font-mono font-bold text-ink truncate" dir="ltr">
                                         {sale.customerId || sale.voucherCode || 'كرت مبيعات'}
                                       </span>
+                                      <SaleVerificationBadge sale={sale} />
                                       <Badge tone={isSaleSettled ? 'success' : 'warning'}>
                                         {isSaleSettled ? 'مسواة' : 'غير مسواة'}
                                       </Badge>

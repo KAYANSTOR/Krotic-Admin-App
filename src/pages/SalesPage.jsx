@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  DollarSign, Filter, Download, CheckCircle2,
+  DollarSign, Filter, Download, CheckCircle2, ShieldCheck, Clock3,
   ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
   RefreshCw, TrendingUp, Activity, Search, X, Calendar, ArrowUpRight, Zap
 } from 'lucide-react';
@@ -17,7 +17,7 @@ import { formatNumber, formatDate, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
-import { saleCommission, sumOutstanding, hasUnverifiedCommission } from '../lib/commission';
+import { saleCommission, sumOutstanding, hasUnverifiedCommission, isServerVerifiedSale, sumVerifiedOutstanding, sumLegacyUnverifiedSales } from '../lib/commission';
 
 const NETWORK_PAGE_SIZE = 12;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v4';
@@ -50,12 +50,37 @@ function loadSavedFilters() {
 }
 const SALE_ROW_LIMIT = 50;
 
+function SaleVerificationBadge({ sale }) {
+  const verified = isServerVerifiedSale(sale);
+  if (verified) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
+        title={`معتمد عبر خادم Ingest مع توقيع HMAC ومطابقة بصمة الهاش\nHash: ${sale.payloadHash || '—'}`}
+      >
+        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+        <span>معتمد خادمياً</span>
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300"
+      title="سجل بيع قديم مباشر من التطبيق قبل ربط Ingest. لا يُحتسب كعمولة معتمدة تلقائياً قبل المراجعة والتسوية."
+    >
+      <Clock3 className="w-3 h-3 text-amber-700" />
+      <span>سجل قديم (قيد المطابقة)</span>
+    </span>
+  );
+}
+
 export default function SalesPage() {
   const [networkSales, setNetworkSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const savedFilters = useMemo(loadSavedFilters, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
+  const [verificationFilter, setVerificationFilter] = useState('all'); // 'all' | 'verified' | 'legacy'
   const [dateFrom, setDateFrom] = useState(savedFilters ? savedFilters.dateFrom : '');
   const [dateTo, setDateTo] = useState(savedFilters ? savedFilters.dateTo : '');
   const [searchQuery, setSearchQuery] = useState('');
@@ -150,6 +175,8 @@ export default function SalesPage() {
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
       if (statusFilter !== 'all' && sale.status !== statusFilter) return false;
+      if (verificationFilter === 'verified' && !isServerVerifiedSale(sale)) return false;
+      if (verificationFilter === 'legacy' && isServerVerifiedSale(sale)) return false;
       if (dateFrom || dateTo) {
         const saleDate = toDate(sale.createdAt);
         if (!saleDate || Number.isNaN(saleDate.getTime())) return false;
@@ -164,19 +191,36 @@ export default function SalesPage() {
       }
       return true;
     });
-  }, [statusFilter, dateFrom, dateTo]);
+  }, [statusFilter, verificationFilter, dateFrom, dateTo]);
 
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales || []);
     const completed = filtered.filter((sale) => sale.status === 'COMPLETED');
+    const verified = completed.filter(isServerVerifiedSale);
+    const legacy = completed.filter((s) => !isServerVerifiedSale(s));
+
     const totalFaceValue = completed.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-    const totalCommission = sumOutstanding(completed);
-    const unverified = hasUnverifiedCommission(completed);
+    const verifiedFaceValue = verified.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+    const legacyFaceValue = legacy.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+
+    // العمولات المعتمدة خادمياً فقط
+    const verifiedCommission = sumVerifiedOutstanding(completed);
+    // عمولات السجلات القديمة تقديرية لأغراض التدقيق والمراجعة
+    const legacyEstimatedCommission = legacy.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
+    const totalCommission = verifiedCommission;
+    const unverified = legacy.length > 0;
+
     return {
       totalSales: completed.length,
       completedCount: completed.length,
+      verifiedCount: verified.length,
+      legacyCount: legacy.length,
       totalFaceValue,
+      verifiedFaceValue,
+      legacyFaceValue,
       totalCommission,
+      verifiedCommission,
+      legacyEstimatedCommission,
       unverified,
       filteredSales: filtered,
     };
@@ -235,9 +279,21 @@ export default function SalesPage() {
         acc.totalSales += stats.totalFaceValue;
         acc.totalCommission += stats.totalCommission;
         acc.totalCount += stats.completedCount;
+        acc.verifiedCount += stats.verifiedCount;
+        acc.legacyCount += stats.legacyCount;
+        acc.verifiedCommission += stats.verifiedCommission;
+        acc.legacyEstimatedCommission += stats.legacyEstimatedCommission;
         return acc;
       },
-      { totalSales: 0, totalCommission: 0, totalCount: 0 }
+      {
+        totalSales: 0,
+        totalCommission: 0,
+        totalCount: 0,
+        verifiedCount: 0,
+        legacyCount: 0,
+        verifiedCommission: 0,
+        legacyEstimatedCommission: 0,
+      }
     );
   }, [networkSales, calcNetworkStats]);
 
@@ -284,16 +340,20 @@ export default function SalesPage() {
       { label: 'الزبون', value: (r) => r.sale.customerId || '' },
       { label: 'قيمة البيع (ر.ي)', value: (r) => Math.round(Number(r.sale.faceValue) || 0) },
       { label: 'حالة البيع', value: (r) => r.sale.status || '' },
+      { label: 'التوثيق الخادمي', value: (r) => isServerVerifiedSale(r.sale) ? 'معتمد خادمياً (Ingest)' : 'سجل قديم (غير متحقق منه)' },
+      { label: 'بصمة العملية Hash', value: (r) => r.sale.payloadHash || '—' },
+      { label: 'إيصال التوقيع', value: (r) => r.sale.verificationReceipt || '—' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
       { label: 'العمولة غير المسوّاة', value: (r) => r.sale.status !== 'COMPLETED' || saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
     ]);
     toast.success('تم تصدير سجل المبيعات كملف CSV');
   }, [networkSales, calcNetworkStats]);
 
-  const hasActiveFilters = statusFilter !== 'all' || dateFrom || dateTo || searchQuery;
+  const hasActiveFilters = statusFilter !== 'all' || verificationFilter !== 'all' || dateFrom || dateTo || searchQuery;
 
   const resetFilters = () => {
     setStatusFilter('all');
+    setVerificationFilter('all');
     setDateFrom('');
     setDateTo('');
     setSearchQuery('');
@@ -368,16 +428,24 @@ export default function SalesPage() {
             <DollarSign className="w-4 h-4 text-brand" />
           </div>
           <p className="text-lg font-black text-ink font-mono">{formatNumber(grandTotals.totalSales)}</p>
-          <span className="text-[10px] text-muted">ريال يمني</span>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted mt-0.5">
+            <span className="text-emerald-700 font-bold">{formatNumber(grandTotals.verifiedCount)} معتمدة</span>
+            <span>•</span>
+            <span className="text-amber-800 font-semibold">{formatNumber(grandTotals.legacyCount)} قديمة</span>
+          </div>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
           <div className="flex items-center justify-between text-muted mb-1">
-            <span className="text-[11px] font-bold">العمولة المتبقية</span>
+            <span className="text-[11px] font-bold">العمولة المعتمدة خادمياً</span>
             <Wallet className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="text-lg font-black text-emerald-600 font-mono">{formatNumber(grandTotals.totalCommission)}</p>
-          <span className="text-[10px] text-muted">غير مسوّاة</span>
+          <p className="text-lg font-black text-emerald-600 font-mono">{formatNumber(grandTotals.verifiedCommission)}</p>
+          <span className="text-[10px] text-muted block truncate">
+            {grandTotals.legacyEstimatedCommission > 0
+              ? `+ ${formatNumber(grandTotals.legacyEstimatedCommission)} ر.ي قديمة للمراجعة`
+              : 'غير مسوّاة'}
+          </span>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-surface border border-line shadow-xs col-span-2 sm:col-span-1">
@@ -468,6 +536,28 @@ export default function SalesPage() {
             <Calendar className="w-3.5 h-3.5" />
             <span>تاريخ مخصص</span>
           </button>
+        </div>
+
+                {/* فلتر التوثيق (معتمد خادمياً مقابل سجل قديم) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar touch-pan-x">
+          {[
+            { value: 'all', label: 'كافة سجلات المبيعات' },
+            { value: 'verified', label: '🛡️ معتمدة خادمياً فقط (Ingest)' },
+            { value: 'legacy', label: '⏳ سجلات قديمة (قيد المطابقة)' },
+          ].map((v) => (
+            <button
+              key={v.value}
+              type="button"
+              onClick={() => setVerificationFilter(v.value)}
+              className={`flex-shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                verificationFilter === v.value
+                  ? 'bg-brand text-white border-brand shadow-xs'
+                  : 'bg-surface text-ink-soft border-line/60 hover:text-ink'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
         </div>
 
         {/* فلاتر الحالة كرقائق أندرويد */}
@@ -631,9 +721,12 @@ export default function SalesPage() {
                                 <span className="text-sm font-black text-ink font-mono">
                                   {formatNumber(sale.faceValue)} ر.ي
                                 </span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusLabel[sale.status]?.class || 'bg-slate-100 text-slate-800'}`}>
-                                  {statusLabel[sale.status]?.text || sale.status}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusLabel[sale.status]?.class || 'bg-slate-100 text-slate-800'}`}>
+                                    {statusLabel[sale.status]?.text || sale.status}
+                                  </span>
+                                  <SaleVerificationBadge sale={sale} />
+                                </div>
                               </div>
                               <div className="flex items-center justify-between text-[11px] text-muted">
                                 <span>الزبون: <strong className="text-ink-soft" dir="ltr">{sale.customerId || '—'}</strong></span>

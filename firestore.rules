@@ -30,8 +30,9 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());
     }
     function onlyProfileFields() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['phone', 'network_name', 'platform', 'app_version', 'last_seen_at']);
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['phone', 'network_name', 'platform', 'app_version', 'app_version_code', 'last_seen_at'])
+        && (!changed.hasAny(['app_version_code']) || request.resource.data.app_version_code is int);
     }
 
     // الشبكة مملوكة للحساب المخزّن في owner_uid. الشبكات القديمة (قبل نظام
@@ -115,6 +116,18 @@ service cloud.firestore {
     match /app_settings/{document=**} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // Central template releases are served only by the authenticated API:
+    // clients cannot inspect drafts or alter immutable releases/pointers.
+    match /template_center_drafts/{draftId} {
+      allow read, write: if false;
+    }
+    match /template_center_releases/{releaseId} {
+      allow read, write: if false;
+    }
+    match /template_center_pointers/{scopeKey} {
+      allow read, write: if false;
     }
 
     // Billing aggregates are private to admins and cannot be changed by clients (can be deleted by admins).

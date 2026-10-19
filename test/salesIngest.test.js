@@ -8,6 +8,7 @@ import {
   canonicalReceiptPayload,
   createInternalReceipt,
   verifyInternalReceipt,
+  isSaleAllowedForAccount,
 } from '../api/sales/ingest.js';
 
 const validBody = {
@@ -141,4 +142,55 @@ test('an HMAC receipt from another network key is rejected', () => {
   const receipt = createInternalReceipt({ payload, timestamp, secret: 'network-secret-one' });
   assert.equal(verifyInternalReceipt({ token: receipt, payload, secret: 'network-secret-one', now: timestamp }).ok, true);
   assert.equal(verifyInternalReceipt({ token: receipt, payload, secret: 'network-secret-two', now: timestamp }).error, 'hmac_invalid');
+});
+
+test('isSaleAllowedForAccount allows sales for active trial or active paid accounts', () => {
+  const now = 1_700_000_000_000;
+  const trialUser = { accessStatus: 'TRIAL', subscriptionEndsAt: now + 86400000 };
+  assert.equal(isSaleAllowedForAccount(trialUser, now, now).ok, true);
+
+  const paidUser = { accessStatus: 'ACTIVE_PAID', subscriptionEndsAt: now + 86400000 };
+  assert.equal(isSaleAllowedForAccount(paidUser, now, now).ok, true);
+});
+
+test('isSaleAllowedForAccount permits offline outbox sales created before expiration', () => {
+  const expiryTime = 1_700_000_000_000;
+  const now = expiryTime + 3600_000; // 1 hour after expiry
+  const expiredUser = {
+    accessStatus: 'LOCKED_EXPIRED',
+    subscriptionEndsAt: expiryTime,
+  };
+
+  // Sale was created 10 minutes before expiry -> MUST BE ALLOWED to sync
+  const saleBeforeExpiry = expiryTime - 600_000;
+  const result = isSaleAllowedForAccount(expiredUser, saleBeforeExpiry, now);
+  assert.equal(result.ok, true);
+});
+
+test('isSaleAllowedForAccount blocks new commercial sales created after expiration', () => {
+  const expiryTime = 1_700_000_000_000;
+  const now = expiryTime + 3600_000;
+  const expiredUser = {
+    accessStatus: 'LOCKED_EXPIRED',
+    subscriptionEndsAt: expiryTime,
+  };
+
+  // Sale created 5 minutes after expiry -> MUST BE BLOCKED
+  const saleAfterExpiry = expiryTime + 300_000;
+  const result = isSaleAllowedForAccount(expiredUser, saleAfterExpiry, now);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 403);
+  assert.equal(result.error, 'subscription_expired_new_sales_locked');
+  assert.equal(result.subscriptionEndsAtMs, expiryTime);
+});
+
+test('isSaleAllowedForAccount blocks manually suspended accounts', () => {
+  const suspendedUser = {
+    accessStatus: 'SUSPENDED_GRACE',
+    is_active: false,
+  };
+  const result = isSaleAllowedForAccount(suspendedUser, Date.now());
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 403);
+  assert.equal(result.error, 'account_suspended');
 });

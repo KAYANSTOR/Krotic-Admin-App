@@ -26,6 +26,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, isAdminUid } from '../../server/_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../../server/_lib/money.js';
 import { decryptNetworkSecret } from '../../server/_lib/networkSecret.js';
+import { expiryMillis, shouldLockExpiredAccount } from '../../server/_lib/subscriptionExpiry.js';
 
 const MAX_SALE_ID_LENGTH = 128;
 const MINOR_UNITS_PER_RIYAL = 100;
@@ -252,6 +253,39 @@ async function resolveClientUid(req) {
   return { ok: true, uid };
 }
 
+/**
+ * Checks if a sale is permitted based on user access status and subscription expiry.
+ * In accordance with OWNER_ACCESS_COMMISSION_POLICY_AR:
+ * - If subscription is expired, commercial activity is locked for NEW sales.
+ * - However, pending older sales created before expiration (from offline outbox) ARE allowed.
+ */
+export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now()) {
+  if (!user || typeof user !== 'object') {
+    return { ok: false, status: 404, error: 'account_not_found' };
+  }
+
+  // 1. Manually suspended account
+  if (user.accessStatus === 'SUSPENDED_GRACE' || (user.is_active === false && user.accessStatus !== 'TRIAL' && user.accessStatus !== 'LOCKED_EXPIRED')) {
+    return { ok: false, status: 403, error: 'account_suspended' };
+  }
+
+  // 2. Subscription Expiry
+  const endMs = expiryMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+  const isExpired = shouldLockExpiredAccount(user, now) || (user.accessStatus === 'LOCKED_EXPIRED');
+
+  if (isExpired && endMs > 0 && typeof saleCreatedMs === 'number' && saleCreatedMs > endMs) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'subscription_expired_new_sales_locked',
+      subscriptionEndsAtMs: endMs,
+      saleCreatedMs,
+    };
+  }
+
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -284,7 +318,15 @@ export default async function handler(req, res) {
   try {
     userSnapshot = await db.collection('users').doc(uid).get();
     if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
-    const user = userSnapshot.data() || {};
+        const user = userSnapshot.data() || {};
+    const accessCheck = isSaleAllowedForAccount(user, payload.createdMs);
+    if (!accessCheck.ok) {
+      return res.status(accessCheck.status).json({
+        success: false,
+        error: accessCheck.error,
+        ...(accessCheck.subscriptionEndsAtMs ? { subscriptionEndsAtMs: accessCheck.subscriptionEndsAtMs, saleCreatedMs: accessCheck.saleCreatedMs } : {}),
+      });
+    }
     networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : uid;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(networkId)) {
       return res.status(409).json({ success: false, error: 'network_mapping_invalid' });

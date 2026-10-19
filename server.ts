@@ -16,6 +16,7 @@ import dispatchNotificationsHandler from './api/dispatch-notifications.js';
 import migrateHandler from './api/migrate.js';
 import networkSecretHandler from './api/network-secret.js';
 import adminSessionHandler from './api/admin-session.js';
+import templateCenterHandler from './server/_lib/templateCenterApi.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,7 @@ async function startServer() {
   app.all('/api/dispatch-notifications', (req, res) => dispatchNotificationsHandler(req, res));
   app.all('/api/migrate', (req, res) => migrateHandler(req, res));
   app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
+  app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
 
   // Health check endpoint
   app.get('/api/health', (_req, res) => {

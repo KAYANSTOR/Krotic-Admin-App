@@ -120,7 +120,44 @@ export async function fetchAuditLogs(options) {
       limit(30),
     );
     const snap = force ? await getDocsFromServer(auditQuery) : await getDocs(auditQuery);
-    return { logs: snap.docs.map((d) => ({ id: d.id, ...d.data() })), hasMore: snap.docs.length === 30 };
+    const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // دمج تعارضات مبيعات الأجهزة الموثقة في sale_ingest_registry ضمن التدقيق
+    try {
+      const conflictQuery = query(
+        collection(db, 'sale_ingest_registry'),
+        limit(20)
+      );
+      const conflictSnap = force ? await getDocsFromServer(conflictQuery) : await getDocs(conflictQuery);
+      conflictSnap.docs.forEach((doc) => {
+        const data = doc.data() || {};
+        const recordedMs = data.recordedAt?.toMillis?.() || Date.now();
+        logs.push({
+          id: `conflict_${doc.id}`,
+          action: 'SALE_CONFLICT_DETECTED',
+          targetType: 'sale',
+          targetId: data.saleUuid || doc.id,
+          targetLabel: data.reason === 'sale_id_payload_conflict'
+            ? 'تعارض في محتوى البيع (تكرار معرّف مع تغيير بيانات)'
+            : 'سجل قديم يحتاج مطابقة مع البصمة الخادمية',
+          actorUid: data.uid || 'client:android',
+          actorEmail: `عميل: ${data.uid || '—'}`,
+          details: {
+            saleUuid: data.saleUuid,
+            reason: data.reason,
+            incomingHash: data.incomingHash ? `${data.incomingHash.slice(0, 16)}...` : '—',
+            previousHash: data.previousHash ? `${data.previousHash.slice(0, 16)}...` : '—',
+          },
+          createdAtMs: recordedMs,
+          createdAt: data.recordedAt || null,
+        });
+      });
+      logs.sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+    } catch {
+      // safe fallback if permission or collection empty
+    }
+
+    return { logs, hasMore: snap.docs.length === 30 };
   }, options);
 }
 

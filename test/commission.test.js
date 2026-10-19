@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saleCommission, sumCommission, hasUnverifiedCommission, saleOutstanding, sumOutstanding, summarizeCompletedSales } from '../src/lib/commission.js';
+import { saleCommission, sumCommission, hasUnverifiedCommission, saleOutstanding, sumOutstanding, summarizeCompletedSales, isServerVerifiedSale, sumVerifiedCommission, sumVerifiedOutstanding, summarizeSalesWithVerification } from '../src/lib/commission.js';
 
 test('panel commission is read from server fields only', () => {
   assert.equal(saleCommission({ commissionMinor: 50 }), 50);
@@ -56,4 +56,77 @@ test('shared financial summary excludes rolled-back and pending sales', () => {
     outstandingCommission: 26,
     recordedPayments: 4,
   });
+});
+
+test('isServerVerifiedSale accurately distinguishes cryptographically verified Ingest sales from legacy client sales', () => {
+  const verifiedSale = {
+    source: 'admin_api',
+    verified: true,
+    payloadHash: 'a'.repeat(64),
+    verificationReceipt: '1700000000000.abcdef1234567890',
+    payloadPolicyVersion: 2,
+    moneyPolicyVersion: 2,
+    commissionRiyal: 50,
+    faceValue: 1000,
+  };
+
+  assert.equal(isServerVerifiedSale(verifiedSale), true);
+
+  // Client directly wrote to Firestore (legacy app)
+  const legacySale1 = {
+    source: 'krotak_app',
+    status: 'COMPLETED',
+    faceValue: 1000,
+    commission: 0,
+  };
+  assert.equal(isServerVerifiedSale(legacySale1), false);
+
+  // Forged verified: true without server receipt or hash
+  const forgedSale = {
+    verified: true,
+    source: 'admin_api',
+    faceValue: 1000,
+    commissionRiyal: 50,
+  };
+  assert.equal(isServerVerifiedSale(forgedSale), false);
+
+  // Wrong hash length or invalid receipt
+  const badHashSale = {
+    ...verifiedSale,
+    payloadHash: 'short-hash',
+  };
+  assert.equal(isServerVerifiedSale(badHashSale), false);
+});
+
+test('summarizeSalesWithVerification provides separated metrics for verified and unverified legacy sales', () => {
+  const verifiedSale = {
+    status: 'COMPLETED',
+    source: 'admin_api',
+    verified: true,
+    payloadHash: 'f'.repeat(64),
+    verificationReceipt: '1700000000000.abcdef',
+    payloadPolicyVersion: 2,
+    moneyPolicyVersion: 2,
+    commissionRiyal: 50,
+    paidRiyal: 0,
+    faceValue: 1000,
+  };
+
+  const legacySale = {
+    status: 'COMPLETED',
+    source: 'krotak_app',
+    faceValue: 2000,
+    commission: 0,
+    paidRiyal: 0,
+  };
+
+  const summary = summarizeSalesWithVerification([verifiedSale, legacySale]);
+  assert.equal(summary.reportedTransactions, 2);
+  assert.equal(summary.verifiedTransactions, 1);
+  assert.equal(summary.legacyTransactions, 1);
+  assert.equal(summary.verifiedCommissionDue, 50);
+  assert.equal(summary.verifiedOutstandingCommission, 50);
+  assert.equal(summary.legacySalesValue, 2000);
+  assert.equal(summary.verifiedSalesValue, 1000);
+  assert.equal(summary.legacyEstimatedCommission, 0);
 });

@@ -31,7 +31,7 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
-import { summarizeCompletedSales } from '../lib/commission';
+import { summarizeCompletedSales, summarizeSalesWithVerification } from '../lib/commission';
 import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -168,6 +168,7 @@ export default function UsersPage() {
           network.uid,
           {
             ...summarizeCompletedSales(network.sales || []),
+          ...summarizeSalesWithVerification(network.sales || []),
             recordedPayments: network.recordedPayments == null
               ? undefined
               : (Number(network.recordedPayments) || 0),
@@ -577,6 +578,13 @@ export default function UsersPage() {
         commissionDue: 0,
         outstandingCommission: 0,
         recordedPayments: 0,
+        verifiedTransactions: 0,
+        legacyTransactions: 0,
+        verifiedSalesValue: 0,
+        legacySalesValue: 0,
+        verifiedCommissionDue: 0,
+        verifiedOutstandingCommission: 0,
+        legacyEstimatedCommission: 0,
       };
     }
     return user;
@@ -604,6 +612,13 @@ export default function UsersPage() {
       { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
       { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
       { label: 'نسبة العمولة (%)', value: (u) => (hasCustomCommission(u) ? u.commission_rate : defaultCommission) },
+      { label: 'إجمالي المبيعات (ر.ي)', value: (u) => { const b = getUserBilling(u); return b.reportedSalesValue || 0; } },
+      { label: 'المبيعات المعتمدة خادمياً (ر.ي)', value: (u) => { const b = getUserBilling(u); return b.verifiedSalesValue ?? ((b.reportedSalesValue || 0) - (b.legacySalesValue || 0)); } },
+      { label: 'مبيعات السجلات القديمة (ر.ي)', value: (u) => { const b = getUserBilling(u); return b.legacySalesValue || 0; } },
+      { label: 'العمولة المعتمدة خادمياً (ر.ي)', value: (u) => { const b = getUserBilling(u); return b.verifiedOutstandingCommission ?? b.outstandingCommission ?? 0; } },
+      { label: 'عمولات قديمة للمراجعة (ر.ي)', value: (u) => { const b = getUserBilling(u); return b.legacyEstimatedCommission || 0; } },
+      { label: 'عدد المبيعات المعتمدة', value: (u) => { const b = getUserBilling(u); return b.verifiedTransactions || 0; } },
+      { label: 'عدد السجلات القديمة', value: (u) => { const b = getUserBilling(u); return b.legacyTransactions || 0; } },
       { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
       { label: 'معرّف الحساب', value: (u) => u.uid },
     ]);
@@ -812,6 +827,7 @@ export default function UsersPage() {
                   <th className="p-3 text-right">العمولة</th>
                   <th className="p-3 text-right">تاريخ الانتهاء</th>
                   <th className="p-3 text-right">المبيعات المكتملة</th>
+                  <th className="p-3 text-right">العمولة المعتمدة</th>
                   <th className="p-3 text-center">الإجراءات</th>
                 </tr>
               </thead>
@@ -925,9 +941,33 @@ export default function UsersPage() {
                         {formatDate(user.subscription_end_date)}
                       </td>
 
-                      {/* المبيعات */}
-                      <td className="p-3 whitespace-nowrap font-mono font-bold text-ink">
-                        {formatNumber(billing.reportedSalesValue || 0)} ر.ي
+                      {/* المبيعات المكتملة مع الفصل بين المعتمد والقديم */}
+                      <td className="p-3 whitespace-nowrap font-mono">
+                        <div className="font-bold text-ink">{formatNumber(billing.reportedSalesValue || 0)} ر.ي</div>
+                        <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
+                          <span className="text-emerald-700 font-bold" title="مبيعات معتمدة خادمياً عبر Ingest">
+                            {formatNumber(billing.verifiedTransactions || 0)} معتمدة
+                          </span>
+                          {(billing.legacyTransactions > 0 || billing.legacySalesValue > 0) && (
+                            <>
+                              <span className="text-muted">•</span>
+                              <span className="text-amber-800 font-semibold" title="سجلات قديمة قيد المراجعة والتسوية">
+                                {formatNumber(billing.legacyTransactions || 0)} قديمة
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      {/* العمولة المعتمدة خادمياً وفصل العمولات القديمة */}
+                      <td className="p-3 whitespace-nowrap font-mono">
+                        <div className="font-bold text-emerald-600">
+                          {formatNumber(billing.verifiedOutstandingCommission ?? 0)} ر.ي
+                        </div>
+                        {(billing.legacyEstimatedCommission > 0) && (
+                          <div className="text-[10px] text-amber-800 font-semibold mt-0.5" title="عمولات تقديرية لسجلات قديمة للمراجعة والتسوية اليدوية">
+                            + {formatNumber(billing.legacyEstimatedCommission)} ر.ي قديمة
+                          </div>
+                        )}
                       </td>
 
                       {/* الإجراءات */}
@@ -1129,11 +1169,25 @@ export default function UsersPage() {
                   <div className="pt-1 border-t border-line/40">
                     <span className="text-[10px] text-muted block font-semibold">المبيعات المكتملة</span>
                     <span className="font-mono font-black text-ink">{formatNumber(billing.reportedSalesValue || 0)} ر.ي</span>
+                    <div className="flex items-center gap-1 text-[10px] mt-0.5">
+                      <span className="text-emerald-700 font-bold">{formatNumber(billing.verifiedTransactions || 0)} معتمدة</span>
+                      {(billing.legacyTransactions > 0) && (
+                        <>
+                          <span className="text-muted">•</span>
+                          <span className="text-amber-800 font-semibold">{formatNumber(billing.legacyTransactions)} قديمة</span>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-1 border-t border-line/40 text-left">
-                    <span className="text-[10px] text-muted block font-semibold">العمولة المتبقية</span>
-                    <span className="font-mono font-black text-emerald-600">{formatNumber(billing.outstandingCommission || 0)} ر.ي</span>
+                    <span className="text-[10px] text-muted block font-semibold">العمولة المعتمدة خادمياً</span>
+                    <span className="font-mono font-black text-emerald-600">{formatNumber(billing.verifiedOutstandingCommission ?? 0)} ر.ي</span>
+                    {(billing.legacyEstimatedCommission > 0) && (
+                      <span className="text-[10px] text-amber-800 block truncate" title="عمولات تقديرية لسجلات قديمة للمراجعة والتسوية اليدوية">
+                        + {formatNumber(billing.legacyEstimatedCommission)} ر.ي قديمة
+                      </span>
+                    )}
                   </div>
                 </div>
 

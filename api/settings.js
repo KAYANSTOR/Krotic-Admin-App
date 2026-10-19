@@ -13,13 +13,15 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
+import templateCenterHandler from '../server/_lib/templateCenterApi.js';
 
 export const SETTINGS_BOUNDS = {
   default_trial_days: { min: 0, max: 30, integer: true },
   default_commission_rate: { min: 0, max: 20, integer: false },
   warning_days_before_expiry: { min: 1, max: 7, integer: true },
+  app_latest_version_code: { min: 1, max: 2147483647, integer: true },
 };
-export const SETTINGS_STRING_FIELDS = ['maintenance_message', 'default_trial_warning', 'global_official_warning'];
+export const SETTINGS_STRING_FIELDS = ['maintenance_message', 'default_trial_warning', 'global_official_warning', 'app_latest_version'];
 export const SETTINGS_MAX_STRING = 500;
 
 function normalizeBody(body) {
@@ -64,7 +66,11 @@ export function validateSettingsInput(body) {
     if (SETTINGS_STRING_FIELDS.includes(key)) {
       if (typeof input[key] !== 'string') return { ok: false, error: `${key}_invalid` };
       if (input[key].length > SETTINGS_MAX_STRING) return { ok: false, error: `${key}_too_long` };
-      value[key] = input[key];
+      if (key === 'app_latest_version' && input[key].trim() !== ''
+          && !/^\d+\.\d+\.\d+$/.test(input[key].trim())) {
+        return { ok: false, error: 'app_latest_version_invalid' };
+      }
+      value[key] = key === 'app_latest_version' ? input[key].trim() : input[key];
       continue;
     }
     if (key === 'is_app_active') {
@@ -96,6 +102,9 @@ export async function applySettings({ db, callerUid, value, now = Date.now() }) 
 }
 
 export default async function handler(req, res) {
+  if (req.query?.__apiRoute === 'template-center') {
+    return templateCenterHandler(req, res);
+  }
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });

@@ -12,7 +12,7 @@ import { Field, Input } from './ui/Field';
 import LoadingSpinner from './LoadingSpinner';
 import { formatNumber, toDate } from '../lib/format';
 import { monthKeyFromDate, getCurrentMonthKey } from '../lib/billingHelpers';
-import { sumOutstanding, saleCommission } from '../lib/commission';
+import { sumOutstanding, saleCommission, isServerVerifiedSale, sumVerifiedOutstanding } from '../lib/commission';
 import {
   fetchUserBillingHistory,
   subscribeAdminDataCache,
@@ -123,12 +123,21 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
     };
   }, [isOpen, userUid]);
 
-  // حساب البيانات المالية الخاصة بالشهر المختار بدقة
+  // حساب البيانات المالية الخاصة بالشهر المختار بدقة مع الفصل بين المعتمد خادمياً والقديم
   const monthFinancials = useMemo(() => {
     const monthSales = sales.filter((s) => s.status === 'COMPLETED' && monthKeyFromDate(s.createdAt) === payMonth);
+    const verifiedSales = monthSales.filter(isServerVerifiedSale);
+    const legacySales = monthSales.filter((s) => !isServerVerifiedSale(s));
+
     const monthSalesTotal = monthSales.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
-    const monthCommissionTotal = monthSales.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
-    const monthOutstanding = sumOutstanding(monthSales);
+    const verifiedSalesTotal = verifiedSales.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
+    const legacySalesTotal = legacySales.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0);
+
+    const verifiedCommissionTotal = verifiedSales.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
+    const legacyEstimatedCommission = legacySales.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
+
+    const verifiedOutstanding = sumVerifiedOutstanding(monthSales);
+    const legacyOutstanding = legacySales.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
 
     const monthRecordedPayments = payments
       .filter((p) => (p.month || monthKeyFromDate(p.timestamp)) === payMonth)
@@ -136,10 +145,18 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
 
     return {
       monthSalesTotal,
-      monthCommissionTotal,
+      verifiedSalesTotal,
+      legacySalesTotal,
+      verifiedCommissionTotal,
+      legacyEstimatedCommission,
+      monthCommissionTotal: verifiedCommissionTotal, // العمولات المعتمدة خادمياً فقط
       monthRecordedPayments,
-      monthOutstanding,
+      monthOutstanding: verifiedOutstanding, // المستحق الرسمي المعتمد خادمياً
+      verifiedOutstanding,
+      legacyOutstanding,
       count: monthSales.length,
+      verifiedCount: verifiedSales.length,
+      legacyCount: legacySales.length,
     };
   }, [sales, payments, payMonth]);
 
@@ -348,11 +365,30 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
       const monthKey = monthKeyFromDate(date);
       if (!monthKey) return;
       if (!monthsData[monthKey]) {
-        monthsData[monthKey] = { reportedSales: 0, recordedPayments: 0, commissionDue: 0, outstanding: 0 };
+        monthsData[monthKey] = {
+          reportedSales: 0,
+          verifiedSales: 0,
+          legacySales: 0,
+          recordedPayments: 0,
+          commissionDue: 0,
+          verifiedCommissionDue: 0,
+          legacyEstimatedCommission: 0,
+          outstanding: 0,
+        };
       }
-      monthsData[monthKey].reportedSales += Number(sale.faceValue) || 0;
-      monthsData[monthKey].commissionDue += (saleCommission(sale) ?? 0);
-      monthsData[monthKey].outstanding += (sale.status === 'COMPLETED' ? (saleCommission(sale) ?? 0) - (Number(sale.paidRiyal ?? sale.paidMinor) || 0) : 0);
+      const faceVal = Number(sale.faceValue) || 0;
+      monthsData[monthKey].reportedSales += faceVal;
+      const comm = saleCommission(sale) ?? 0;
+      const verified = isServerVerifiedSale(sale);
+      if (verified) {
+        monthsData[monthKey].verifiedSales += faceVal;
+        monthsData[monthKey].verifiedCommissionDue += comm;
+        monthsData[monthKey].outstanding += (sale.status === 'COMPLETED' ? (saleCommission(sale) ?? 0) - (Number(sale.paidRiyal ?? sale.paidMinor) || 0) : 0);
+      } else {
+        monthsData[monthKey].legacySales += faceVal;
+        monthsData[monthKey].legacyEstimatedCommission += comm;
+      }
+      monthsData[monthKey].commissionDue = monthsData[monthKey].verifiedCommissionDue;
     }
   });
 
@@ -362,7 +398,16 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
       : monthKeyFromDate(payment.timestamp);
     if (!monthKey) return;
     if (!monthsData[monthKey]) {
-      monthsData[monthKey] = { reportedSales: 0, recordedPayments: 0, commissionDue: 0, outstanding: 0 };
+      monthsData[monthKey] = {
+        reportedSales: 0,
+        verifiedSales: 0,
+        legacySales: 0,
+        recordedPayments: 0,
+        commissionDue: 0,
+        verifiedCommissionDue: 0,
+        legacyEstimatedCommission: 0,
+        outstanding: 0,
+      };
     }
     monthsData[monthKey].recordedPayments += Number(payment.amount) || 0;
   });
@@ -372,10 +417,12 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
   let totalReportedSales = 0;
   let totalRecordedPayments = 0;
   let totalCommissionDue = 0;
+  let totalLegacyEstimatedCommission = 0;
   Object.values(monthsData).forEach((m) => {
     totalReportedSales += m.reportedSales;
     totalRecordedPayments += m.recordedPayments;
     totalCommissionDue += m.commissionDue;
+    totalLegacyEstimatedCommission += (m.legacyEstimatedCommission || 0);
   });
 
   return (
@@ -406,8 +453,13 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
               <p className="text-base sm:text-lg font-black text-ink font-mono">{formatNumber(totalReportedSales)} ر.ي</p>
             </div>
             <div className="p-3 rounded-2xl bg-surface border border-line shadow-xs">
-              <span className="text-[11px] text-muted block mb-0.5 font-bold">إجمالي العمولات المستحقة</span>
+              <span className="text-[11px] text-muted block mb-0.5 font-bold">العمولة المعتمدة خادمياً</span>
               <p className="text-base sm:text-lg font-black text-brand-deep font-mono">{formatNumber(totalCommissionDue)} ر.ي</p>
+              {totalLegacyEstimatedCommission > 0 && (
+                <span className="text-[10px] text-amber-800 block truncate" title="عمولات تقديرية لسجلات قديمة للمراجعة والتسوية">
+                  + {formatNumber(totalLegacyEstimatedCommission)} ر.ي قديمة
+                </span>
+              )}
             </div>
             <div className="p-3 rounded-2xl bg-surface border border-line shadow-xs col-span-2 sm:col-span-1">
               <span className="text-[11px] text-muted block mb-0.5 font-bold">إجمالي ما تم سداده</span>
@@ -445,15 +497,20 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
                 {/* 2. بطاقة العمولة المستحقة للشهر المحدد */}
                 <div className="p-3 rounded-xl bg-surface border border-line/80 space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted font-bold">العمولة المستحقة لشهر {payMonth}:</span>
+                    <span className="text-muted font-bold">العمولة المعتمدة لشهر {payMonth}:</span>
                     <span className="font-black font-mono text-sm text-brand-deep">
                       {formatNumber(monthFinancials.monthOutstanding)} ر.ي
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-muted pt-1 border-t border-line/40">
-                    <span>مبيعات الشهر: {formatNumber(monthFinancials.monthSalesTotal)} ر.ي</span>
-                    <span>سُدّد منه: {formatNumber(monthFinancials.monthRecordedPayments)} ر.ي</span>
+                    <span>مبيعات: {formatNumber(monthFinancials.monthSalesTotal)} ر.ي ({monthFinancials.verifiedCount} معتمدة{monthFinancials.legacyCount > 0 ? ` • ${monthFinancials.legacyCount} قديمة` : ''})</span>
+                    <span>سُدّد: {formatNumber(monthFinancials.monthRecordedPayments)} ر.ي</span>
                   </div>
+                  {monthFinancials.legacyCount > 0 && (
+                    <div className="text-[10px] text-amber-800 bg-amber-50 p-1.5 rounded-lg border border-amber-200 mt-1">
+                      ⚠️ يتضمن {monthFinancials.legacyCount} سجلات قديمة بعمولة تقديرية {formatNumber(monthFinancials.legacyEstimatedCommission)} ر.ي للمراجعة.
+                    </div>
+                  )}
                 </div>
               </div>
 

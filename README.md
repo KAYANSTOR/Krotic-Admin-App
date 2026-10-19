@@ -1,5 +1,5 @@
 # كروتك برو — Krotak Pro Admin
-> لوحة تحكم إدارية عربية لإدارة المستخدمين والمبيعات والعمولات والإشعارات وإعدادات التطبيق.
+> لوحة تحكم إدارية عربية لإدارة المستخدمين والمبيعات والعمولات والإشعارات والإعدادات ومركز المحافظ والقوالب.
 
 ## 📖 نظرة عامة
 
@@ -18,6 +18,7 @@
 - `/notifications` — الإشعارات.
 - `/admins` — إدارة المدراء.
 - `/audit` — سجل العمليات الإدارية.
+- `/template-center` — المحافظ وقوالب التحويل والرسائل الصادرة وإصداراتها.
 
 الدليل: `src/App.jsx` و`public/manus-routes.json`.
 
@@ -60,6 +61,9 @@
 - ✅ واجهة RTL عربية، تنقل جانبي للشاشات الكبيرة وتنقل سفلي للشاشات الصغيرة (`src/components/Sidebar.jsx`, `src/components/BottomNav.jsx`, `src/index.css`).
 - ✅ قابلية تثبيت كتطبيق PWA عبر manifest وحدث `beforeinstallprompt`، مع service worker لصفحة التنقل الاحتياطية (`public/manifest.webmanifest`, `src/components/Layout.jsx`, `public/service-worker.js`).
 - ✅ توليد نسخ الأيقونات أثناء `predev` و`prebuild` من أصول محلية قابلة للتكرار (`package.json`, `scripts/generate-icons.js`).
+- ✅ مركز قوالب RTL للمحافظ وقوالب التحويل الواردة والرسائل الصادرة، مع محاكاة ومعاينة لا تنفذ أثرًا ماليًا أو إرسالًا (`src/pages/TemplateCenterPage.jsx`, `server/_lib/templateCenterApi.js`).
+- ✅ مسودات وإصدارات مركزية غير قابلة للتعديل بعد النشر، مع تراجع بإصدار جديد وتدقيق خادمي (`server/_lib/templateCenterApi.js`, `firestore.rules`).
+- ⚠️ التوزيع المركزي غير مستهلك من تطبيق Android حتى يصدر مستهلك متوافق؛ لا تعدّل هذه الواجهة قاعدة Flutter المحلية.
 
 ## 🛠️ التقنيات
 
@@ -226,14 +230,19 @@ VITE_AUTH_EMULATOR_PORT=9099
 | `npm ci` | تثبيت اعتماديات الواجهة كما يستخدمه CI؛ لا يوجد وصف مخصص آخر له في المستودع. |
 | `cd functions && npm ci` | تثبيت اعتماديات الوظائف كما في workflow. |
 | `cd functions && node --check index.js` | فحص صياغة ملف وظائف Firebase كما في workflow. |
+| `npm test` | اختبارات الوحدات المعرفة في `test/*.test.js`. |
+| `npm run test:rules` | اختبارات قواعد Firestore عبر Emulator. |
+| `npm run build` | بناء واجهة الإدارة بواسطة Vite. |
 
-لا توجد اختبارات معرفة في `tests/` أو `__tests__/`، ولا script اختبار في `package.json`؛ لذلك الاختبارات: «غير موثّق في المستودع».
+يشغّل GitHub Actions الاختبارات وقواعد Firestore والبناء على فرع الميزة. في هذا العمل
+لا تُشغّل الاختبارات أو البناء محليًا؛ يعتمد التحقق على نتيجة GitHub Actions بعد
+رفع التغيير إلى `feature/krotak-admin-control-center`.
 
 ## 🌐 النشر
 
 - `vercel.json` يوجه كل المسارات غير `api/` إلى `/index.html`، ويضبط `api/send-fcm.js` بحد أقصى 30 ثانية وذاكرة 512 MB، و`api/manage-user-auth.js` بحد أقصى 15 ثانية وذاكرة 512 MB (`vercel.json`).
 - `firebase.json` يعلن `functions/` كمصدر Firebase Functions، ويستخدم `firestore.rules` للقواعد و`firestore.indexes.json` للفهارس (`firebase.json`).
-- CI يعمل عند push وpull request إلى `main`، وبطلب يدوي، ويبني الواجهة ويفحص صياغة الوظيفة (`.github/workflows/ci.yml`).
+- CI يعمل عند push وpull request إلى `main` أو `feature/krotak-admin-control-center`، وبطلب يدوي، ويشغّل اختبارات الإدارة والقواعد والبناء (`.github/workflows/ci.yml`).
 - لا يحتوي المستودع على رابط `vercel.app` أو `netlify.app` أو `firebaseapp.com` منشور يمكن اعتماده؛ رابط Demo أو live: **غير موثّق في المستودع**.
 - أمر نشر رسمي أو إعداد مشروع Vercel/Firebase محدد: **غير موثّق في المستودع**.
 
@@ -268,13 +277,13 @@ VITE_AUTH_EMULATOR_PORT=9099
 - المصادقة عبر `signInWithEmailAndPassword`، والتحقق من مستند `Admins/{UID}` قبل تثبيت جلسة المدير (`src/contexts/AuthContext.jsx`).
 - المسارات الإدارية ملفوفة بـ`ProtectedRoute`، وأي حساب لا يثبت كمدير تُنهى جلسته (`src/App.jsx`, `src/components/ProtectedRoute.jsx`).
 - قواعد Firestore تفصل بين المدير والمستخدم المالك، وتقيّد القراءة والكتابة حسب UID (`firestore.rules`).
-- إنشاء مستند المدير الذاتي يشترط تطابق UID، وتفرض قواعد التسجيل التجريبي `trial_days` بين 0 و30 وتاريخاً ضمن 30 يوماً (`firestore.rules`).
+- إنشاء مستند المدير الذاتي يشترط تطابق UID، ويقتصر تحديث الحساب الذاتي على حقول الملف الشخصي والحضور؛ حقول الصلاحية مملوكة للخادم (`firestore.rules`).
 - المستخدم يحدّث حقولاً غير حساسة محددة فقط؛ تظل حالة التفعيل وحالة التجربة وتواريخ الاشتراك للمدير (`firestore.rules`).
 - دفعات `networks/{userId}/payments` يكتبها المدير فقط، بينما القراءة للمدير أو مالك الحساب (`firestore.rules`).
 - API الإشعارات يرفض HTTP غير `POST`، ويتحقق من التوكن، ويتحقق من عضوية `Admins` قبل الإرسال (`api/send-fcm.js`).
 - مفاتيح Service Account ليست في المصدر؛ `.gitignore` يستثني ملفات service account و`.env` (`.gitignore`, `api/send-fcm.js`).
 - لا يوجد middleware مستقل أو طبقة RLS أو ملف سياسة خصوصية في الشجرة المفحوصة؛ هذه الآليات: «غير موثّق في المستودع».
-- لا توجد آلية rate limiting أو اختبارات أمنية ظاهرة في المصدر؛ «غير موثّق في المستودع».
+- توجد اختبارات أمنية لقواعد Firestore ضمن `security-tests/`، لكنها لا تعني أن كل API محمي بتحديد معدل الطلبات؛ لا توجد طبقة rate limiting عامة موثقة في المستودع.
 
 ## 📄 الترخيص
 

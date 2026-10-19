@@ -1,5 +1,5 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth } from '../firebase.js';
 
 /**
  * سجل تدقيق إداري: يوثّق كل إجراء مؤثر يقوم به المدير.
@@ -29,6 +29,21 @@ export const AUDIT_ACTIONS = {
   USER_PHONE_VERIFY_MANUAL: { label: 'تفعيل رقم الهاتف يدوياً (دعم فني)', tone: 'success' },
   USER_PHONE_UNVERIFY: { label: 'إلغاء توثيق الهاتف', tone: 'warning' },
   ADMIN_PASSWORD_CHANGE: { label: 'تغيير كلمة مرور المدير', tone: 'brand' },
+  // عمليات خادمية ومبيعات وتدقيق متقدم
+  SETTLEMENT_RECORD: { label: 'تسوية مبيعات واعتماد عمولة', tone: 'success' },
+  NETWORK_REGISTER: { label: 'تسجيل شبكة جديدة', tone: 'brand' },
+  NETWORK_RENEW: { label: 'تجديد اشتراك شبكة (خادمي)', tone: 'brand' },
+  NETWORK_ACCESS_UPDATE: { label: 'تعديل صلاحيات شبكة (خادمي)', tone: 'neutral' },
+  NETWORK_DELETE: { label: 'حذف شبكة وبياناتها', tone: 'danger' },
+  SUBSCRIPTION_EXPIRY_CRON: { label: 'فحص انتهاء الاشتراكات (Cron خادمي)', tone: 'warning' },
+  TEMPLATE_DRAFT_CREATE: { label: 'إنشاء مسودة قوالب', tone: 'brand' },
+  TEMPLATE_DRAFT_UPDATE: { label: 'تعديل مسودة قوالب', tone: 'neutral' },
+  TEMPLATE_DRAFT_DELETE: { label: 'حذف مسودة قوالب', tone: 'danger' },
+  TEMPLATE_RELEASE_PUBLISH: { label: 'نشر إصدار قوالب نشط', tone: 'success' },
+  TEMPLATE_RELEASE_ROLLBACK: { label: 'تراجع عن إصدار قوالب', tone: 'warning' },
+  SALE_CONFLICT_DETECTED: { label: 'تعارض في معرّف أو محتوى بيع', tone: 'danger' },
+  LEGACY_SALES_RECONCILE: { label: 'تسوية ومطابقة مبيعات قديمة يدوياً', tone: 'warning' },
+  COMMISSION_AUDIT_VERIFIED: { label: 'تدقيق واعتماد كشف حساب الشبكة', tone: 'success' },
 };
 
 export function auditActionLabel(action) {
