@@ -108,7 +108,7 @@ export function createAdminDataCache({
     }
   }
 
-  async function readCached(key, loader, { force = false, uid } = {}) {
+  async function readCached(key, loader, { force = false, uid, revalidate = false } = {}) {
     const scopeUid = validUid(uid ?? getUid());
     // Never create an unscoped custom snapshot. Protected callers should have a UID.
     if (!scopeUid) return loader();
@@ -116,7 +116,7 @@ export function createAdminDataCache({
     const scopedKey = `${scopeUid}:${key}`;
     const currentGeneration = generation;
     const cached = memory.get(scopedKey);
-    if (!force && cached) {
+    if (!force && !revalidate && cached) {
       if (isFresh(cached.createdAt, memoryTtl)) return cached.value;
       if (isFresh(cached.createdAt, localCacheTtl)) {
         const state = metadata.get(scopedKey) || {};
@@ -128,15 +128,15 @@ export function createAdminDataCache({
       metadata.set(scopedKey, { ...state, fromCache: true, cachedAt: state.cachedAt || cached.createdAt, stale: true });
       notify(scopedKey, cached.value);
       if (!inFlight.has(scopedKey)) {
-        void readCached(key, loader, { force: false, uid: scopeUid }).catch(() => {
+        void readCached(key, loader, { force: false, uid: scopeUid, revalidate: true }).catch(() => {
           // Keep serving the last known snapshot when offline.
         });
       }
       return cached.value;
     }
-    if (!force && inFlight.has(scopedKey)) return inFlight.get(scopedKey);
+    if (!force && !revalidate && inFlight.has(scopedKey)) return inFlight.get(scopedKey);
     let localValue = null;
-    if (!force && !cached) {
+    if (!force && !revalidate && !cached) {
       localValue = readLocal(scopeUid, key);
       if (localValue) {
         memory.set(scopedKey, { value: localValue.value, createdAt: localValue.cachedAt });
@@ -147,7 +147,7 @@ export function createAdminDataCache({
           stale: localValue.stale,
         });
         if (localValue.stale) {
-          void readCached(key, loader, { force: false, uid: scopeUid }).catch(() => {
+          void readCached(key, loader, { force: false, uid: scopeUid, revalidate: true }).catch(() => {
             // Keep serving the last known local snapshot when offline.
           });
         }

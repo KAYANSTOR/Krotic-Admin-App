@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X,
+  LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
@@ -23,6 +23,7 @@ const navGroups = [
     items: [
       { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
       { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
+      { path: '/template-center', label: 'المحافظ والقوالب', icon: Layers3 },
       { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
     ],
   },

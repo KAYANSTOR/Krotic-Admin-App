@@ -118,6 +118,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Central template releases are served only by the authenticated API:
+    // clients cannot inspect drafts or alter immutable releases/pointers.
+    match /template_center_drafts/{draftId} {
+      allow read, write: if false;
+    }
+    match /template_center_releases/{releaseId} {
+      allow read, write: if false;
+    }
+    match /template_center_pointers/{scopeKey} {
+      allow read, write: if false;
+    }
+
     // Billing aggregates are private to admins and cannot be changed by clients (can be deleted by admins).
     match /admin_aggregates/{userId} {
       allow read, delete: if isAdmin();

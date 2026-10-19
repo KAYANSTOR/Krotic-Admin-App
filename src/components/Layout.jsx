@@ -33,6 +33,7 @@ const PAGE_TITLES = {
   '/notifications': 'الإشعارات',
   '/admins': 'إدارة المدراء',
   '/audit': 'سجل العمليات',
+  '/template-center': 'المحافظ والقوالب',
 };
 
 export default function Layout({ children }) {
@@ -399,4 +400,3 @@ export default function Layout({ children }) {
     </div>
   );
 }
-

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   DollarSign,
   LayoutDashboard,
+  Layers3,
   Plus,
   ScrollText,
   Settings,
@@ -27,6 +28,7 @@ const quickItems = [
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
   { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
+  { path: '/template-center', label: 'المحافظ والقوالب', icon: Layers3 },
 ];
 
 function preloadRoute(path) {

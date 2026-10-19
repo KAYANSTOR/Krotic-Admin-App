@@ -7,6 +7,7 @@ const routeLoaders = {
   '/notifications': () => import('../pages/NotificationsPage'),
   '/admins': () => import('../pages/AdminsPage'),
   '/audit': () => import('../pages/AuditPage'),
+  '/template-center': () => import('../pages/TemplateCenterPage'),
 };
 
 const loadedRoutes = new Map();

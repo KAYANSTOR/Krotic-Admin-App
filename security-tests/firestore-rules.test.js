@@ -142,6 +142,23 @@ if (!emulatorAddress) {
     }));
   });
 
+  test('template drafts, releases and active pointers are server-only', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const userDb = testEnv.authenticatedContext('user-1').firestore();
+    const protectedPaths = [
+      'template_center_drafts/draft-1',
+      'template_center_releases/release-1',
+      'template_center_pointers/global',
+    ];
+
+    for (const path of protectedPaths) {
+      await assertFails(getDoc(doc(adminDb, path)));
+      await assertFails(setDoc(doc(adminDb, path), { value: 'admin-client-write' }));
+      await assertFails(getDoc(doc(userDb, path)));
+      await assertFails(setDoc(doc(userDb, path), { value: 'user-client-write' }));
+    }
+  });
+
   test('admins can read billing aggregates while normal accounts cannot', async () => {
     const adminDb = testEnv.authenticatedContext('admin-1').firestore();
     await assertSucceeds(getDoc(doc(adminDb, 'admin_aggregates/user-1')));
