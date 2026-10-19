@@ -257,8 +257,9 @@ function validateOutboundTemplate(template, index, errors, { allowDrafts }) {
     seen.add(key);
   });
   if (repeated.size) errors.push(`${at}_variable_duplicate`);
-  const allowedScope = VARIABLE_SCOPES[definition.scope];
-  if (canonicalKeys.some((key) => key && !allowedScope.includes(key))) errors.push(`${at}_variable_scope_invalid`);
+  if (canonicalKeys.some((key) => key && !VARIABLE_SCOPES[key]?.includes(definition.scope))) {
+    errors.push(`${at}_variable_scope_invalid`);
+  }
   const requiredCanonical = definition.required.map(canonicalVariable);
   if (requiredCanonical.some((key) => !seen.has(key))) errors.push(`${at}_required_variable_missing`);
 }
@@ -456,7 +457,7 @@ export function previewOutboundTemplate(template, values = {}) {
   const placeholders = templatePlaceholders(template.body);
   const canonicalKeys = placeholders.map(canonicalVariable);
   if (canonicalKeys.some((key) => key == null)) return { ok: false, reason: 'variable_unknown' };
-  if (canonicalKeys.some((key) => !VARIABLE_SCOPES[definition.scope].includes(key))) {
+  if (canonicalKeys.some((key) => !VARIABLE_SCOPES[key]?.includes(definition.scope))) {
     return { ok: false, reason: 'variable_scope_invalid' };
   }
   const seenKeys = new Set(canonicalKeys);
