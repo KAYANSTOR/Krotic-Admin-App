@@ -36,6 +36,7 @@ import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccou
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
+import { getAppUpdateStatus } from '../lib/appVersion';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 24;
@@ -68,6 +69,8 @@ const FILTERS = [
   { value: 'expiring', label: 'ينتهي قريباً' },
   { value: 'expired', label: 'منتهي' },
   { value: 'blocked', label: 'محظور' },
+  { value: 'update-needed', label: 'يحتاج تحديثاً' },
+  { value: 'version-unknown', label: 'إصدار غير معروف' },
 ];
 
 function resolveInitialFilter() {
@@ -87,6 +90,7 @@ export default function UsersPage() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState(resolveInitialFilter);
+  const [versionSort, setVersionSort] = useState('none');
   const [viewMode, setViewMode] = useState('cards');
 
   const [editingUser, setEditingUser] = useState(null);
@@ -508,6 +512,8 @@ export default function UsersPage() {
         (user.phoneNumber || '').includes(q) ||
         (user.phone || '').includes(q) ||
         (user.networkId || '').toLowerCase().includes(q) ||
+        String(user.app_version || '').toLowerCase().includes(q) ||
+        String(user.app_version_code || '').includes(q) ||
         user.uid.toLowerCase().includes(q);
 
       if (filterType === 'active') return matchesSearch && user.is_active !== false;
@@ -516,6 +522,8 @@ export default function UsersPage() {
       if (filterType === 'trial') return matchesSearch && user.is_trial === true;
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
+      if (filterType === 'update-needed') return matchesSearch && getAppUpdateStatus(user, globalConfig) === 'outdated';
+      if (filterType === 'version-unknown') return matchesSearch && getAppUpdateStatus(user, globalConfig) === 'unknown';
       if (filterType === 'expired') return matchesSearch && isExpired(user.subscription_end_date);
       if (filterType === 'expiring') {
         if (!matchesSearch || isExpired(user.subscription_end_date)) return false;
@@ -525,7 +533,17 @@ export default function UsersPage() {
       }
       return matchesSearch;
     });
-  }, [users, searchTerm, filterType, warningWindowMs]);
+  }, [users, searchTerm, filterType, warningWindowMs, globalConfig]);
+  const orderedUsers = useMemo(() => {
+    if (versionSort === 'none') return filteredUsers;
+    return [...filteredUsers].sort((a, b) => {
+      const rank = (user) => ({ outdated: 0, unknown: 1, current: 2 })[getAppUpdateStatus(user, globalConfig)];
+      const byStatus = rank(a) - rank(b);
+      if (byStatus) return byStatus;
+      const codeDelta = (Number(a.app_version_code) || 0) - (Number(b.app_version_code) || 0);
+      return versionSort === 'oldest' ? codeDelta : -codeDelta;
+    });
+  }, [filteredUsers, versionSort, globalConfig]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -540,8 +558,8 @@ export default function UsersPage() {
   }, [filterType]);
 
   const visibleUsers = useMemo(
-    () => filteredUsers.slice(0, visibleCount),
-    [filteredUsers, visibleCount]
+    () => orderedUsers.slice(0, visibleCount),
+    [orderedUsers, visibleCount]
   );
   const hasMore = filteredUsers.length > visibleUsers.length;
 
@@ -753,6 +771,14 @@ export default function UsersPage() {
         )}
       </div>
 
+      <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+        ترتيب الإصدارات
+        <select className="input-field py-2 text-xs" value={versionSort} onChange={(e) => setVersionSort(e.target.value)}>
+          <option value="none">الترتيب الافتراضي</option>
+          <option value="oldest">الأقدم أولاً</option>
+          <option value="newest">الأحدث أولاً</option>
+        </select>
+      </label>
       {/* Android Horizontal Filter Chips Carousel with Count Badges (قابلة للتمرير بالأصبع) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar touch-pan-x">
         {FILTERS.map((f) => {

@@ -236,7 +236,9 @@ if (!emulatorAddress) {
     await assertSucceeds(updateDoc(doc(db, 'users/user-1'), {
       last_seen_at: Timestamp.now(),
       app_version: '1.0.1',
+      app_version_code: 15,
     }));
+    await assertFails(updateDoc(doc(db, 'users/user-1'), { app_version_code: '15' }));
     await assertSucceeds(updateDoc(doc(db, 'users/user-1/notifications/inbox-1'), {
       is_read: true,
     }));

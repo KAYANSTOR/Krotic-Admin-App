@@ -44,6 +44,8 @@ const DEFAULTS = {
   default_commission_rate: 5,
   global_official_warning: '',
   warning_days_before_expiry: 5,
+  app_latest_version: '',
+  app_latest_version_code: '',
 };
 
 function SettingsSkeleton() {
@@ -180,6 +182,10 @@ export default function SettingsPage() {
         default_commission_rate: Number(config.default_commission_rate),
         global_official_warning: config.global_official_warning || '',
         warning_days_before_expiry: Number(config.warning_days_before_expiry),
+        app_latest_version: String(config.app_latest_version || '').trim(),
+        ...(Number(config.app_latest_version_code) > 0
+          ? { app_latest_version_code: Number(config.app_latest_version_code) }
+          : {}),
       };
       const result = await updateSettings(patch);
       if (!result.ok) {
@@ -360,6 +366,40 @@ export default function SettingsPage() {
                 value={config.default_commission_rate ?? ''}
                 onChange={(e) => update({ default_commission_rate: e.target.value === '' ? null : Number(e.target.value) })}
                 className="max-w-[10rem]"
+              />
+            </Field>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader
+            icon={Smartphone}
+            title="إصدار التطبيق المنشور"
+            description="للمقارنة مع آخر نسخة أبلغت عنها الأجهزة؛ نشر APK وحده لا يثبت النسخة المثبتة."
+          />
+          <div className="settings-field-block">
+            <Field label="رقم الإصدار المنشور" hint="صيغة ثلاثية مثل 1.0.16">
+              <Input
+                value={config.app_latest_version || ''}
+                onChange={(e) => update({ app_latest_version: e.target.value })}
+                className="max-w-[14rem]"
+                dir="ltr"
+                placeholder="1.0.16"
+              />
+            </Field>
+          </div>
+          <div className="settings-field-block">
+            <Field label="versionCode المنشور" hint="عدد صحيح موجب عند توفره">
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={config.app_latest_version_code || ''}
+                onChange={(e) => update({ app_latest_version_code: e.target.value === '' ? '' : Number(e.target.value) })}
+                className="max-w-[14rem]"
+                dir="ltr"
+                placeholder="16"
               />
             </Field>
           </div>

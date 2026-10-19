@@ -39,3 +39,12 @@ test('settings reject unknown fields, wrong types, empty and oversized payloads'
   assert.equal(validateSettingsInput({ maintenance_message: 'x'.repeat(501) }).error, 'maintenance_message_too_long');
   assert.equal(validateSettingsInput({ maintenance_message: 5 }).error, 'maintenance_message_invalid');
 });
+
+test('published app version fields are bounded and validated', () => {
+  assert.deepEqual(validateSettingsInput({
+    app_latest_version: '1.0.16',
+    app_latest_version_code: 16,
+  }), { ok: true, value: { app_latest_version: '1.0.16', app_latest_version_code: 16 } });
+  assert.equal(validateSettingsInput({ app_latest_version: 'latest' }).error, 'app_latest_version_invalid');
+  assert.equal(validateSettingsInput({ app_latest_version_code: 1.5 }).error, 'app_latest_version_code_invalid');
+});

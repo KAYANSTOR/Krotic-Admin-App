@@ -28,6 +28,8 @@ import {
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
+import { getAppUpdateStatus } from '../lib/appVersion';
+import UserDevicesPanel from '../components/UserDevicesPanel';
 
 const accessLabel = {
   TRIAL: { text: 'تجريبي', tone: 'warning' },
@@ -50,6 +52,7 @@ export default function UserProfilePage() {
   const { uid } = useParams();
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [globalConfig, setGlobalConfig] = useState(null);
   const [history, setHistory] = useState({ sales: [], payments: [] });
   const [historyMonth, setHistoryMonth] = useState(() => getCurrentMonthKey());
   const [selectedMonthForBilling, setSelectedMonthForBilling] = useState(null);
@@ -67,7 +70,8 @@ export default function UserProfilePage() {
     const salesVersionAtStart = liveSalesSnapshotVersion.current;
     setLoading(true);
     try {
-      const { users = [] } = await fetchUsersWithBilling({ force });
+      const { users = [], globalConfig: config } = await fetchUsersWithBilling({ force });
+      setGlobalConfig(config || null);
       setUser(users.find((item) => item.uid === uid) || null);
       const billingHistory = await fetchUserBillingHistory(uid, { force });
       setHistory((previous) => ({
@@ -361,6 +365,8 @@ export default function UserProfilePage() {
 
   const status = accessLabel[user.accessStatus] || (user.is_trial ? accessLabel.TRIAL : accessLabel.ACTIVE_PAID);
   const expired = isExpired(user.subscription_end_date);
+  const updateStatus = getAppUpdateStatus(user, globalConfig);
+  const updateLabel = updateStatus === 'current' ? 'محدّث' : updateStatus === 'outdated' ? 'إصدار قديم' : 'لم يرسل بيانات الإصدار';
 
   return (
     <div className="users-page pb-12">
@@ -503,6 +509,22 @@ export default function UserProfilePage() {
             </button>
           </div>
         </Card>
+      </Section>
+
+      <Section eyebrow="التطبيق والجهاز" title="الإصدار المثبت وآخر ظهور">
+        <Card>
+          <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
+            <div className="user-card__meta-item"><dt>الإصدار المثبّت</dt><dd dir="ltr" className="font-mono">{user.app_version || user.appVersion || 'غير مُبلّغ'}</dd></div>
+            <div className="user-card__meta-item"><dt>versionCode المثبّت</dt><dd dir="ltr" className="font-mono">{user.app_version_code ?? 'غير مُبلّغ'}</dd></div>
+            <div className="user-card__meta-item"><dt>آخر إصدار منشور</dt><dd dir="ltr" className="font-mono">{globalConfig?.app_latest_version || 'غير محدد'}{globalConfig?.app_latest_version_code ? ` (${globalConfig.app_latest_version_code})` : ''}</dd></div>
+            <div className="user-card__meta-item"><dt>حالة التحديث</dt><dd><Badge tone={updateStatus === 'current' ? 'success' : updateStatus === 'outdated' ? 'warning' : 'neutral'}>{updateLabel}</Badge></dd></div>
+            <div className="user-card__meta-item"><dt>آخر ظهور</dt><dd>{formatDate(user.last_seen_at || user.lastSeenAt, { withTime: true })}</dd></div>
+            <div className="user-card__meta-item"><dt>المنصة</dt><dd>{user.platform || 'غير مُبلّغ'}</dd></div>
+            <div className="user-card__meta-item"><dt>حالة الترخيص/الوصول</dt><dd>{status.text}{user.is_active === false ? ' — موقوف' : expired ? ' — منتهي' : ''}</dd></div>
+          </dl>
+          <p className="text-xs text-muted mt-4">تعكس هذه البيانات آخر تقرير ناجح من التطبيق، وليست فحصاً لحظياً للجهاز.</p>
+        </Card>
+        <UserDevicesPanel userId={uid} userLabel={user.networkName || uid} />
       </Section>
 
       {/* المؤشرات المالية العامة للعميل */}

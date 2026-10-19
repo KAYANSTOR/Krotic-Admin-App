@@ -10,12 +10,15 @@ import { formatDate } from '../lib/format';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
 function deviceLabel(device) {
-  const parts = [device.platform, device.appVersion].filter(Boolean);
+  const version = device.app_version || device.appVersion;
+  const code = device.app_version_code ?? device.appVersionCode;
+  const parts = [device.platform, version, code != null ? `code ${code}` : null].filter(Boolean);
   return parts.length ? parts.join(' • ') : 'جهاز مسجّل';
 }
 
 function deviceTimestamp(device) {
-  return device.updatedAt || device.lastSeenAt || device.lastSeen || device.createdAt || null;
+  return device.version_reported_at || device.updated_at || device.updatedAt
+    || device.lastSeenAt || device.lastSeen || device.createdAt || null;
 }
 
 /**
@@ -114,6 +117,11 @@ export default function UserDevicesPanel({ userId, userLabel }) {
                     <span className="devices-item__time">{formatDate(deviceTimestamp(device), { withTime: true })}</span>
                   ) : null}
                 </span>
+                {Array.isArray(device.version_history) && device.version_history.length > 0 ? (
+                  <span className="block text-[10px] text-muted mt-1">
+                    سجل الإصدارات: {device.version_history.map((item) => `${item.app_version || '؟'}${item.app_version_code ? ` (${item.app_version_code})` : ''} — ${formatDate(item.reported_at, { withTime: true })}`).join(' ← ')}
+                  </span>
+                ) : null}
               </span>
               <button
                 type="button"
