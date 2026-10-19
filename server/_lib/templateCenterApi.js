@@ -5,14 +5,14 @@ import {
   authenticateAdmin,
   ensureFirebaseAdmin,
   getAppFirestore,
-} from '../server/_lib/firebaseAdmin.js';
+} from './firebaseAdmin.js';
 import {
   getTemplateCenterCatalog,
   normalizeDraftInput,
   previewOutboundTemplate,
   simulateInboundTemplates,
   validateTemplatePayload,
-} from '../server/_lib/templateCenter.js';
+} from './templateCenter.js';
 
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';

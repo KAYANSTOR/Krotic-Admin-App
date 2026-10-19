@@ -13,6 +13,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
+import templateCenterHandler from '../server/_lib/templateCenterApi.js';
 
 export const SETTINGS_BOUNDS = {
   default_trial_days: { min: 0, max: 30, integer: true },
@@ -101,6 +102,9 @@ export async function applySettings({ db, callerUid, value, now = Date.now() }) 
 }
 
 export default async function handler(req, res) {
+  if (req.query?.__apiRoute === 'template-center') {
+    return templateCenterHandler(req, res);
+  }
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });

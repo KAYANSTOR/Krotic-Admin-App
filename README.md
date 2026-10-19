@@ -61,8 +61,8 @@
 - ✅ واجهة RTL عربية، تنقل جانبي للشاشات الكبيرة وتنقل سفلي للشاشات الصغيرة (`src/components/Sidebar.jsx`, `src/components/BottomNav.jsx`, `src/index.css`).
 - ✅ قابلية تثبيت كتطبيق PWA عبر manifest وحدث `beforeinstallprompt`، مع service worker لصفحة التنقل الاحتياطية (`public/manifest.webmanifest`, `src/components/Layout.jsx`, `public/service-worker.js`).
 - ✅ توليد نسخ الأيقونات أثناء `predev` و`prebuild` من أصول محلية قابلة للتكرار (`package.json`, `scripts/generate-icons.js`).
-- ✅ مركز قوالب RTL للمحافظ وقوالب التحويل الواردة والرسائل الصادرة، مع محاكاة ومعاينة لا تنفذ أثرًا ماليًا أو إرسالًا (`src/pages/TemplateCenterPage.jsx`, `api/template-center.js`).
-- ✅ مسودات وإصدارات مركزية غير قابلة للتعديل بعد النشر، مع تراجع بإصدار جديد وتدقيق خادمي (`api/template-center.js`, `firestore.rules`).
+- ✅ مركز قوالب RTL للمحافظ وقوالب التحويل الواردة والرسائل الصادرة، مع محاكاة ومعاينة لا تنفذ أثرًا ماليًا أو إرسالًا (`src/pages/TemplateCenterPage.jsx`, `server/_lib/templateCenterApi.js`).
+- ✅ مسودات وإصدارات مركزية غير قابلة للتعديل بعد النشر، مع تراجع بإصدار جديد وتدقيق خادمي (`server/_lib/templateCenterApi.js`, `firestore.rules`).
 - ⚠️ التوزيع المركزي غير مستهلك من تطبيق Android حتى يصدر مستهلك متوافق؛ لا تعدّل هذه الواجهة قاعدة Flutter المحلية.
 
 ## 🛠️ التقنيات
