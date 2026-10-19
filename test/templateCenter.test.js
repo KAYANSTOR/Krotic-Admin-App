@@ -67,7 +67,7 @@ test('previews only known outbound variables in the template scope', () => {
     ok: true,
     preview: 'تم استلام 1500 من الحساب',
   });
-  assert.equal(previewOutboundTemplate(template, { amount: '1500', phone: '771234567' }).reason, 'variable_scope_invalid');
+  assert.equal(previewOutboundTemplate(template, { amount: '1500', transfers: '3' }).reason, 'variable_scope_invalid');
   assert.equal(previewOutboundTemplate({ ...template, body: 'تم الدفع' }, {}).reason, 'required_variable_missing');
 });
 
