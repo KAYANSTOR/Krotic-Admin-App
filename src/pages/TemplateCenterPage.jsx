@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Archive, ArrowDownToLine, Beaker, Check, CircleAlert, Clock3,
+  Archive, ArrowDownToLine, Beaker, Check, AlertCircle, Clock3,
   Cloud, FileText, History, Layers3, Plus, RotateCcw, Save, Send,
   ShieldCheck, Trash2, Wallet, X,
 } from 'lucide-react';
@@ -64,7 +64,7 @@ function ResultPanel({ result, type }) {
   return (
     <div className={`rounded-xl border p-4 ${passed ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} role="status">
       <div className="flex items-center gap-2 font-bold">
-        {passed ? <Check className="h-4 w-4" aria-hidden="true" /> : <CircleAlert className="h-4 w-4" aria-hidden="true" />}
+        {passed ? <Check className="h-4 w-4" aria-hidden="true" /> : <AlertCircle className="h-4 w-4" aria-hidden="true" />}
         {type === 'simulation'
           ? (passed ? `تطابق مع ${result.templateName}` : `لم تتم المطابقة: ${result.reason || 'لا يوجد قالب مطابق'}`)
           : (passed ? 'معاينة الرسالة' : `تعذرت المعاينة: ${result.reason}`)}
