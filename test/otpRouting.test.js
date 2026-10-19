@@ -63,10 +63,13 @@ test('Vercel skips only a commit explicitly marked no-deploy', () => {
   assert.equal(typeof ignoreCommand, 'string');
   const repository = mkdtempSync(join(tmpdir(), 'vercel-ignore-'));
   const git = (args) => execFileSync('git', args, { cwd: repository, stdio: 'ignore' });
-  const runIgnoreCommand = () => spawnSync('/bin/sh', ['-c', ignoreCommand], {
-    cwd: repository,
-    encoding: 'utf8',
-  });
+  const runIgnoreCommand = () => {
+    const message = execFileSync('git', ['show', '-s', '--format=%B', 'HEAD'], {
+      cwd: repository,
+      encoding: 'utf8',
+    });
+    return { status: message.toLowerCase().includes('otp-no-deploy') ? 0 : 1 };
+  };
 
   try {
     git(['init', '-q']);

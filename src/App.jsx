@@ -17,6 +17,7 @@ const SalesPage = lazy(() => loadRoute('/sales'));
 const NotificationsPage = lazy(() => loadRoute('/notifications'));
 const AdminsPage = lazy(() => loadRoute('/admins'));
 const AuditPage = lazy(() => loadRoute('/audit'));
+const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
 
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
@@ -109,6 +110,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <Layout>
               <AuditPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/template-center"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <TemplateCenterPage />
             </Layout>
           </ProtectedRoute>
         }

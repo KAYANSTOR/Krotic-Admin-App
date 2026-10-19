@@ -222,6 +222,26 @@ test('returns stale in-memory data while its background revalidation fails', asy
   assert.equal(cache.getState('dashboard').fromCache, true);
 });
 
+test('revalidates stale in-memory data once without recursively serving the same snapshot', async () => {
+  const cache = createAdminDataCache({
+    getUid: () => 'admin-a',
+    getStorage: () => fakeStorage(),
+    memoryTtl: 0,
+    localCacheTtl: 0,
+  });
+  let loaderCalls = 0;
+  const received = [];
+  cache.subscribe('dashboard', (value) => received.push(value));
+  const loader = async () => ({ saved: ++loaderCalls });
+
+  assert.deepEqual(await cache.readCached('dashboard', loader), { saved: 1 });
+  assert.deepEqual(await cache.readCached('dashboard', loader), { saved: 1 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(loaderCalls, 2);
+  assert.deepEqual(received, [{ saved: 1 }, { saved: 1 }, { saved: 2 }]);
+});
+
 test('a request started under a cleared UID scope cannot write after logout/switch', async () => {
   const storage = fakeStorage();
   const cache = createAdminDataCache({ getUid: () => 'admin-a', getStorage: () => storage });

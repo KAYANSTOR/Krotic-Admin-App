@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
-  CheckCircle2,
   DollarSign,
   LayoutDashboard,
+  Layers3,
   Plus,
   ScrollText,
   Settings,
@@ -22,11 +22,10 @@ const primaryItems = [
 ];
 
 const quickItems = [
-  { path: '/notifications', label: 'إنشاء إشعار', icon: Bell },
-  { path: '/users', label: 'إدارة المشتركين', icon: Users },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
   { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
+  { path: '/template-center', label: 'مركز القوالب', icon: Layers3 },
 ];
 
 function preloadRoute(path) {
