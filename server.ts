@@ -17,7 +17,8 @@ import migrateHandler from './api/migrate.js';
 import networkSecretHandler from './api/network-secret.js';
 import adminSessionHandler from './api/admin-session.js';
 import templateCenterHandler from './server/_lib/templateCenterApi.js';
-
+import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
+import activateEntitlementHandler from './api/entitlements/activate.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -52,6 +53,8 @@ async function startServer() {
   app.all('/api/migrate', (req, res) => migrateHandler(req, res));
   app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
   app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
+  app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));
+  app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));
 
   // Health check endpoint
   app.get('/api/health', (_req, res) => {

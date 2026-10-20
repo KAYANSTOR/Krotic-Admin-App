@@ -14,6 +14,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
 import templateCenterHandler from '../server/_lib/templateCenterApi.js';
+import activateEntitlement from '../server/_lib/entitlementActivation.js';
 
 export const SETTINGS_BOUNDS = {
   default_trial_days: { min: 0, max: 30, integer: true },
@@ -102,6 +103,9 @@ export async function applySettings({ db, callerUid, value, now = Date.now() }) 
 }
 
 export default async function handler(req, res) {
+  if (req.query?.__apiRoute === 'entitlement-activate') {
+    return activateEntitlement(req, res);
+  }
   if (req.query?.__apiRoute === 'template-center') {
     return templateCenterHandler(req, res);
   }

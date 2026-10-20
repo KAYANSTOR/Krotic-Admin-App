@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/entitlements/activate",
+      "destination": "/api/settings?__apiRoute=entitlement-activate"
+    },
+    {
       "source": "/api/record-payment",
       "destination": "/api/settlement?__apiRoute=record-payment"
     },
