@@ -90,13 +90,20 @@ async function claim(db, snapshot, now) {
   });
 }
 
-async function finalize(db, ref, claimId, patch, delivery) {
+async function finalize(db, ref, claimId, patch, delivery, inbox = null) {
   return db.runTransaction(async (transaction) => {
     const currentSnap = await transaction.get(ref);
     const current = currentSnap.exists ? currentSnap.data() || {} : {};
     if (!currentSnap.exists || current.dispatchClaimId !== claimId || current.status !== 'processing') return false;
     transaction.update(ref, { ...patch, dispatchLeaseUntil: null, updatedAt: FieldValue.serverTimestamp() });
     if (delivery) transaction.set(db.collection('notification_deliveries').doc(ref.id), delivery, { merge: true });
+    if (inbox) {
+      transaction.set(
+        db.collection('users').doc(inbox.uid).collection('notifications').doc(ref.id),
+        inbox.data,
+        { merge: true },
+      );
+    }
     return true;
   });
 }
@@ -152,8 +159,19 @@ async function dispatchOne(db, messaging, snapshot, now) {
         completedAt: FieldValue.serverTimestamp(),
       }, {
         requestId, title, body, target: `user:${request.targetUid}`,
+        audienceType: 'user', targetUid: request.targetUid,
         sent: result.sent, failed: result.failed, createdAt: FieldValue.serverTimestamp(),
-      });
+      }, result.sent > 0 ? {
+        uid: request.targetUid,
+        data: {
+          title,
+          message: body,
+          timestamp: FieldValue.serverTimestamp(),
+          is_read: false,
+          is_global: false,
+          audienceType: 'user',
+        },
+      } : null);
 
       return;
     }
@@ -172,6 +190,7 @@ async function dispatchOne(db, messaging, snapshot, now) {
       completedAt: FieldValue.serverTimestamp(),
     }, {
       requestId, title, body, target: `topic:${DEFAULT_TOPIC}`,
+      audienceType: 'global',
       sent: 1, failed: 0, createdAt: FieldValue.serverTimestamp(),
     });
   } catch (error) {

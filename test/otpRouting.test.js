@@ -10,7 +10,7 @@ const vercelConfig = JSON.parse(
   readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'),
 );
 
-test('Vercel rewrites both OTP URLs to the existing auth function', () => {
+test('Vercel rewrites OTP and account-notification URLs to the existing auth function', () => {
   assert.deepEqual(
     vercelConfig.rewrites.find((entry) => entry.source === '/api/request-otp'),
     {
@@ -25,12 +25,20 @@ test('Vercel rewrites both OTP URLs to the existing auth function', () => {
       destination: '/api/manage-user-auth?__apiRoute=verify-otp',
     },
   );
+  assert.deepEqual(
+    vercelConfig.rewrites.find((entry) => entry.source === '/api/account-notifications'),
+    {
+      source: '/api/account-notifications',
+      destination: '/api/manage-user-auth?__apiRoute=account-notifications',
+    },
+  );
 });
 
 test('public OTP URLs dispatch before the admin auth handler', async () => {
   for (const [route, expected] of [
     ['request-otp', 'request'],
     ['verify-otp', 'verify'],
+    ['account-notifications', 'notifications'],
   ]) {
     const req = { query: { __apiRoute: route } };
     const res = { marker: true };
@@ -41,6 +49,9 @@ test('public OTP URLs dispatch before the admin auth handler', async () => {
       },
       verifyOtp: async (actualReq, actualRes) => {
         called = ['verify', actualReq, actualRes];
+      },
+      accountNotifications: async (actualReq, actualRes) => {
+        called = ['notifications', actualReq, actualRes];
       },
     });
     assert.equal(handled, true);

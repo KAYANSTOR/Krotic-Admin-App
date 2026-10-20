@@ -173,7 +173,15 @@ export default async function handler(req, res) {
     const notifId = String(body.id || '').trim();
     if (!notifId) return res.status(400).json({ success: false, error: 'id_required' });
     try {
-      await db.collection('notification_deliveries').doc(notifId).delete().catch(() => null);
+      const deliveryRef = db.collection('notification_deliveries').doc(notifId);
+      const delivery = await deliveryRef.get();
+      const batch = db.batch();
+      batch.delete(deliveryRef);
+      const targetUid = String(delivery.data()?.targetUid || '').trim();
+      if (targetUid) {
+        batch.delete(db.collection('users').doc(targetUid).collection('notifications').doc(notifId));
+      }
+      await batch.commit();
       return res.status(200).json({ success: true, deleted: notifId });
     } catch (err) {
       console.error('send-fcm: delete failed', err);
@@ -257,7 +265,9 @@ export default async function handler(req, res) {
         sent = 0;
       }
 
+      const historyRef = db.collection('notification_deliveries').doc();
       const historyDoc = {
+        requestId: historyRef.id,
         title,
         body: text,
         message: text,
@@ -272,7 +282,22 @@ export default async function handler(req, res) {
         status: failed && !sent ? 'failed' : 'sent',
       };
 
-      await db.collection('notification_deliveries').add(historyDoc);
+      const batch = db.batch();
+      batch.set(historyRef, historyDoc);
+      if (sent > 0) {
+        batch.set(
+          db.collection('users').doc(targetUid).collection('notifications').doc(historyRef.id),
+          {
+            title,
+            message: text,
+            timestamp: nowMs,
+            is_read: false,
+            is_global: false,
+            audienceType: 'user',
+          },
+        );
+      }
+      await batch.commit();
 
     } else {
       // 2. GLOBAL BROADCAST NOTIFICATION

@@ -25,6 +25,10 @@
       "destination": "/api/manage-user-auth?__apiRoute=verify-otp"
     },
     {
+      "source": "/api/account-notifications",
+      "destination": "/api/manage-user-auth?__apiRoute=account-notifications"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

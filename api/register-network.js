@@ -10,6 +10,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const NETWORK_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const EMAIL_DOMAIN = 'krotak.app';
+// تعطيل SMS مؤقتًا حتى يكتمل إعداد قنوات الرسائل. عند جاهزية القناة يُعاد
+// تفعيل هذا المفتاح؛ لا نضع phone_verified=true لأن الهاتف لم يُتحقق منه.
+const PHONE_VERIFICATION_REQUIRED = false;
 const ALLOWED_FIELDS = new Set(['networkName', 'phone', 'platform', 'appVersion']);
 
 export class RegistrationError extends Error {
@@ -100,6 +103,9 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
         ...(user.app_version ? {} : { app_version: profile.appVersion }),
         ...(user.created_at ? {} : { created_at: nowTimestamp }),
         ...(user.last_seen_at ? {} : { last_seen_at: nowTimestamp }),
+        ...(user.phone_verification_required === true
+          ? { phone_verification_required: PHONE_VERIFICATION_REQUIRED }
+          : {}),
       };
       if (Object.keys(profilePatch).length > 0) {
         transaction.set(userRef, profilePatch, { merge: true });
@@ -169,7 +175,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       app_version: profile.appVersion,
       phone_verified: false,
       phoneVerified: false,
-      phone_verification_required: true,
+      phone_verification_required: PHONE_VERIFICATION_REQUIRED,
       phone_verified_manual: false,
       created_at: startedAt,
       last_seen_at: startedAt,

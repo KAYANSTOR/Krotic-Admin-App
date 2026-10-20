@@ -22,6 +22,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 import { handleRequestOtp, handleVerifyOtp } from '../server/_lib/phoneOtp.js';
+import { listGlobalNotifications } from '../server/_lib/accountNotifications.js';
 
 const MIN_PASSWORD_LENGTH = 6;
 const MAX_PASSWORD_LENGTH = 128;
@@ -150,6 +151,7 @@ function publicAuthInfo(record) {
 export async function dispatchPublicOtpRoute(req, res, handlers = {
   requestOtp: handleRequestOtp,
   verifyOtp: handleVerifyOtp,
+  accountNotifications: handleAccountNotifications,
 }) {
   const route = req?.query?.__apiRoute;
   if (route === 'request-otp') {
@@ -160,7 +162,43 @@ export async function dispatchPublicOtpRoute(req, res, handlers = {
     await handlers.verifyOtp(req, res);
     return true;
   }
+  if (route === 'account-notifications') {
+    await handlers.accountNotifications(req, res);
+    return true;
+  }
   return false;
+}
+
+async function handleAccountNotifications(req, res) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ success: false, error: 'method_not_allowed' });
+  }
+
+  const init = ensureInitialized();
+  if (!init.ok) return res.status(503).json({ success: false, error: init.error });
+
+  const authHeader = String(req?.headers?.authorization || '');
+  const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!idToken) return res.status(401).json({ success: false, error: 'missing_token' });
+
+  let uid;
+  try {
+    uid = (await getAuth().verifyIdToken(idToken)).uid;
+  } catch {
+    return res.status(401).json({ success: false, error: 'invalid_token' });
+  }
+
+  try {
+    const db = getFirestore();
+    const account = await db.collection('users').doc(uid).get();
+    if (!account.exists) return res.status(403).json({ success: false, error: 'account_not_found' });
+    const notifications = await listGlobalNotifications(db);
+    return res.status(200).json({ success: true, notifications });
+  } catch (error) {
+    console.error('account-notifications: fetch failed', error?.code || error?.message);
+    return res.status(500).json({ success: false, error: 'notifications_unavailable' });
+  }
 }
 
 export default async function handler(req, res) {

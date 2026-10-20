@@ -145,7 +145,7 @@ async function claimDispatchRequest(snapshot, { firestore = db, now = Date.now()
   });
 }
 
-async function updateClaimedRequest(ref, claim, patch, { firestore = db, fieldValue = FieldValue, delivery } = {}) {
+async function updateClaimedRequest(ref, claim, patch, { firestore = db, fieldValue = FieldValue, delivery, inbox } = {}) {
   return firestore.runTransaction(async (transaction) => {
     const currentSnap = await transaction.get(ref);
     const current = currentSnap.exists ? currentSnap.data() || {} : {};
@@ -157,6 +157,13 @@ async function updateClaimedRequest(ref, claim, patch, { firestore = db, fieldVa
     });
     if (delivery) {
       transaction.set(firestore.collection('notification_deliveries').doc(ref.id), delivery, { merge: true });
+    }
+    if (inbox) {
+      transaction.set(
+        firestore.collection('users').doc(inbox.uid).collection('notifications').doc(ref.id),
+        inbox.data,
+        { merge: true },
+      );
     }
     return true;
   });
@@ -271,21 +278,37 @@ async function dispatchRequest(snapshot) {
       sent = 1;
     }
 
+    const delivery = {
+      requestId,
+      title,
+      body,
+      target: targetDescription,
+      audienceType: request.audienceType === 'user' && request.targetUid ? 'user' : 'global',
+      ...(request.audienceType === 'user' && request.targetUid ? { targetUid: request.targetUid } : {}),
+      sent,
+      failed,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    const inbox = request.audienceType === 'user' && request.targetUid && sent > 0
+      ? {
+          uid: request.targetUid,
+          data: {
+            title,
+            message: body,
+            timestamp: FieldValue.serverTimestamp(),
+            is_read: false,
+            is_global: false,
+            audienceType: 'user',
+          },
+        }
+      : undefined;
     const committed = await updateClaimedRequest(snapshot.ref, claim, {
       status: failed ? 'partial' : 'sent',
       target: targetDescription,
       sent,
       failed,
       completedAt: FieldValue.serverTimestamp(),
-    }, { delivery: {
-      requestId,
-      title,
-      body,
-      target: targetDescription,
-      sent,
-      failed,
-      createdAt: FieldValue.serverTimestamp(),
-    } });
+    }, { delivery, inbox });
     if (!committed) throw new Error('dispatch_claim_lost_after_fcm');
 
     if (invalidDeviceDocIds.length) {
