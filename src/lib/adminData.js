@@ -709,16 +709,43 @@ export async function fetchDashboardStats(options) {
     return allErrors.length ? partialResult(value, allErrors) : value;
   }, options);
 }
-export async function fetchNetworkSales(options) {
-  return readCached('network-sales', async (loaderContext) => {
+export async function fetchSalesForNetwork(uid, options) {
+  return fetchSalesForUser(uid, false, options);
+}
+
+export async function fetchNetworkSales(options = {}) {
+  const fullHistory = options.fullHistory === true;
+  const cacheKey = fullHistory ? 'network-sales-full' : 'network-sales';
+  return readCached(cacheKey, async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
     const [users, config] = await Promise.all([fetchAllUsers(childOptions), fetchGlobalConfig(childOptions)]);
     const defaultCommissionRate = Number(config.default_commission_rate ?? 5);
     const { values: rawNetworks, errors } = await mapUsersSoft(users, 'Network sales', async (user) => {
-      const [meta, sales] = await Promise.all([fetchNetworkMeta(user.uid, childOptions), fetchSalesForUser(user.uid, false, childOptions)]);
-      if (!sales.length) return null;
+      const [meta, sales, aggregate] = await Promise.all([
+        fetchNetworkMeta(user.uid, childOptions),
+        fetchSalesForUser(user.uid, !fullHistory, childOptions),
+        fetchAggregate(user.uid, childOptions).catch((error) => {
+          console.warn(`Network sales summary unavailable for ${user.uid}:`, error);
+          return null;
+        }),
+      ]);
+      if (!sales.length && !Number(aggregate?.totalTransactions)) return null;
       const commissionRate = resolveCommissionRate(user, defaultCommissionRate);
-      return { uid: user.uid, networkName: meta.networkName, phoneNumber: meta.phoneNumber, sales, commissionRate };
+      const fallback = summarizeCompletedSales(sales);
+      const summaryAvailable = Boolean(aggregate);
+      return {
+        uid: user.uid,
+        networkName: meta.networkName,
+        phoneNumber: meta.phoneNumber,
+        sales,
+        commissionRate,
+        totalFaceValue: summaryAvailable ? (Number(aggregate.totalFaceValue) || 0) : fallback.reportedSalesValue,
+        totalTransactions: summaryAvailable ? (Number(aggregate.totalTransactions) || 0) : fallback.reportedTransactions,
+        totalCommissionDue: summaryAvailable ? (Number(aggregate.totalCommissionDue) || 0) : fallback.commissionDue,
+        totalPaid: summaryAvailable ? (Number(aggregate.totalPaid) || 0) : fallback.recordedPayments,
+        summaryAvailable,
+        fullHistoryLoaded: fullHistory,
+      };
     });
     const value = rawNetworks.filter(Boolean);
     return errors.length ? partialResult(value, errors) : value;

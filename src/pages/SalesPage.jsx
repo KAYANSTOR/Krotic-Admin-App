@@ -15,7 +15,7 @@ import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
 import { formatNumber, formatDate, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { fetchNetworkSales, fetchSalesForNetwork, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
 import { saleCommission, saleFaceValue, isCompletedSale, sumOutstanding, hasUnverifiedCommission, isServerVerifiedSale, sumVerifiedOutstanding, sumLegacyUnverifiedSales } from '../lib/commission';
 import { mergeSalesByIdentity } from '../lib/salesReadCompat';
@@ -98,16 +98,16 @@ export default function SalesPage() {
   const hasRealtimeSnapshot = useRef(false);
   const saleNoticeTimer = useRef(null);
 
-  const load = useCallback(async ({ force = false } = {}) => {
+  const load = useCallback(async ({ force = false, fullHistory = false } = {}) => {
     const requestId = ++latestRequestId.current;
     setLoading(true);
     try {
-      const data = await fetchNetworkSales({ force });
+      const data = await fetchNetworkSales({ force, fullHistory });
       if (requestId !== latestRequestId.current) return;
       setNetworkSales(data);
       setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
       setUpdatedAt(Date.now());
-      setCacheState(getAdminDataCacheState('network-sales'));
+      setCacheState(getAdminDataCacheState(fullHistory ? 'network-sales-full' : 'network-sales'));
     } catch (error) {
       if (requestId !== latestRequestId.current) return;
       console.error('Error fetching sales:', error);
@@ -131,6 +131,18 @@ export default function SalesPage() {
       setRealtimeReady(true);
       return undefined;
     }
+    let cancelled = false;
+    fetchSalesForNetwork(expandedNetwork).then((sales) => {
+      if (cancelled) return;
+      setNetworkSales((networks) => networks.map((network) => network.uid === expandedNetwork
+        ? { ...network, sales: mergeSalesByIdentity(network.sales || [], sales), fullHistoryLoaded: true }
+        : network));
+    }).catch((error) => {
+      if (!cancelled) {
+        console.error('Full network sales history failed:', error);
+        setPartialErrors((current) => current.includes(`تعذر تحميل السجل الكامل للشبكة ${expandedNetwork}`) ? current : [...current, `تعذر تحميل السجل الكامل للشبكة ${expandedNetwork}`]);
+      }
+    });
     const unsubscribe = subscribeNetworkSalesRealtime(
       (data, freshness, addedSales = []) => {
         hasRealtimeSnapshot.current = true;
@@ -178,13 +190,14 @@ export default function SalesPage() {
       { targetNetworkId: expandedNetwork },
     );
     return () => {
+      cancelled = true;
       unsubscribe();
       if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
       latestRequestId.current += 1;
     };
   }, [expandedNetwork]);
 
-  useAppRefresh(() => load({ force: true }));
+  useAppRefresh(() => load({ force: true, fullHistory: statusFilter !== 'all' || verificationFilter !== 'all' || Boolean(dateFrom || dateTo) }));
 
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
@@ -210,10 +223,14 @@ export default function SalesPage() {
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales || []);
     const completed = filtered.filter(isCompletedSale);
+    const useLifetimeSummary = statusFilter === 'all' && verificationFilter === 'all' && !dateFrom && !dateTo;
+    const summaryAvailable = useLifetimeSummary && network.summaryAvailable === true;
     const verified = completed.filter(isServerVerifiedSale);
     const legacy = completed.filter((s) => !isServerVerifiedSale(s));
 
-    const totalFaceValue = completed.reduce((sum, sale) => sum + saleFaceValue(sale), 0);
+    const totalFaceValue = summaryAvailable
+      ? (Number(network.totalFaceValue) || 0)
+      : completed.reduce((sum, sale) => sum + saleFaceValue(sale), 0);
     const verifiedFaceValue = verified.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
     const legacyFaceValue = legacy.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
 
@@ -221,12 +238,14 @@ export default function SalesPage() {
     const verifiedCommission = sumVerifiedOutstanding(completed);
     // عمولات السجلات القديمة تقديرية لأغراض التدقيق والمراجعة
     const legacyEstimatedCommission = legacy.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0);
-    const totalCommission = verifiedCommission;
+    const totalCommission = summaryAvailable
+      ? Math.max(0, (Number(network.totalCommissionDue) || 0) - (Number(network.totalPaid) || 0))
+      : verifiedCommission;
     const unverified = legacy.length > 0;
 
     return {
       totalSales: completed.length,
-      completedCount: completed.length,
+      completedCount: summaryAvailable ? (Number(network.totalTransactions) || 0) : completed.length,
       verifiedCount: verified.length,
       legacyCount: legacy.length,
       totalFaceValue,
@@ -238,7 +257,7 @@ export default function SalesPage() {
       unverified,
       filteredSales: filtered,
     };
-  }, [filterSales]);
+  }, [filterSales, statusFilter, verificationFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     setVisibleNetworks(NETWORK_PAGE_SIZE);
@@ -338,8 +357,19 @@ export default function SalesPage() {
     SMS_PENDING: { text: 'بانتظار SMS', class: 'bg-sky-100 text-sky-800 border-sky-300' },
   };
 
-  const handleExportSales = useCallback(() => {
-    const rows = networkSales.flatMap((network) => {
+  const handleExportSales = useCallback(async () => {
+    let sourceNetworks = networkSales;
+    if (!sourceNetworks.every((network) => network.fullHistoryLoaded)) {
+      try {
+        sourceNetworks = await fetchNetworkSales({ fullHistory: true });
+        setNetworkSales(sourceNetworks);
+      } catch (error) {
+        console.error('Full sales export load failed:', error);
+        toast.error('تعذر تحميل سجل المبيعات الكامل للتصدير');
+        return;
+      }
+    }
+    const rows = sourceNetworks.flatMap((network) => {
       const stats = calcNetworkStats(network);
       return stats.filteredSales.map((sale) => ({ network, sale }));
     });
@@ -364,6 +394,13 @@ export default function SalesPage() {
   }, [networkSales, calcNetworkStats]);
 
   const hasActiveFilters = statusFilter !== 'all' || verificationFilter !== 'all' || dateFrom || dateTo || searchQuery;
+  const hasSalesFilters = statusFilter !== 'all' || verificationFilter !== 'all' || dateFrom || dateTo;
+
+  useEffect(() => {
+    if (!hasSalesFilters) return undefined;
+    const timer = window.setTimeout(() => load({ fullHistory: true }), 350);
+    return () => window.clearTimeout(timer);
+  }, [hasSalesFilters, load]);
 
   const resetFilters = () => {
     setStatusFilter('all');
@@ -716,7 +753,7 @@ export default function SalesPage() {
                       onClick={() => setExpandedNetwork(isExpanded ? null : network.uid)}
                       className="w-full flex items-center justify-between py-1.5 px-2 text-xs font-bold text-ink-soft hover:text-brand transition-colors"
                     >
-                      <span>{isExpanded ? 'إخفاء سجل العمليات' : `عرض العمليات (${stats.filteredSales.length})`}</span>
+                      <span>{isExpanded ? 'إخفاء سجل العمليات' : (network.fullHistoryLoaded ? `عرض العمليات (${stats.filteredSales.length})` : `عرض آخر ${stats.filteredSales.length} من ${stats.completedCount} عملية`)}</span>
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
 

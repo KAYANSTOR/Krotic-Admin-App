@@ -15,6 +15,7 @@ import {
 } from './templateCenter.js';
 import { validateTemplateAckPayload } from './templateAckContract.js';
 
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';
 const POINTERS = 'template_center_pointers';
