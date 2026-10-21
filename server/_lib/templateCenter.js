@@ -25,6 +25,7 @@ export function getTemplateCenterCatalog() {
       required: [...definition.required],
     })),
     outboundVariables: Object.keys(VARIABLE_ALIASES),
+    outboundVariableAliases: Object.fromEntries(OUTBOUND_VARIABLE_ALIASES),
     inboundPlaceholders: [...TEMPLATE_PLACEHOLDERS],
   };
 }
@@ -48,6 +49,11 @@ const OUTBOUND_TEMPLATES = Object.freeze({
   salafni_template_rejected: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['reason'] },
   salafni_template_settled: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['amount'] },
   low_stock_alert_template: { scope: VARIABLE_SCOPE.outboundSystem, required: ['category'] },
+  card_delivery_cash_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
+  card_delivery_credit_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
+  card_delivery_gift_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
+  salafni_card_delivery_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
+  deposit_no_stock_template: { scope: VARIABLE_SCOPE.outboundSystem, required: ['first_customer_name', 'amount'] },
 });
 
 const VARIABLE_ALIASES = Object.freeze({
@@ -125,9 +131,17 @@ for (const [canonical, aliases] of Object.entries(VARIABLE_ALIASES)) {
   CANONICAL_VARIABLE_BY_ALIAS.set(canonical, canonical);
   aliases.forEach((alias) => CANONICAL_VARIABLE_BY_ALIAS.set(alias, canonical));
 }
+// العناصر النائبة الواردة (`{phone}` …) تُضاف فقط إن لم تكن اسمًا بديلًا
+// مسجّلًا لمتغير صادر. بدون هذا كان `{phone}` في قالب صادر يُطابَق كنص حر بدل
+// `customer_phone`، فتُرفض النصوص الافتراضية الفعلية لتطبيق Android عند النشر.
 for (const placeholder of TEMPLATE_PLACEHOLDERS) {
-  CANONICAL_VARIABLE_BY_ALIAS.set(placeholder, placeholder);
+  if (!CANONICAL_VARIABLE_BY_ALIAS.has(placeholder)) {
+    CANONICAL_VARIABLE_BY_ALIAS.set(placeholder, placeholder);
+  }
 }
+
+// alias → canonical، يُعرض في الكتالوج ليطبّق العميل نفس مطابقة الخادم.
+const OUTBOUND_VARIABLE_ALIASES = CANONICAL_VARIABLE_BY_ALIAS;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -250,13 +264,21 @@ function validateOutboundTemplate(template, index, errors, { allowDrafts }) {
   const occurrences = templatePlaceholders(String(template.body ?? ''));
   const canonicalKeys = occurrences.map(canonicalVariable);
   if (canonicalKeys.some((key) => key == null)) errors.push(`${at}_variable_unknown`);
-  const repeated = new Set();
-  const seen = new Set();
-  canonicalKeys.filter(Boolean).forEach((key) => {
-    if (seen.has(key)) repeated.add(key);
-    seen.add(key);
+  // تصادم المرادفات فقط: مفاتيح قانونية بأكثر من اسم مختلف في النص
+  // (مثل `{code}` و`{secret}` معًا). تكرار الاسم نفسه (`{CURRENCY}` مرتين) مسموح
+  // ومطابق لسياسة Android (`TemplateVariableRegistry.synonymCollisionsIn`).
+  const namesByCanonical = new Map();
+  occurrences.forEach((name, index) => {
+    const key = canonicalKeys[index];
+    if (!key) return;
+    const names = namesByCanonical.get(key) ?? new Set();
+    names.add(name);
+    namesByCanonical.set(key, names);
   });
-  if (repeated.size) errors.push(`${at}_variable_duplicate`);
+  const seen = new Set(canonicalKeys.filter(Boolean));
+  if ([...namesByCanonical.values()].some((names) => names.size > 1)) {
+    errors.push(`${at}_variable_duplicate`);
+  }
   if (canonicalKeys.some((key) => key && !VARIABLE_SCOPES[key]?.includes(definition.scope))) {
     errors.push(`${at}_variable_scope_invalid`);
   }

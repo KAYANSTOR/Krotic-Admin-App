@@ -111,9 +111,9 @@ export default function DraftScopePanel() {
           variant="secondary"
           icon={Package}
           onClick={loadBundledPack}
-          title="نسخ القيم المضمّنة في المصدر إلى المسودة (محليًا فقط)"
+          title="نسخ كتالوج الزرع الافتراضي في Android (بنفس المعرّفات) إلى المسودة (محليًا فقط)"
         >
-          تحميل إلى المسودة
+          استيراد كتالوج Android
         </Button>
         <Button
           variant="success"
@@ -140,7 +140,7 @@ export default function DraftScopePanel() {
 
       <p className="flex items-start gap-2 rounded-xl bg-stone-50 p-3 text-xs leading-5 text-stone-600">
         <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        «تحميل إلى المسودة» ينسخ القيم المضمّنة في كود اللوحة إلى محرر المتصفح فقط. لا يُحفظ ولا يُنشر ولا يُرسل إلى أي جهاز حتى تضغط «حفظ المسودة» ثم «نشر إصدار».
+        «استيراد كتالوج Android» ينسخ العناصر الافتراضية التي يزرعها التطبيق (المحافظ، قوالب التحويل الواردة، الرسائل الصادرة) **بنفس معرّفاتها** إلى محرر المتصفح فقط — فيطابق النشرُ العنصرَ نفسه بدل إنشاء نسخة مكررة. لا يُحفظ ولا يُنشر ولا يُرسل إلى أي جهاز حتى تضغط «حفظ المسودة» ثم «نشر إصدار»، ولا يُعرض «مطبق على الجهاز» إلا بعد ACK موثوق.
       </p>
     </Card>
   );

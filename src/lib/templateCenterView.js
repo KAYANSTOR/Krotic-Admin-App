@@ -189,14 +189,18 @@ export function validateOutboundTemplate({ key, body, catalog } = {}) {
   const errors = [];
   if (!body || !body.trim()) errors.push('empty_body');
   const known = new Set(catalog?.outboundVariables || []);
+  const aliases = catalog?.outboundVariableAliases || {};
+  // نفس منطق الخادم: يُطابَق المتغير بأسمائه البديلة (مثل CARD_CODE → serial).
+  const canonical = (variable) => aliases[variable] ?? variable;
   const definition = (catalog?.outboundTemplates || []).find((item) => item.key === key);
   if (!definition) errors.push('unknown_key');
   const used = extractTemplateVariables(body);
+  const usedCanonical = new Set(used.map(canonical));
   for (const variable of used) {
-    if (known.size > 0 && !known.has(variable)) errors.push(`unknown_variable:${variable}`);
+    if (known.size > 0 && !known.has(canonical(variable))) errors.push(`unknown_variable:${variable}`);
   }
   for (const required of definition?.required || []) {
-    if (!used.includes(required)) errors.push(`required_variable_missing:${required}`);
+    if (!usedCanonical.has(canonical(required))) errors.push(`required_variable_missing:${required}`);
   }
   return { ok: errors.length === 0, errors, usedVariables: used, required: definition?.required || [] };
 }

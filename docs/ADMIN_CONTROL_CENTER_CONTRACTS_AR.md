@@ -84,6 +84,42 @@
 `Unknown` حتى يُنفَّذ الإرسال في مستودع Android — وهو ممنوع في هذه المهمة. هذا
 العمل يُجهّز المستقبل ويُوثّق العقد وينتظر قرار المالك بإنفاذ الإرسال في Android.
 
+## 4.1 كتالوج الزرع الافتراضي (مطابقة معرّفات Android)
+
+المرجع التنفيذي: `src/lib/androidSeedCatalog.js` (مصدر واحد)، وتُبنى منه
+`src/lib/bundledTemplatePack.js` («تحميل إلى المسودة»). مستخرج **قراءةً فقط**
+من الـseeders الرسمية في Android:
+
+| المصدر في Android | ما يقابله في اللوحة |
+|---|---|
+| `default_wallet_specs.dart` (`DefaultWalletSpecs.all`) | `ANDROID_DEFAULT_WALLETS` (ست محافظ) |
+| `default_wallet_templates_seeder.dart` (`_specs`) | `ANDROID_DEFAULT_INBOUND_TEMPLATES` |
+| `default_pos_templates_seeder.dart` (3 قوالب) | `ANDROID_DEFAULT_POS_TEMPLATE_SPECS` (مرجع؛ معرّفها يعتمد `posId`) |
+| `outbound_template_catalog.dart` + `setting.dart` | `ANDROID_DEFAULT_OUTBOUND_TEMPLATES` |
+
+قواعد ثابتة:
+- **معرّف قالب التحويل الوارد** = `tpl-default-<senderCode-lowercased-hyphenated>-<variant>`
+  وهو نفسه الذي يزرعه Android حرفيًا، فلا يُنشئ الاستيراد/النشر نسخة مكررة.
+- **مفتاح القالب الصادر** = مفتاح الإعداد في Android (`SettingKeys.*`).
+- أُضيفت إلى كتالوج الخادم خمسة مفاتيح صادر كان Android يزرعها ولا يعرفها الخادم
+  بعد: `card_delivery_{cash,credit,gift}_template`, `salafni_card_delivery_template`,
+  `deposit_no_stock_template` (`OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG`).
+- أُصلح خطأ مطابقة حقيقي في الخادم: `{phone}` في قالب **صادر** كان يُطابَق كنص حر
+  بدل الاسم البديل `customer_phone`، فكان يرفض النص الافتراضي الفعلي
+  (`pos_instant_charge_confirm_template`). الآن تُطبَّق العناصر النائبة الواردة
+  فقط إن لم تكن اسمًا بديلًا مسجّلًا.
+- أُصلح تعارض حقيقي آخر: قاعدة «تكرار المتغير» في الخادم كانت ترفض تكرار الاسم
+  نفسه (`{CURRENCY}` مرتين) الموجود في النصوص الافتراضية لـAndroid. صارت ترفض
+  **تصادم المرادفات فقط** (مثل `{code}` مع `{secret}`)، مطابقةً
+  `TemplateVariableRegistry.synonymCollisionsIn` في Android.
+
+**فجوة عقد معرّف المحفظة (موثّقة، `needs_decision`):** Android يزرع صفوف
+`wallets` بمعرّف **وقت تشغيل** (`wallet-N`/عشوائي) وليس ثابتًا؛ المفتاح الثابت
+الوحيد هو `WalletSpec.key`. اللوحة تستخدم slug آمنًا (`WALLET_ID_CONTRACT`).
+قرار مطلوب من المالك + وكيل Android: اعتماد الـslug معرّفًا ثابتًا، أو مطابقة
+الصفوف عبر `senderId`/`name`/`packageName` عند تفعيل الحمولة — وإلا فقد يُنشئ
+التفعيل محفظة مكررة عند وجود صف مزروع مسبقًا. لا يُدّعى تطابق غير مثبت.
+
 ## 5. الاستحقاق المدفوع: ثلاث طبقات منفصلة
 
 | الطبقة | المصدر | الحقول | ملاحظة |
