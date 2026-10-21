@@ -76,6 +76,7 @@ const SCHEMA_FILES = [
   'android-ack.schema.json',
   'android-application-state.schema.json',
   'feature-entitlements.schema.json',
+  'default-template-catalog.schema.json',
 ];
 
 test('every contract schema is valid JSON and carries a schemaVersion', async () => {
@@ -99,6 +100,7 @@ const FIXTURE_SCHEMA_MAP = {
   'android-ack.failed.json': 'android-ack.schema.json',
   'android-application-state.sample.json': 'android-application-state.schema.json',
   'feature-entitlements.sample.json': 'feature-entitlements.schema.json',
+  'android-default-catalog-v1.json': 'default-template-catalog.schema.json',
 };
 
 test('every synthetic fixture validates against its schema', async () => {

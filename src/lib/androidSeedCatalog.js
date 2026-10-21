@@ -1,9 +1,9 @@
 // ============================================================
 // كتالوج الزرع الافتراضي المطابق لتطبيق Android (مرجع فقط).
 // ------------------------------------------------------------
-// ⚠️ هذه قيم ابتدائية مستخرجة **قراءةً فقط** من الـseeders الرسمية في مستودع
-// `KAYANSTOR/Krotak-Pro` (الفرع plan/krotak-android-template-sync) لتكون مرجعًا
-// واحدًا للوحة الإدارة. ليست بيانات إنتاج، ولا تُكتب على أي جهاز مباشرة.
+// ⚠️ هذه القيم مطابقة لكتالوج Android الرسمي في مستودع `KAYANSTOR/Krotak-Pro`
+// (الفرع cline/aj82wjsy؛ assets/template_catalog/krotak_default_catalog_v1.json)
+// لتكون مرجعًا واحدًا للوحة الإدارة. ليست بيانات إنتاج، ولا تُكتب على أي جهاز مباشرة.
 //
 // الغرض: تضمن أن عناصر اللوحة تستخدم **نفس المعرّفات** التي يزرعها Android،
 // حتى يطابق الاستيراد/النشر العنصر نفسه بدل إنشاء نسخة مكررة.
@@ -19,9 +19,9 @@
 //   - معرّف قالب التحويل الوارد = `tpl-default-<senderCode-lowercase-hyphenated>-<variant>`
 //     وهو نفس المعرّف الذي يزرعه Android حرفيًا.
 //   - مفتاح القالب الصادر = مفتاح الإعداد (`SettingKeys.*`) نفسه.
-//   - معرّف المحفظة في اللوحة = slug آمن من `WalletSpec.key`؛ Android يزرع صفوف
-//     المحافظ بمعرّف وقت تشغيل (`wallet-N`) لا ثابت. هذه فجوة عقد موثّقة (انظر
-//     `WALLET_ID_CONTRACT` أدناه) — لا يُخترع تطابق غير مثبت.
+//   - معرّف المحفظة هو `WalletSpec.catalogId` الثابت بصيغة `wallet-default-*`.
+//     تُرسل الإدارة المعرّف نفسه الوارد في manifest، وتُرحّل نسخة Android الجديدة
+//     الصفوف المحلية القديمة عبر هوية الكتالوج دون تكرار المحفظة.
 // ============================================================
 
 /** رمز الهوية المستخرجة من نص القالب (يطابق TemplateIdentifierKind في Android). */
@@ -34,28 +34,26 @@ export const IDENTIFIER_KINDS = Object.freeze({
 });
 
 /**
- * فجوة عقد معرّف المحفظة (موثّقة صريحة، لا تُخفى):
+ * عقد معرّف المحفظة الموحد بين الإدارة وكتالوج Android الرسمي:
  *
- * - Android يزرع صفوف `wallets` بمعرّف يُولَّد وقت التشغيل (`wallet-N`/عشوائي)،
- *   وليس ثابتًا بين الأجهزة. المفتاح الثابت الوحيد هو `WalletSpec.key`.
- * - اللوحة تحتاج معرّفًا يطابق `SAFE_ID` (`^[A-Za-z0-9_-]{1,128}$`)، ومفتاح
- *   `ONE Cash` يحتوي مسافة فيفشل. لذلك نستخدم slug آمنًا مشتقًا من المفتاح.
- * - **قرار مطلوب من المالك + وكيل Android:** إما أن يتبنّى Android نفس الـslug
- *   كمعرّف محفظة ثابت، أو يُطابق الصفوف المحلية عبر `senderId`/`name`/`packageName`
- *   عند تفعيل الحمولة. حتى يُحسم ذلك، لا يمكن الجزم بأن التفعيل لن يُنشئ محفظة
- *   مكررة عند وجود صف مزروع مسبقًا.
+ * - Android catalog v1 يعرّف `wallet-default-*` كمعرّف ثابت عبر `WalletSpec.catalogId`.
+ * - تستخدم الإدارة المعرّف نفسه حرفيًا، كما تستخدمه قوالب التحويل الواردة في
+ *   `walletId`؛ لا تُنشأ IDs مستقلة بصيغة slug.
+ * - قد تحمل التثبيتات الأقدم IDs محلية مولدة. إصدار Android الذي يطبّق الكتالوج
+ *   يربطها بهوية الكتالوج المحلية، ثم يحمي تعديلات المستخدم من الاستبدال.
  */
 export const WALLET_ID_CONTRACT = Object.freeze({
-  androidStableKey: 'WalletSpec.key',
-  androidRowId: 'runtime-generated (wallet-N / random) — NOT stable',
-  adminId: 'slug(WalletSpec.key) — SAFE_ID-safe',
-  status: 'needs_decision',
-  note: 'يحتاج قرارًا: اعتماد slug المحفظة كمعرّف ثابت في Android، أو المطابقة بـsenderId/name/packageName عند التفعيل.',
+  androidStableKey: 'WalletSpec.catalogId',
+  androidRowId: 'wallet-default-* — stable catalog ID',
+  adminId: 'same WalletSpec.catalogId as the Android manifest',
+  status: 'resolved',
+  note: 'التثبيتات القديمة تُرحّل محليًا بواسطة Android catalog identity map؛ الإصدارات الجديدة تستخدم المعرّف الثابت نفسه.',
 });
 
-/** slug آمن مطابق لـSAFE_ID من مفتاح محفظة Android. */
+/** يبني معرّفًا مطابقًا لصيغة Android الرسمية: wallet-default-<key-slug>. */
 export function walletIdFromKey(key) {
-  return String(key).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
+  const slug = String(key).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `wallet-default-${slug}`;
 }
 
 /**
@@ -119,6 +117,7 @@ export const ANDROID_DEFAULT_INBOUND_TEMPLATES = Object.freeze(
     pattern: spec.pattern,
     isActive: true,
     walletId: walletIdForKey(spec.walletKey),
+    walletKey: spec.walletKey,
     posId: null,
     priority: spec.priority,
     sampleBody: spec.sampleBody,

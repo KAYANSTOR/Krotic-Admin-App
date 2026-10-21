@@ -17,20 +17,22 @@ import { getTemplateCenterCatalog, validateTemplatePayload } from '../server/_li
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-test('wallet ids are SAFE_ID-safe slugs derived from the Android stable key', () => {
+test('wallet ids use the Android stable wallet-default-* catalog identity', () => {
   for (const wallet of ANDROID_DEFAULT_WALLETS) {
     assert.equal(wallet.id, walletIdFromKey(wallet.key));
     assert.ok(SAFE_ID.test(wallet.id), `wallet id ${wallet.id} must be SAFE_ID-safe`);
+    assert.ok(wallet.id.startsWith('wallet-default-'));
   }
-  // 'ONE Cash' يحتوي مسافة فيجب أن يصبح slug صالحًا.
-  assert.equal(walletIdFromKey('ONE Cash'), 'one-cash');
+  // 'ONE Cash' يحافظ على صيغة Android الثابتة مع تطبيع المسافة إلى شرطة.
+  assert.equal(walletIdFromKey('ONE Cash'), 'wallet-default-one-cash');
 });
 
 test('wallet ids are unique and match the six approved Android wallets', () => {
   assert.equal(ANDROID_DEFAULT_WALLETS.length, 6);
   assert.equal(new Set(ANDROID_DEFAULT_WALLET_IDS).size, 6);
   assert.deepEqual([...ANDROID_DEFAULT_WALLET_IDS], [
-    'jaib', 'jawali', 'mfloos', 'floosak', 'kuraimilmb', 'one-cash',
+    'wallet-default-jaib', 'wallet-default-jawali', 'wallet-default-mfloos',
+    'wallet-default-floosak', 'wallet-default-kuraimilmb', 'wallet-default-one-cash',
   ]);
   // ترتيب وقيم Sender ID الرسمية كما يعرّفها Android.
   assert.deepEqual(ANDROID_DEFAULT_WALLETS.map((wallet) => wallet.senderId), [
@@ -38,9 +40,10 @@ test('wallet ids are unique and match the six approved Android wallets', () => {
   ]);
 });
 
-test('the wallet id contract gap is documented, not hidden', () => {
-  assert.equal(WALLET_ID_CONTRACT.status, 'needs_decision');
-  assert.match(WALLET_ID_CONTRACT.androidRowId, /NOT stable/);
+test('the wallet id contract is resolved to the Android catalog identity', () => {
+  assert.equal(WALLET_ID_CONTRACT.status, 'resolved');
+  assert.match(WALLET_ID_CONTRACT.androidRowId, /wallet-default-/);
+  assert.match(WALLET_ID_CONTRACT.adminId, /same WalletSpec\.catalogId/);
 });
 
 test('inbound template ids use the exact Android formula and stay unique', () => {

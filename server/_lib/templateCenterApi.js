@@ -19,6 +19,11 @@ import {
   validateAckInput,
   verifyAck,
 } from './templateCenterAck.js';
+import {
+  DEFAULT_CATALOG_IMPORTS,
+  importDefaultCatalog,
+  summarizeCatalogImport,
+} from './defaultCatalogImport.js';
 
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';
@@ -131,6 +136,14 @@ async function listDrafts(db) {
   return snapshot.docs
     .map((entry) => ({ id: entry.id, ...entry.data() }))
     .sort((left, right) => (right.updatedAt?.toMillis?.() ?? 0) - (left.updatedAt?.toMillis?.() ?? 0));
+}
+
+async function listCatalogImports(db) {
+  const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS)
+    .orderBy('importedAtMs', 'desc')
+    .limit(25)
+    .get();
+  return snapshot.docs.map((entry) => summarizeCatalogImport(entry.id, entry.data()));
 }
 
 async function listAcks(db, { limit = 200 } = {}) {
@@ -351,15 +364,44 @@ export function createTemplateCenterHandler(overrides = {}) {
       switch (input.action) {
         case 'catalog':
           return res.status(200).json({ success: true, catalog: getTemplateCenterCatalog() });
+        case 'import-default-catalog': {
+          const result = await importDefaultCatalog({
+            db,
+            catalogJson: input.catalogJson,
+            artifactSha256: input.artifactSha256,
+            actorUid: caller.callerUid,
+            sourceRevision: input.sourceRevision ?? null,
+          });
+          if (!result.ok) return sendError(res, result.status, result.error, result.details);
+          return res.status(result.alreadyImported ? 200 : 201).json({ success: true, ...result });
+        }
+        case 'list-default-catalog-imports':
+          return res.status(200).json({ success: true, imports: await listCatalogImports(db) });
+        case 'get-default-catalog-import': {
+          if (typeof input.importId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.importId)) {
+            return sendError(res, 400, 'catalog_import_id_invalid');
+          }
+          const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS).doc(input.importId).get();
+          if (!snapshot.exists) return sendError(res, 404, 'catalog_import_not_found');
+          const data = snapshot.data();
+          return res.status(200).json({
+            success: true,
+            catalog: data.manifest,
+            metadata: summarizeCatalogImport(snapshot.id, data),
+            draftId: data.draftId,
+            posTemplateDefinitions: data.posTemplateDefinitions || [],
+          });
+        }
         case 'list': {
-          const [drafts, releases, acks] = await Promise.all([
+          const [drafts, releases, acks, catalogImports] = await Promise.all([
             listDrafts(db),
             listReleases(db),
             listAcks(db),
+            listCatalogImports(db),
           ]);
           const pointersSnapshot = await db.collection(POINTERS).get();
           const pointers = pointersSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-          return res.status(200).json({ success: true, drafts, releases, pointers, acks });
+          return res.status(200).json({ success: true, drafts, releases, pointers, acks, catalogImports });
         }
         case 'list-networks': {
           const snapshot = await db.collection('networks').limit(500).get();

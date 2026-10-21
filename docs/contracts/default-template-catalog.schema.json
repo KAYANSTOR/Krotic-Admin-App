@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/default-template-catalog.schema.json",
+  "title": "Krotak Pro default seed catalog",
+  "description": "كتالوج العناصر الافتراضية التي يزرعها تطبيق Android. لا يحتوي بيانات مستخدم ولا رسائل حقيقية ولا معاملات.",
+  "type": "object",
+  "required": [
+    "catalogId",
+    "catalogVersion",
+    "schemaVersion",
+    "source",
+    "scope",
+    "wallets",
+    "transferTemplates",
+    "outboundTemplates",
+    "posTemplateDefinitions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "catalogId": { "const": "krotak-default-seed-catalog" },
+    "catalogVersion": { "type": "string" },
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "source": { "type": "string" },
+    "scope": { "const": "seeded-defaults-only" },
+    "wallets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "nameEn",
+          "status",
+          "sourceMode",
+          "managedBy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^wallet-default-[a-z0-9-]+$" },
+          "key": { "type": "string" },
+          "name": { "type": "string" },
+          "nameEn": { "type": "string" },
+          "status": { "enum": ["active", "suspended", "archived"] },
+          "sourceMode": { "enum": ["sms", "notification"] },
+          "senderId": { "type": ["string", "null"] },
+          "packageName": { "type": ["string", "null"] },
+          "managedBy": { "enum": ["seed", "admin"] }
+        }
+      }
+    },
+    "transferTemplates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "walletId",
+          "walletKey",
+          "name",
+          "pattern",
+          "priority",
+          "isActive",
+          "senderCode",
+          "identifierKind",
+          "requireReference",
+          "managedBy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^tpl-default-[a-z0-9-]+$" },
+          "walletId": {
+            "type": "string",
+            "pattern": "^wallet-default-[a-z0-9-]+$"
+          },
+          "walletKey": { "type": "string" },
+          "name": { "type": "string" },
+          "pattern": { "type": "string" },
+          "priority": { "type": "integer" },
+          "isActive": { "type": "boolean" },
+          "sampleBody": { "type": ["string", "null"] },
+          "senderCode": { "type": ["string", "null"] },
+          "identifierKind": { "type": "string" },
+          "requireReference": { "type": "boolean" },
+          "managedBy": { "enum": ["seed", "admin"] }
+        }
+      }
+    },
+    "outboundTemplates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "title",
+          "category",
+          "scope",
+          "body",
+          "variables",
+          "requiredVariables",
+          "isActive",
+          "managedBy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "category": { "type": "string" },
+          "scope": { "type": "string" },
+          "body": { "type": "string" },
+          "variables": { "type": "array", "items": { "type": "string" } },
+          "requiredVariables": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "isActive": { "type": "boolean" },
+          "managedBy": { "enum": ["seed", "admin"] }
+        }
+      }
+    },
+    "posTemplateDefinitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "variant",
+          "scope",
+          "idPattern",
+          "name",
+          "pattern",
+          "priority",
+          "identifierKind",
+          "requireReference",
+          "managedBy"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^pos-default-[a-z0-9-]+$" },
+          "variant": { "type": "string" },
+          "scope": { "const": "per_pos" },
+          "idPattern": { "type": "string" },
+          "name": { "type": "string" },
+          "pattern": { "type": "string" },
+          "priority": { "type": "integer" },
+          "sampleBody": { "type": ["string", "null"] },
+          "identifierKind": { "type": "string" },
+          "senderNameLabel": { "type": ["string", "null"] },
+          "noteLabel": { "type": ["string", "null"] },
+          "requireReference": { "type": "boolean" },
+          "managedBy": { "enum": ["seed", "admin"] }
+        }
+      }
+    }
+  }
+}

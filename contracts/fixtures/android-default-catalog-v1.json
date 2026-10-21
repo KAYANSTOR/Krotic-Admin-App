@@ -1,0 +1,898 @@
+{
+  "catalogId": "krotak-default-seed-catalog",
+  "catalogVersion": "1.0.0",
+  "schemaVersion": 1,
+  "source": "Krotak-Pro official seeders",
+  "scope": "seeded-defaults-only",
+  "wallets": [
+    {
+      "id": "wallet-default-jaib",
+      "key": "Jaib",
+      "name": "جيب",
+      "nameEn": "Jaib",
+      "status": "active",
+      "sourceMode": "notification",
+      "senderId": "Jaib",
+      "packageName": "com.ahd.jaib",
+      "managedBy": "seed"
+    },
+    {
+      "id": "wallet-default-jawali",
+      "key": "Jawali",
+      "name": "جوالي",
+      "nameEn": "Jawali",
+      "status": "active",
+      "sourceMode": "sms",
+      "senderId": "Jawali",
+      "packageName": "com.wecash.jawali",
+      "managedBy": "seed"
+    },
+    {
+      "id": "wallet-default-mfloos",
+      "key": "MFloos",
+      "name": "أم فلوس",
+      "nameEn": "MFloos",
+      "status": "active",
+      "sourceMode": "sms",
+      "senderId": "MFloos",
+      "packageName": null,
+      "managedBy": "seed"
+    },
+    {
+      "id": "wallet-default-floosak",
+      "key": "Floosak",
+      "name": "فلوسك",
+      "nameEn": "Floosak",
+      "status": "active",
+      "sourceMode": "sms",
+      "senderId": "Floosak",
+      "packageName": "co.ysys.floosak",
+      "managedBy": "seed"
+    },
+    {
+      "id": "wallet-default-kuraimilmb",
+      "key": "KuraimiLMB",
+      "name": "الكريمي",
+      "nameEn": "KuraimiLMB",
+      "status": "active",
+      "sourceMode": "sms",
+      "senderId": "KuraimiLMB",
+      "packageName": null,
+      "managedBy": "seed"
+    },
+    {
+      "id": "wallet-default-one-cash",
+      "key": "ONE Cash",
+      "name": "ون كاش",
+      "nameEn": "ONE Cash",
+      "status": "active",
+      "sourceMode": "sms",
+      "senderId": "ONE Cash",
+      "packageName": "com.one.onecustomer",
+      "managedBy": "seed"
+    }
+  ],
+  "transferTemplates": [
+    {
+      "id": "tpl-default-jaib-ar-shared",
+      "walletId": "wallet-default-jaib",
+      "walletKey": "Jaib",
+      "name": "جيب — تحويل مشترك",
+      "pattern": "اضيف {amount} ر.ي تحويل مشترك رص:{ref} ر.ي من {account} {phone}",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "اضيف 500ر.ي تحويل مشترك رص:515920ر.ي من علي القواتي 715813555",
+      "senderCode": "Jaib",
+      "identifierKind": "phone",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-jaib-ar-phone-only",
+      "walletId": "wallet-default-jaib",
+      "walletKey": "Jaib",
+      "name": "جيب — تحويل (رقم بديل)",
+      "pattern": "اضيف {amount} ر.ي تحويل مشترك رص:{ref} ر.ي من {phone}",
+      "priority": 20,
+      "isActive": true,
+      "sampleBody": "اضيف 500ر.ي تحويل مشترك رص:255265ر.ي من 8483883",
+      "senderCode": "Jaib",
+      "identifierKind": "alternativeNumber",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-jaib-ar-blocked",
+      "walletId": "wallet-default-jaib",
+      "walletKey": "Jaib",
+      "name": "جيب — إشعار محجوب",
+      "pattern": "اضيف {amount} ر.ي تحويل مشترك رص:{ref} ر.ي من {account}-{phone}",
+      "priority": 30,
+      "isActive": true,
+      "sampleBody": "اضيف 300ر.ي تحويل مشترك رص:4650ر.ي من د**** ح****** ح** م******-6557728",
+      "senderCode": "Jaib",
+      "identifierKind": "phone",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-jawali-ar-received",
+      "walletId": "wallet-default-jawali",
+      "walletKey": "Jawali",
+      "name": "جوالي — استلمت مبلغ",
+      "pattern": "استلمت مبلغ {amount} YER من {phone} رصيدك هو {ref}",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "استلمت مبلغ 200 YER من 733332303 رصيدك هو 245",
+      "senderCode": "Jawali",
+      "identifierKind": "phone",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-mfloos-ar-deposit",
+      "walletId": "wallet-default-mfloos",
+      "walletKey": "MFloos",
+      "name": "أم فلوس — إيداع",
+      "pattern": "تم إيداع مبلغ {amount} YER من: {account} المرجع: {ref}",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "تم إيداع مبلغ 300.00 YER من: منيره جبر المرجع:939493993",
+      "senderCode": "MFloos",
+      "identifierKind": "account",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-floosak-ar-hawala",
+      "walletId": "wallet-default-floosak",
+      "walletKey": "Floosak",
+      "name": "فلوسك — استلمت حوالة",
+      "pattern": "استلمت حوالة من {account} بمبلغ {amount} ر.ي رصيدك {ref} ر.ي",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "استلمت حوالة من بسام الشيباني بمبلغ 250.00 ر.ي رصيدك 250.00 ر.ي",
+      "senderCode": "Floosak",
+      "identifierKind": "account",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-floosak-ar-shared",
+      "walletId": "wallet-default-floosak",
+      "walletKey": "Floosak",
+      "name": "فلوسك — تحويل مشترك",
+      "pattern": "اضيف {amount} ر.ي تحويل مشترك رص:{ref} ر.ي من {account}-{phone}",
+      "priority": 20,
+      "isActive": true,
+      "sampleBody": "اضيف 2000 ر.ي تحويل مشترك رص:2000 ر.ي من عميل-770000001",
+      "senderCode": "Floosak",
+      "identifierKind": "phone",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-floosak-sms-generic",
+      "walletId": "wallet-default-floosak",
+      "walletKey": "Floosak",
+      "name": "فلوسك — تحويل عام",
+      "pattern": "تم استلام {amount} من {phone}",
+      "priority": 30,
+      "isActive": true,
+      "sampleBody": "تم استلام 2000 من 770000001",
+      "senderCode": "Floosak",
+      "identifierKind": "phone",
+      "requireReference": false,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-kuraimilmb-ar-deposit",
+      "walletId": "wallet-default-kuraimilmb",
+      "walletKey": "KuraimiLMB",
+      "name": "الكريمي — إيداع لحسابك",
+      "pattern": "أودع/ {account} لحسابك مبلغ {amount} رصيدك {ref} YER",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "أودع/احمد جابر حسن المنتصر لحسابك مبلغ 600 رصيدك 10030 YER",
+      "senderCode": "KuraimiLMB",
+      "identifierKind": "account",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-one-cash-ar-received",
+      "walletId": "wallet-default-one-cash",
+      "walletKey": "ONE Cash",
+      "name": "ون كاش — استلمت",
+      "pattern": "استلمت {amount}\nمن {account}\nرصيدك{ref} ر.ي",
+      "priority": 10,
+      "isActive": true,
+      "sampleBody": "استلمت 500.00\nمن عبدالله عادل عب\nرصيدك500.00 ر.ي",
+      "senderCode": "ONE Cash",
+      "identifierKind": "account",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-one-cash-ar-shared",
+      "walletId": "wallet-default-one-cash",
+      "walletKey": "ONE Cash",
+      "name": "ون كاش — تحويل مشترك",
+      "pattern": "اضيف {amount} ر.ي تحويل مشترك رص:{ref} ر.ي من {account}-{phone}",
+      "priority": 20,
+      "isActive": true,
+      "sampleBody": "اضيف 1000 ر.ي تحويل مشترك رص:1000 ر.ي من عميل-771234567",
+      "senderCode": "ONE Cash",
+      "identifierKind": "phone",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-one-cash-ar-hawala",
+      "walletId": "wallet-default-one-cash",
+      "walletKey": "ONE Cash",
+      "name": "ون كاش — استلمت حوالة",
+      "pattern": "استلمت حوالة من {account} بمبلغ {amount} ر.ي رصيدك {ref} ر.ي",
+      "priority": 30,
+      "isActive": true,
+      "sampleBody": "استلمت حوالة من عميل بمبلغ 500.00 ر.ي رصيدك 1500.00 ر.ي",
+      "senderCode": "ONE Cash",
+      "identifierKind": "account",
+      "requireReference": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "tpl-default-one-cash-sms-generic",
+      "walletId": "wallet-default-one-cash",
+      "walletKey": "ONE Cash",
+      "name": "ون كاش — تحويل عام",
+      "pattern": "تم استلام {amount} من {phone}",
+      "priority": 40,
+      "isActive": true,
+      "sampleBody": "تم استلام 1000 من 771234567",
+      "senderCode": "ONE Cash",
+      "identifierKind": "phone",
+      "requireReference": false,
+      "managedBy": "seed"
+    }
+  ],
+  "outboundTemplates": [
+    {
+      "id": "voucher_delivery_sms_template",
+      "key": "voucher_delivery_sms_template",
+      "title": "تسليم كرت للعميل",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "نشكرك على استخدامك شبكة {NETWORK_NAME}.\nكود الكرت: {CARD_CODE}\nفئة: {CARD_VALUE} ر.ي\nالرمز: {code}",
+      "variables": [
+        "CARD_CODE",
+        "CARD_SERIAL",
+        "CARD_VALUE",
+        "CURRENCY",
+        "NETWORK_NAME",
+        "code",
+        "network",
+        "network_name",
+        "secret",
+        "serial",
+        "serial_number",
+        "user",
+        "اسم_المحفظة",
+        "الرقم",
+        "الرمز",
+        "الفئة",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "code"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_customer_card_delivery_template",
+      "key": "pos_customer_card_delivery_template",
+      "title": "تسليم كروت طلب نقطة البيع (للعميل)",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "شبكة {NETWORK_NAME}\nالفئة: {category}\n{cards}",
+      "variables": [
+        "CARDS",
+        "CARD_CODE",
+        "CARD_VALUE",
+        "CODE",
+        "CURRENCY",
+        "CUSTOMER_PHONE",
+        "NETWORK_NAME",
+        "QUANTITY",
+        "QUANTITY_TEXT",
+        "SECRET",
+        "cards",
+        "category",
+        "category_name",
+        "code",
+        "customer_phone",
+        "network",
+        "network_name",
+        "phone",
+        "quantity",
+        "quantity_text",
+        "secret",
+        "serial"
+      ],
+      "requiredVariables": [
+        "cards"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "customer_debt_payment_template",
+      "key": "customer_debt_payment_template",
+      "title": "تأكيد سداد دين العميل",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "تم استلام إيداع بمبلغ {amount} {CURRENCY}\nتم خصم {paid} {CURRENCY} لسداد الدين\nتم إضافة {surplus} {CURRENCY} إلى رصيد حسابك\nرصيدك الحالي: {balance} {CURRENCY}",
+      "variables": [
+        "CURRENCY",
+        "amount",
+        "balance",
+        "customer_name",
+        "paid",
+        "surplus"
+      ],
+      "requiredVariables": [
+        "amount",
+        "balance",
+        "paid",
+        "surplus"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_order_success_template",
+      "key": "pos_order_success_template",
+      "title": "نجاح طلب نقطة البيع (للنقطة)",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تم إرسال {QUANTITY_TEXT} بنجاح إلى {CUSTOMER_PHONE}\nالفئة: {CARD_VALUE} {CURRENCY}\nنقطة البيع: {POS_NAME}\nإجمالي الخصم من الحساب: {TOTAL} {CURRENCY}",
+      "variables": [
+        "AMOUNT",
+        "CARD_VALUE",
+        "CURRENCY",
+        "CUSTOMER_PHONE",
+        "NETWORK_NAME",
+        "NOTIFY_PHONE",
+        "POS_NAME",
+        "QUANTITY",
+        "QUANTITY_TEXT",
+        "TOTAL",
+        "amount",
+        "category",
+        "category_name",
+        "customer_phone",
+        "destination",
+        "network",
+        "network_name",
+        "notify_phone",
+        "phone",
+        "pos",
+        "pos_id",
+        "pos_name",
+        "quantity",
+        "quantity_text",
+        "total"
+      ],
+      "requiredVariables": [
+        "QUANTITY_TEXT"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_customer_sms_tail_template",
+      "key": "pos_customer_sms_tail_template",
+      "title": "إضافة اسم نقطة البيع في رسائل العميل",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "\n— {pos}",
+      "variables": [
+        "CURRENCY",
+        "POS_NAME",
+        "pos",
+        "pos_name"
+      ],
+      "requiredVariables": [],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_balance_response_template",
+      "key": "pos_balance_response_template",
+      "title": "رد رصيد نقطة البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "رصيد نقطة البيع {pos}: {balance} ر.ي\nالدين: {debt} ر.ي",
+      "variables": [
+        "CURRENCY",
+        "POS_NAME",
+        "balance",
+        "debt",
+        "pos",
+        "pos_name"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_credit_limit_exceeded_template",
+      "key": "pos_credit_limit_exceeded_template",
+      "title": "تجاوز سقف دين نقطة البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تعذر تنفيذ الطلب: تجاوزت نقطة البيع {pos} سقف الدين المسموح ({limit} ر.ي)",
+      "variables": [
+        "CURRENCY",
+        "POS_NAME",
+        "limit",
+        "pos",
+        "pos_name"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_request_rejected_template",
+      "key": "pos_request_rejected_template",
+      "title": "إشعار رفض طلب نقطة البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تم رفض طلب نقطة البيع {pos}: {reason}",
+      "variables": [
+        "POS_NAME",
+        "pos",
+        "pos_name",
+        "reason"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_instant_charge_confirm_template",
+      "key": "pos_instant_charge_confirm_template",
+      "title": "تأكيد إرسال شحن فوري",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تم إرسال كرت {amount} ر.ي إلى {phone}",
+      "variables": [
+        "AMOUNT",
+        "CARD_VALUE",
+        "CURRENCY",
+        "CUSTOMER_PHONE",
+        "POS_NAME",
+        "amount",
+        "customer_phone",
+        "phone",
+        "pos"
+      ],
+      "requiredVariables": [
+        "amount",
+        "phone"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "daily_pos_summary_template",
+      "key": "daily_pos_summary_template",
+      "title": "ملخص العمليات اليومي لنقاط البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "ملخص يومي لنقطة البيع {pos}\nالمبيعات: {sales}\nالتحويلات: {transfers}\nالرصيد: {balance} ر.ي",
+      "variables": [
+        "CURRENCY",
+        "POS_NAME",
+        "balance",
+        "pos",
+        "pos_name",
+        "sales",
+        "transfers"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_settlement_template_success",
+      "key": "pos_settlement_template_success",
+      "title": "تأكيد تسوية نقطة البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تم تأكيد تسوية نقطة البيع {pos} بمبلغ {amount} ر.ي",
+      "variables": [
+        "CURRENCY",
+        "POS_NAME",
+        "REMAINING_BALANCE",
+        "SETTLEMENT_AMOUNT",
+        "amount",
+        "identifier",
+        "pos",
+        "pos_name",
+        "remaining"
+      ],
+      "requiredVariables": [
+        "amount",
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_settlement_template_failed",
+      "key": "pos_settlement_template_failed",
+      "title": "فشل تسوية نقطة البيع",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "فشلت تسوية نقطة البيع {pos}: {reason}",
+      "variables": [
+        "POS_NAME",
+        "pos",
+        "pos_name",
+        "reason"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos_settlement_template_unknown",
+      "key": "pos_settlement_template_unknown",
+      "title": "تسوية غير مؤكدة",
+      "category": "pos",
+      "scope": "outboundPos",
+      "body": "تعذر التحقق من تسوية نقطة البيع {pos}. راجع السجل يدوياً",
+      "variables": [
+        "POS_NAME",
+        "pos",
+        "pos_name"
+      ],
+      "requiredVariables": [
+        "pos"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "promotion_reward_sms_template",
+      "key": "promotion_reward_sms_template",
+      "title": "مكافأة العرض",
+      "category": "offers",
+      "scope": "outboundCustomer",
+      "body": "مكافأة عرض {title}\nالرقم: {serial}\nالرمز: {secret}",
+      "variables": [
+        "amount",
+        "code",
+        "customer_name",
+        "promotion_name",
+        "reward_value",
+        "secret",
+        "serial",
+        "title"
+      ],
+      "requiredVariables": [
+        "serial"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "salafni_template_accepted",
+      "key": "salafni_template_accepted",
+      "title": "قبول سلفني",
+      "category": "salafni",
+      "scope": "outboundCustomer",
+      "body": "تم تفعيل سلفني بقيمة {amount} ريال. الكرت: {serial} | الرمز: {code}",
+      "variables": [
+        "amount",
+        "code",
+        "secret",
+        "serial"
+      ],
+      "requiredVariables": [
+        "amount"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "salafni_template_rejected",
+      "key": "salafni_template_rejected",
+      "title": "رفض سلفني",
+      "category": "salafni",
+      "scope": "outboundCustomer",
+      "body": "تعذر تنفيذ سلفني: {reason}",
+      "variables": [
+        "reason"
+      ],
+      "requiredVariables": [
+        "reason"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "salafni_template_settled",
+      "key": "salafni_template_settled",
+      "title": "سداد سلفني",
+      "category": "salafni",
+      "scope": "outboundCustomer",
+      "body": "تم استلام إيداع بمبلغ {amount} {CURRENCY}\nتم خصم {paid} {CURRENCY} لسداد السلفة\nتم إضافة {surplus} {CURRENCY} إلى رصيد حسابك\nرصيدك الحالي: {balance} {CURRENCY}",
+      "variables": [
+        "CURRENCY",
+        "amount",
+        "balance",
+        "paid",
+        "surplus"
+      ],
+      "requiredVariables": [
+        "amount",
+        "balance",
+        "paid",
+        "surplus"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "low_stock_alert_template",
+      "key": "low_stock_alert_template",
+      "title": "تنبيه داخلي للمشغّل — انخفاض مخزون الكروت",
+      "category": "system",
+      "scope": "outboundSystem",
+      "body": "فئات كروت أوشكت على النفاد\nالفئة {category} — المتبقي: {count}",
+      "variables": [
+        "CARD_VALUE",
+        "category",
+        "category_name",
+        "count"
+      ],
+      "requiredVariables": [
+        "category"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "card_delivery_cash_template",
+      "key": "card_delivery_cash_template",
+      "title": "كرت نقدي",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "كرتك من شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}",
+      "variables": [
+        "CARD_CODE",
+        "CARD_SERIAL",
+        "CARD_VALUE",
+        "CURRENCY",
+        "NETWORK_NAME",
+        "category",
+        "category_name",
+        "code",
+        "network",
+        "network_name",
+        "secret",
+        "serial",
+        "serial_number",
+        "user",
+        "اسم_المحفظة",
+        "الرقم",
+        "الرمز",
+        "الفئة",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "network_name",
+        "الرقم",
+        "الرمز",
+        "الفئة"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "card_delivery_credit_template",
+      "key": "card_delivery_credit_template",
+      "title": "كرت آجل",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "كرت آجل عليكم في حسابكم\nمن شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}",
+      "variables": [
+        "CARD_CODE",
+        "CARD_SERIAL",
+        "CARD_VALUE",
+        "CURRENCY",
+        "NETWORK_NAME",
+        "category",
+        "category_name",
+        "code",
+        "network",
+        "network_name",
+        "secret",
+        "serial",
+        "serial_number",
+        "user",
+        "اسم_المحفظة",
+        "الرقم",
+        "الرمز",
+        "الفئة",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "network_name",
+        "الرقم",
+        "الرمز",
+        "الفئة"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "card_delivery_gift_template",
+      "key": "card_delivery_gift_template",
+      "title": "كرت هدية",
+      "category": "customers",
+      "scope": "outboundCustomer",
+      "body": "كرتك الهدية\nمن شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}",
+      "variables": [
+        "CARD_CODE",
+        "CARD_SERIAL",
+        "CARD_VALUE",
+        "CURRENCY",
+        "NETWORK_NAME",
+        "category",
+        "category_name",
+        "code",
+        "network",
+        "network_name",
+        "secret",
+        "serial",
+        "serial_number",
+        "user",
+        "اسم_المحفظة",
+        "الرقم",
+        "الرمز",
+        "الفئة",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "network_name",
+        "الرقم",
+        "الرمز",
+        "الفئة"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "salafni_card_delivery_template",
+      "key": "salafni_card_delivery_template",
+      "title": "كرت سلفني",
+      "category": "salafni",
+      "scope": "outboundCustomer",
+      "body": "كرتك من خدمة سلفني\nشبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}",
+      "variables": [
+        "CARD_CODE",
+        "CARD_SERIAL",
+        "CARD_VALUE",
+        "CURRENCY",
+        "NETWORK_NAME",
+        "category",
+        "category_name",
+        "code",
+        "network",
+        "network_name",
+        "secret",
+        "serial",
+        "serial_number",
+        "user",
+        "اسم_المحفظة",
+        "الرقم",
+        "الرمز",
+        "الفئة",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "network_name",
+        "الرقم",
+        "الرمز",
+        "الفئة"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    },
+    {
+      "id": "deposit_no_stock_template",
+      "key": "deposit_no_stock_template",
+      "title": "استلام إيداع بلا كرت متوفر",
+      "category": "system",
+      "scope": "outboundSystem",
+      "body": "عزيزي {اسم_الزبون_الاول}\nتم استلام {المبلغ}﷼\nسوف يتم مشاركة الكرت آلياً فور توفره",
+      "variables": [
+        "AMOUNT",
+        "amount",
+        "customer_name",
+        "user",
+        "اسم_الزبون_الاول",
+        "المبلغ",
+        "المستخدم"
+      ],
+      "requiredVariables": [
+        "اسم_الزبون_الاول",
+        "المبلغ"
+      ],
+      "isActive": true,
+      "managedBy": "seed"
+    }
+  ],
+  "posTemplateDefinitions": [
+    {
+      "id": "pos-default-cards-to-pos",
+      "variant": "cards-to-pos",
+      "scope": "per_pos",
+      "idPattern": "tpl-pos-{posId}-{variant}",
+      "name": "إرسال كروت إلى نقطة البيع",
+      "pattern": "{qty} كرت {amount}",
+      "priority": 1,
+      "sampleBody": "10 كرت 100",
+      "identifierKind": "senderNameOnly",
+      "senderNameLabel": "نقطة البيع",
+      "noteLabel": "كروت لنقطة البيع",
+      "requireReference": false,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos-default-cards-to-pos-customer",
+      "variant": "cards-to-pos-customer",
+      "scope": "per_pos",
+      "idPattern": "tpl-pos-{posId}-{variant}",
+      "name": "إرسال كروت إلى عميل نقطة البيع",
+      "pattern": "{qty} كرت {amount} {phone}",
+      "priority": 2,
+      "sampleBody": "1 كرت 100 779776919",
+      "identifierKind": "phone",
+      "senderNameLabel": "نقطة البيع",
+      "noteLabel": "كروت لعميل نقطة البيع",
+      "requireReference": false,
+      "managedBy": "seed"
+    },
+    {
+      "id": "pos-default-balance-request",
+      "variant": "balance-request",
+      "scope": "per_pos",
+      "idPattern": "tpl-pos-{posId}-{variant}",
+      "name": "استعلام رصيد نقطة البيع",
+      "pattern": "111",
+      "priority": 20,
+      "sampleBody": "111",
+      "identifierKind": "balanceRequestCode",
+      "senderNameLabel": "نقطة البيع",
+      "noteLabel": "طلب رصيد",
+      "requireReference": false,
+      "managedBy": "seed"
+    }
+  ]
+}
