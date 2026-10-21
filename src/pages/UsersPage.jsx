@@ -1,7 +1,7 @@
 // src/pages/UsersPage.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, doc, onSnapshot, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   fetchAllUsers,
@@ -163,36 +163,6 @@ export default function UsersPage() {
   useEffect(() => {
     fetchData();
     return () => { latestRequestId.current += 1; };
-  }, [fetchData]);
-
-  // Keep the user list in sync with registrations while the page is open.
-  // The first snapshot is the existing dataset, not a batch of new registrations.
-  useEffect(() => {
-    let initialSnapshot = true;
-    let debounceTimer = null;
-    const unsubscribe = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        if (initialSnapshot) {
-          initialSnapshot = false;
-          return;
-        }
-        const hasNewUser = snapshot.docChanges().some((change) => change.type === 'added');
-        if (!hasNewUser) return;
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          invalidateAdminUserData();
-          fetchData({ force: true });
-        }, 2000);
-      },
-      (listenerError) => {
-        console.warn('Realtime user-list subscription failed:', listenerError);
-      },
-    );
-    return () => {
-      clearTimeout(debounceTimer);
-      unsubscribe();
-    };
   }, [fetchData]);
 
   useAppRefresh(() => fetchData({ force: true }));

@@ -188,7 +188,7 @@ export default function SalesPage() {
 
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
-      if (statusFilter !== 'all' && sale.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && !(statusFilter === 'COMPLETED' ? isCompletedSale(sale) : sale.status === statusFilter)) return false;
       if (verificationFilter === 'verified' && !isServerVerifiedSale(sale)) return false;
       if (verificationFilter === 'legacy' && isServerVerifiedSale(sale)) return false;
       if (dateFrom || dateTo) {
