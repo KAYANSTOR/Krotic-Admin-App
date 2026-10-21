@@ -62,7 +62,9 @@ export default function Sidebar({ isOpen, onClose }) {
               <p className="sidebar__group-label">{group.label}</p>
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = item.path === '/'
+                  ? location.pathname === '/'
+                  : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
                 return (
                   <NavLink
                     key={item.path}

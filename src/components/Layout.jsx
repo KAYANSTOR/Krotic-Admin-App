@@ -34,6 +34,11 @@ const PAGE_TITLES = {
   '/admins': 'إدارة المدراء',
   '/audit': 'سجل العمليات',
   '/template-center': 'المحافظ والقوالب',
+  '/template-center/wallets': 'المحافظ ومصادر الرسائل',
+  '/template-center/inbound': 'قوالب التحويل الواردة',
+  '/template-center/outbound': 'الرسائل الصادرة',
+  '/template-center/releases': 'الإصدارات والمؤشرات',
+  '/template-center/reconciliation': 'التسوية والعناصر القديمة',
 };
 
 export default function Layout({ children }) {
