@@ -12,3 +12,4 @@ service-account*.json
 
 # Generated cache
 scripts/app_icon_cache.png
+.openhands/

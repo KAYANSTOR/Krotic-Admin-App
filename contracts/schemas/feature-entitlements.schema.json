@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "krotak://contracts/feature-entitlements.schema.json",
+  "title": "Paid feature entitlements map (users/{uid}.feature_entitlements)",
+  "description": "خريطة تفعيل الميزات المدفوعة على وثيقة الحساب. منفصلة تمامًا عن عقد lease الموقّع وعن سجل الأجهزة. المرجع في Android: lib/domain/entities/paid_feature.dart (PaidFeature/PaidFeatureEntitlements). لا تمنح lease ميزة لا يمنحها هذا الحقل.",
+  "schemaVersion": 1,
+  "type": "object",
+  "additionalProperties": {
+    "type": "boolean",
+    "description": "القيمة الوحيدة التي تفتح ميزة هي true منطقية؛ الغياب أو أي قيمة أخرى = مقفلة."
+  },
+  "properties": {
+    "hotspot_template_editor": {
+      "type": "boolean",
+      "description": "مفتاح ثابت (PaidFeature.hotspotTemplateEditor)."
+    },
+    "mikrotik_card_generator": {
+      "type": "boolean",
+      "description": "مفتاح ثابت (PaidFeature.mikrotikCardGenerator)."
+    }
+  },
+  "$comment": "المفاتيح الحالية محدودة بالمعرّفَين أعلاه في إصدار Android الحالي. أي مفتاح إضافي يحتاج قرارًا وتحديثًا متزامنًا في الطرفين (Unknown / يحتاج قرارًا). لا تُكتب هذه الخريطة من العميل؛ تكتبها الإدارة/الخادم فقط. هذه المهمة لا تنفّذ شاشة استحقاقات ولا تكتب الحقل — العقد فقط."
+}

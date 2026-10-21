@@ -8,6 +8,11 @@
     { "path": "/notifications", "title": "الإشعارات" },
     { "path": "/admins", "title": "إدارة المدراء" },
     { "path": "/template-center", "title": "المحافظ والقوالب" },
+    { "path": "/template-center/wallets", "title": "المحافظ ومصادر الرسائل" },
+    { "path": "/template-center/inbound", "title": "قوالب التحويل الواردة" },
+    { "path": "/template-center/outbound", "title": "الرسائل الصادرة" },
+    { "path": "/template-center/releases", "title": "الإصدارات والمؤشرات" },
+    { "path": "/template-center/reconciliation", "title": "التسوية والعناصر القديمة" },
     { "path": "/audit", "title": "سجل التدقيق" }
   ]
 }

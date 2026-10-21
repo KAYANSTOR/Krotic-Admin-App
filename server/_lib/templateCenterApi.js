@@ -13,6 +13,17 @@ import {
   simulateInboundTemplates,
   validateTemplatePayload,
 } from './templateCenter.js';
+import {
+  ACK_COLLECTION,
+  ackIdempotencyKey,
+  validateAckInput,
+  verifyAck,
+} from './templateCenterAck.js';
+import {
+  DEFAULT_CATALOG_IMPORTS,
+  importDefaultCatalog,
+  summarizeCatalogImport,
+} from './defaultCatalogImport.js';
 
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';
@@ -57,6 +68,57 @@ async function authenticateUser(req) {
   }
 }
 
+/** يقرأ installation المرتبط بالحساب إن وُجد (users/{uid}.entitlementInstallationId). */
+async function readBoundInstallation(db, uid) {
+  try {
+    const snapshot = await db.collection('users').doc(uid).get();
+    const value = snapshot.exists ? snapshot.data()?.entitlementInstallationId : null;
+    return typeof value === 'string' && value ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * يستقبل ACK من Android: مصادقة مستخدم، مطابقة الإصدار/البصمة/النطاق/الجهاز،
+ * وكتابة idempotent. لا يُعتبر ACK دليلًا إلا بعد نجاح التحقق.
+ */
+async function handleAck(req, res, input, deps) {
+  const db = deps.getDb();
+  const caller = await deps.authenticateUser(req);
+  if (!caller.ok) return sendError(res, caller.status, caller.error);
+
+  const parsed = validateAckInput(input);
+  if (!parsed.ok) return sendError(res, 400, parsed.error);
+
+  // لا يُوثق بـ uid القادم من العميل؛ إن أُرسل ولم يطابق الرمز يُرفض.
+  if (input.uid !== undefined && input.uid !== caller.uid) {
+    return sendError(res, 403, 'uid_mismatch');
+  }
+
+  const releaseSnapshot = await db.collection(RELEASES).doc(parsed.value.releaseId).get();
+  const release = releaseSnapshot.exists ? { id: releaseSnapshot.id, ...releaseSnapshot.data() } : null;
+  const boundInstallationId = await readBoundInstallation(db, caller.uid);
+
+  const verified = verifyAck({ ack: parsed.value, uid: caller.uid, release, boundInstallationId });
+  if (!verified.ok) return sendError(res, verified.status, verified.error);
+
+  const ackId = ackIdempotencyKey({ uid: caller.uid, ...parsed.value });
+  const ackRef = db.collection(ACK_COLLECTION).doc(ackId);
+  const existing = await ackRef.get();
+  if (existing.exists) {
+    // إعادة إرسال نفس المفتاح: لا سجل ثانٍ ولا تغيير.
+    return res.status(200).json({ success: true, duplicate: true, ackId });
+  }
+  await ackRef.set({
+    ...verified.record,
+    ackId,
+    createdAt: FieldValue.serverTimestamp(),
+    createdAtMs: Date.now(),
+  });
+  return res.status(201).json({ success: true, duplicate: false, ackId });
+}
+
 function auditRecord({ action, actorUid, targetId, details = {} }) {
   return {
     action,
@@ -74,6 +136,21 @@ async function listDrafts(db) {
   return snapshot.docs
     .map((entry) => ({ id: entry.id, ...entry.data() }))
     .sort((left, right) => (right.updatedAt?.toMillis?.() ?? 0) - (left.updatedAt?.toMillis?.() ?? 0));
+}
+
+async function listCatalogImports(db) {
+  const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS)
+    .orderBy('importedAtMs', 'desc')
+    .limit(25)
+    .get();
+  return snapshot.docs.map((entry) => summarizeCatalogImport(entry.id, entry.data()));
+}
+
+async function listAcks(db, { limit = 200 } = {}) {
+  const snapshot = await db.collection(ACK_COLLECTION).limit(limit).get();
+  return snapshot.docs
+    .map((entry) => ({ id: entry.id, ...entry.data() }))
+    .sort((left, right) => Date.parse(right.appliedAt || 0) - Date.parse(left.appliedAt || 0));
 }
 
 async function listReleases(db, scope) {
@@ -231,184 +308,237 @@ async function publishDraft(db, {
   return { ok: true, releaseId, versionCode: releaseNumber };
 }
 
-async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return sendError(res, 405, 'method_not_allowed');
-  }
-  const initialized = ensureFirebaseAdmin();
-  if (!initialized.ok) return sendError(res, 503, initialized.error);
-  const input = normalizeBody(req.body);
-  if (!input) return sendError(res, 400, 'request_body_invalid');
-  const db = getAppFirestore();
+const defaultDeps = {
+  ensureFirebaseAdmin,
+  authenticateAdmin: (req) => authenticateAdmin(req, { getAuth, getFirestore: getAppFirestore }),
+  authenticateUser,
+  getDb: getAppFirestore,
+};
 
-  if (input.action === 'read-active') {
-    const caller = await authenticateUser(req);
+/**
+ * يبني معالج HTTP قابلًا للاختبار بحقن الاعتماديات (مصادقة، قاعدة بيانات، تهيئة).
+ * في الإنتاج تُستخدم الاعتماديات الافتراضية (Firebase Admin الحقيقي).
+ */
+export function createTemplateCenterHandler(overrides = {}) {
+  const deps = { ...defaultDeps, ...overrides };
+
+  return async function handler(req, res) {
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return sendError(res, 405, 'method_not_allowed');
+    }
+    const initialized = deps.ensureFirebaseAdmin();
+    if (!initialized.ok) return sendError(res, 503, initialized.error);
+    const input = normalizeBody(req.body);
+    if (!input) return sendError(res, 400, 'request_body_invalid');
+    const db = deps.getDb();
+
+    if (input.action === 'ack') {
+      return handleAck(req, res, input, deps);
+    }
+
+    if (input.action === 'read-active') {
+      const caller = await deps.authenticateUser(req);
+      if (!caller.ok) return sendError(res, caller.status, caller.error);
+      const appBuild = input.appBuild === undefined ? null : Number(input.appBuild);
+      if (appBuild != null && (!Number.isInteger(appBuild) || appBuild < 0)) {
+        return sendError(res, 400, 'app_build_invalid');
+      }
+      const appVersion = input.appVersion === undefined ? null : input.appVersion;
+      if (appVersion != null && (typeof appVersion !== 'string' || compareVersions(appVersion, '0.0.0') === null)) {
+        return sendError(res, 400, 'app_version_invalid');
+      }
+      try {
+        const result = await resolvePublishedRelease(db, caller.uid, appVersion, appBuild);
+        return res.status(200).json({ success: true, result });
+      } catch (error) {
+        console.error('template-center active release lookup failed', error);
+        return sendError(res, 500, 'template_center_read_failed');
+      }
+    }
+
+    const caller = await deps.authenticateAdmin(req);
     if (!caller.ok) return sendError(res, caller.status, caller.error);
-    const appBuild = input.appBuild === undefined ? null : Number(input.appBuild);
-    if (appBuild != null && (!Number.isInteger(appBuild) || appBuild < 0)) {
-      return sendError(res, 400, 'app_build_invalid');
-    }
-    const appVersion = input.appVersion === undefined ? null : input.appVersion;
-    if (appVersion != null && (typeof appVersion !== 'string' || compareVersions(appVersion, '0.0.0') === null)) {
-      return sendError(res, 400, 'app_version_invalid');
-    }
+
     try {
-      const result = await resolvePublishedRelease(db, caller.uid, appVersion, appBuild);
-      return res.status(200).json({ success: true, result });
-    } catch (error) {
-      console.error('template-center active release lookup failed', error);
-      return sendError(res, 500, 'template_center_read_failed');
-    }
-  }
-
-  const caller = await authenticateAdmin(req, { getAuth, getFirestore: getAppFirestore });
-  if (!caller.ok) return sendError(res, caller.status, caller.error);
-
-  try {
-    switch (input.action) {
-      case 'catalog':
-        return res.status(200).json({ success: true, catalog: getTemplateCenterCatalog() });
-      case 'list': {
-        const [drafts, releases] = await Promise.all([listDrafts(db), listReleases(db)]);
-        const pointersSnapshot = await db.collection(POINTERS).get();
-        const pointers = pointersSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-        return res.status(200).json({ success: true, drafts, releases, pointers });
-      }
-      case 'list-networks': {
-        const snapshot = await db.collection('networks').limit(500).get();
-        const networks = snapshot.docs.map((entry) => {
-          const data = entry.data();
-          return {
-            id: entry.id,
-            ownerUid: data.owner_uid || data.ownerUid || null,
-            name: data.name || data.network_name || data.networkName || entry.id,
+      switch (input.action) {
+        case 'catalog':
+          return res.status(200).json({ success: true, catalog: getTemplateCenterCatalog() });
+        case 'import-default-catalog': {
+          const result = await importDefaultCatalog({
+            db,
+            catalogJson: input.catalogJson,
+            artifactSha256: input.artifactSha256,
+            actorUid: caller.callerUid,
+            sourceRevision: input.sourceRevision ?? null,
+          });
+          if (!result.ok) return sendError(res, result.status, result.error, result.details);
+          return res.status(result.alreadyImported ? 200 : 201).json({ success: true, ...result });
+        }
+        case 'list-default-catalog-imports':
+          return res.status(200).json({ success: true, imports: await listCatalogImports(db) });
+        case 'get-default-catalog-import': {
+          if (typeof input.importId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.importId)) {
+            return sendError(res, 400, 'catalog_import_id_invalid');
+          }
+          const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS).doc(input.importId).get();
+          if (!snapshot.exists) return sendError(res, 404, 'catalog_import_not_found');
+          const data = snapshot.data();
+          return res.status(200).json({
+            success: true,
+            catalog: data.manifest,
+            metadata: summarizeCatalogImport(snapshot.id, data),
+            draftId: data.draftId,
+            posTemplateDefinitions: data.posTemplateDefinitions || [],
+          });
+        }
+        case 'list': {
+          const [drafts, releases, acks, catalogImports] = await Promise.all([
+            listDrafts(db),
+            listReleases(db),
+            listAcks(db),
+            listCatalogImports(db),
+          ]);
+          const pointersSnapshot = await db.collection(POINTERS).get();
+          const pointers = pointersSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+          return res.status(200).json({ success: true, drafts, releases, pointers, acks, catalogImports });
+        }
+        case 'list-networks': {
+          const snapshot = await db.collection('networks').limit(500).get();
+          const networks = snapshot.docs.map((entry) => {
+            const data = entry.data();
+            return {
+              id: entry.id,
+              ownerUid: data.owner_uid || data.ownerUid || null,
+              name: data.name || data.network_name || data.networkName || entry.id,
+            };
+          });
+          return res.status(200).json({ success: true, networks });
+        }
+        case 'save-draft': {
+          const normalized = normalizeDraftInput(input.draft);
+          if (!normalized.ok) return sendError(res, 400, normalized.error, normalized.details);
+          const draftId = normalized.value.id || randomUUID();
+          const ref = db.collection(DRAFTS).doc(draftId);
+          const existing = await ref.get();
+          const payload = {
+            title: normalized.value.title,
+            scope: normalized.value.scope,
+            payload: normalized.value.payload,
+            baseReleaseId: normalized.value.baseReleaseId,
+            updatedAt: FieldValue.serverTimestamp(),
+            updatedBy: caller.callerUid,
+            ...(existing.exists ? {} : {
+              createdAt: FieldValue.serverTimestamp(),
+              createdBy: caller.callerUid,
+            }),
           };
-        });
-        return res.status(200).json({ success: true, networks });
-      }
-      case 'save-draft': {
-        const normalized = normalizeDraftInput(input.draft);
-        if (!normalized.ok) return sendError(res, 400, normalized.error, normalized.details);
-        const draftId = normalized.value.id || randomUUID();
-        const ref = db.collection(DRAFTS).doc(draftId);
-        const existing = await ref.get();
-        const payload = {
-          title: normalized.value.title,
-          scope: normalized.value.scope,
-          payload: normalized.value.payload,
-          baseReleaseId: normalized.value.baseReleaseId,
-          updatedAt: FieldValue.serverTimestamp(),
-          updatedBy: caller.callerUid,
-          ...(existing.exists ? {} : {
-            createdAt: FieldValue.serverTimestamp(),
-            createdBy: caller.callerUid,
-          }),
-        };
-        const batch = db.batch();
-        batch.set(ref, payload, { merge: true });
-        batch.create(db.collection('admin_audit_logs').doc(), auditRecord({
-          action: existing.exists ? 'TEMPLATE_DRAFT_UPDATE' : 'TEMPLATE_DRAFT_CREATE',
-          actorUid: caller.callerUid,
-          targetId: draftId,
-          details: { scope: normalized.value.scope },
-        }));
-        await batch.commit();
-        return res.status(existing.exists ? 200 : 201).json({ success: true, id: draftId });
-      }
-      case 'delete-draft': {
-        if (typeof input.draftId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.draftId)) {
-          return sendError(res, 400, 'draft_id_invalid');
+          const batch = db.batch();
+          batch.set(ref, payload, { merge: true });
+          batch.create(db.collection('admin_audit_logs').doc(), auditRecord({
+            action: existing.exists ? 'TEMPLATE_DRAFT_UPDATE' : 'TEMPLATE_DRAFT_CREATE',
+            actorUid: caller.callerUid,
+            targetId: draftId,
+            details: { scope: normalized.value.scope },
+          }));
+          await batch.commit();
+          return res.status(existing.exists ? 200 : 201).json({ success: true, id: draftId });
         }
-        const draftRef = db.collection(DRAFTS).doc(input.draftId);
-        const draftSnapshot = await draftRef.get();
-        if (!draftSnapshot.exists) return sendError(res, 404, 'draft_not_found');
-        const batch = db.batch();
-        batch.delete(draftRef);
-        batch.create(db.collection('admin_audit_logs').doc(), auditRecord({
-          action: 'TEMPLATE_DRAFT_DELETE',
-          actorUid: caller.callerUid,
-          targetId: input.draftId,
-        }));
-        await batch.commit();
-        return res.status(200).json({ success: true });
-      }
-      case 'simulate-inbound': {
-        if (!input.payload || !Array.isArray(input.payload.transferTemplates)
-            || typeof input.body !== 'string' || input.body.length > 4000
-            || (input.sender != null && (typeof input.sender !== 'string' || input.sender.length > 160))) {
-          return sendError(res, 400, 'simulation_input_invalid');
+        case 'delete-draft': {
+          if (typeof input.draftId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.draftId)) {
+            return sendError(res, 400, 'draft_id_invalid');
+          }
+          const draftRef = db.collection(DRAFTS).doc(input.draftId);
+          const draftSnapshot = await draftRef.get();
+          if (!draftSnapshot.exists) return sendError(res, 404, 'draft_not_found');
+          const batch = db.batch();
+          batch.delete(draftRef);
+          batch.create(db.collection('admin_audit_logs').doc(), auditRecord({
+            action: 'TEMPLATE_DRAFT_DELETE',
+            actorUid: caller.callerUid,
+            targetId: input.draftId,
+          }));
+          await batch.commit();
+          return res.status(200).json({ success: true });
         }
-        const validation = validateTemplatePayload(input.payload);
-        if (!validation.ok) return sendError(res, 400, 'simulation_input_invalid', validation.errors);
-        return res.status(200).json({
-          success: true,
-          result: simulateInboundTemplates(input.payload, { body: input.body, sender: input.sender || '' }),
-        });
-      }
-      case 'preview-outbound': {
-        if (!input.template || typeof input.template.body !== 'string' || input.template.body.length > 2000
-            || (input.values != null && (!input.values || typeof input.values !== 'object' || Array.isArray(input.values)
-              || Object.keys(input.values).length > 50
-              || Object.entries(input.values).some(([key, value]) => key.length > 100
-                || (typeof value === 'string' && value.length > 4000)
-                || (typeof value === 'number' && !Number.isFinite(value))
-                || !['string', 'number', 'boolean'].includes(typeof value) && value !== null)))) {
-          return sendError(res, 400, 'preview_input_invalid');
+        case 'simulate-inbound': {
+          if (!input.payload || !Array.isArray(input.payload.transferTemplates)
+              || typeof input.body !== 'string' || input.body.length > 4000
+              || (input.sender != null && (typeof input.sender !== 'string' || input.sender.length > 160))) {
+            return sendError(res, 400, 'simulation_input_invalid');
+          }
+          const validation = validateTemplatePayload(input.payload);
+          if (!validation.ok) return sendError(res, 400, 'simulation_input_invalid', validation.errors);
+          return res.status(200).json({
+            success: true,
+            result: simulateInboundTemplates(input.payload, { body: input.body, sender: input.sender || '' }),
+          });
         }
-        return res.status(200).json({
-          success: true,
-          result: previewOutboundTemplate(input.template, input.values || {}),
-        });
-      }
-      case 'publish': {
-        const result = await publishDraft(db, {
-          draftId: input.draftId,
-          actorUid: caller.callerUid,
-          expectedReleaseId: input.expectedReleaseId ?? null,
-          compatibility: { minAppVersion: input.minAppVersion, minAppBuild: input.minAppBuild },
-        });
-        if (!result.ok) return sendError(res, result.status, result.error, result.details);
-        return res.status(201).json({ success: true, ...result });
-      }
-      case 'rollback': {
-        if (typeof input.releaseId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.releaseId)) {
-          return sendError(res, 400, 'release_id_invalid');
+        case 'preview-outbound': {
+          if (!input.template || typeof input.template.body !== 'string' || input.template.body.length > 2000
+              || (input.values != null && (!input.values || typeof input.values !== 'object' || Array.isArray(input.values)
+                || Object.keys(input.values).length > 50
+                || Object.entries(input.values).some(([key, value]) => key.length > 100
+                  || (typeof value === 'string' && value.length > 4000)
+                  || (typeof value === 'number' && !Number.isFinite(value))
+                  || !['string', 'number', 'boolean'].includes(typeof value) && value !== null)))) {
+            return sendError(res, 400, 'preview_input_invalid');
+          }
+          return res.status(200).json({
+            success: true,
+            result: previewOutboundTemplate(input.template, input.values || {}),
+          });
         }
-        const releaseSnapshot = await db.collection(RELEASES).doc(input.releaseId).get();
-        if (!releaseSnapshot.exists || releaseSnapshot.data().status !== 'published') {
-          return sendError(res, 404, 'release_not_found');
+        case 'publish': {
+          const result = await publishDraft(db, {
+            draftId: input.draftId,
+            actorUid: caller.callerUid,
+            expectedReleaseId: input.expectedReleaseId ?? null,
+            compatibility: { minAppVersion: input.minAppVersion, minAppBuild: input.minAppBuild },
+          });
+          if (!result.ok) return sendError(res, result.status, result.error, result.details);
+          return res.status(201).json({ success: true, ...result });
         }
-        const original = releaseSnapshot.data();
-        const pointerSnapshot = await db.collection(POINTERS).doc(original.scopeKey).get();
-        const currentReleaseId = pointerSnapshot.exists ? pointerSnapshot.data().releaseId : null;
-        const normalizedOriginal = normalizeDraftInput({
-          title: `تراجع إلى ${original.version}`,
-          scope: original.scope,
-          payload: original.payload,
-        });
-        if (!normalizedOriginal.ok) return sendError(res, 400, 'release_payload_invalid');
-        const result = await publishDraft(db, {
-          draft: normalizedOriginal.value,
-          actorUid: caller.callerUid,
-          expectedReleaseId: currentReleaseId,
-          compatibility: {
-            minAppVersion: original.minAppVersion,
-            minAppBuild: original.minAppBuild,
-          },
-          rollbackOf: input.releaseId,
-        });
-        if (!result.ok) return sendError(res, result.status, result.error, result.details);
-        return res.status(201).json({ success: true, ...result });
+        case 'rollback': {
+          if (typeof input.releaseId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.releaseId)) {
+            return sendError(res, 400, 'release_id_invalid');
+          }
+          const releaseSnapshot = await db.collection(RELEASES).doc(input.releaseId).get();
+          if (!releaseSnapshot.exists || releaseSnapshot.data().status !== 'published') {
+            return sendError(res, 404, 'release_not_found');
+          }
+          const original = releaseSnapshot.data();
+          const pointerSnapshot = await db.collection(POINTERS).doc(original.scopeKey).get();
+          const currentReleaseId = pointerSnapshot.exists ? pointerSnapshot.data().releaseId : null;
+          const normalizedOriginal = normalizeDraftInput({
+            title: `تراجع إلى ${original.version}`,
+            scope: original.scope,
+            payload: original.payload,
+          });
+          if (!normalizedOriginal.ok) return sendError(res, 400, 'release_payload_invalid');
+          const result = await publishDraft(db, {
+            draft: normalizedOriginal.value,
+            actorUid: caller.callerUid,
+            expectedReleaseId: currentReleaseId,
+            compatibility: {
+              minAppVersion: original.minAppVersion,
+              minAppBuild: original.minAppBuild,
+            },
+            rollbackOf: input.releaseId,
+          });
+          if (!result.ok) return sendError(res, result.status, result.error, result.details);
+          return res.status(201).json({ success: true, ...result });
+        }
+        default:
+          return sendError(res, 400, 'unknown_action');
       }
-      default:
-        return sendError(res, 400, 'unknown_action');
+    } catch (error) {
+      if (error?.code === 'release_conflict') return sendError(res, 409, 'release_conflict');
+      console.error('template-center action failed', { action: input.action, error });
+      return sendError(res, 500, 'template_center_failed');
     }
-  } catch (error) {
-    if (error?.code === 'release_conflict') return sendError(res, 409, 'release_conflict');
-    console.error('template-center action failed', { action: input.action, error });
-    return sendError(res, 500, 'template_center_failed');
-  }
+  };
 }
 
+export const handler = createTemplateCenterHandler();
 export default handler;

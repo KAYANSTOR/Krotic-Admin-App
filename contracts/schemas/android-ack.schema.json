@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "krotak://contracts/android-ack.schema.json",
+  "title": "Android template-application ACK (v1, receiver implemented)",
+  "description": "عقد ACK يرسله تطبيق Android ليعلن أن إصدارًا مركزيًا محددًا قُبِل وطُبِّق فعليًا على المخازن المحلية. الحالة (2026-10-21): المستقبل الخادمي منفَّذ في لوحة الإدارة عبر POST /api/template-center?__apiRoute=template-center مع action=ack (server/_lib/templateCenterAck.js) ويطبّق التحقق أدناه. المرسل في Android غير موجود بعد، لذا تبقى حالة الأجهزة Unknown حتى يُنفَّذ الإرسال في مستودع Krotak-Pro (ممنوع تعديله في هذه المهمة) — راجع docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md §4.",
+  "schemaVersion": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ackVersion", "uid", "installationId", "releaseId", "payloadHash", "scopeKey", "outcome", "appliedAt"],
+  "properties": {
+    "ackVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "نسخة عقد ACK. تثبيت النسخة شرط للتوافق."
+    },
+    "uid": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "معرّف الحساب المصادق (Firebase UID). يُطابق على الخادم من ID token، لا يُوثق بما يرسله العميل."
+    },
+    "installationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "description": "معرّف التثبيت. يجب أن يطابق users/{uid}.entitlementInstallationId إن كان مربوطًا. مفتاح idempotency الجزئي."
+    },
+    "releaseId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "معرّف الإصدار المنشور الذي طُبِّق (template_center_releases/{releaseId})."
+    },
+    "payloadHash": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$",
+      "description": "بصمة sha256 للحمولة كما وردت في وثيقة الإصدار (payloadHashSha256). تُطابق على الخادم؛ لا يُثق بقيمة العميل."
+    },
+    "scopeKey": {
+      "type": "string",
+      "enum": ["global"],
+      "description": "مفتاح النطاق المطبق. الشكل العام فقط؛ القيم network:<id> تُمنع هنا لأن ACK يخص نطاقًا واحدًا معلنًا في الحقل scope أدناه."
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["global", "network"] },
+        "networkId": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{1,128}$" }
+      }
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["applied", "partially_applied", "failed", "rejected"],
+      "description": "نتيجة التطبيق الفعلي. applied فقط تعني تطبيقًا كاملًا؛ partially_applied عند وجود تعارضات متروكة كما هي."
+    },
+    "appliedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "وقت التطبيق من ساعة الجهاز. تشخيصي فقط؛ لا يُعتمد عليه لقياسات زمنية حاسمة (يحتاج وقت خادم)."
+    },
+    "insertedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "عدد العناصر المُدرَجة فعليًا (merge additive)."
+    },
+    "conflictCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "عدد التعارضات المتروكة كما هي (skipped_conflicts) — لا تُعدَّل ولا تُحذف."
+    },
+    "parserRefreshed": {
+      "type": ["boolean", "null"],
+      "description": "هل أُعيد بناء محرك التحليل بعد التطبيق؟ null إذا لم يُبلَّغ."
+    },
+    "failureReason": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "سبب الفشل/الرفض إن وُجد. رمز قصير، لا محتوى رسائل ولا أسرار."
+    },
+    "appVersion": {
+      "type": ["string", "null"],
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "إصدار التطبيق المُبلِّغ (تشخيصي)."
+    },
+    "appBuild": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "رقم بناء التطبيق المُبلِّغ (تشخيصي)."
+    }
+  },
+  "$comment": "idempotency: المفتاح الفعلي هو (uid, installationId, releaseId, payloadHash, outcome). إعادة الإرسال بنفس المفتاح لا تنشئ سجلًا ثانيًا. لا يحمل هذا العقد أي سر ولا أي محتوى رسائل حساس — فقط أعداد ورموز حالة."
+}
