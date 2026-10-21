@@ -21,6 +21,7 @@ import {
   previewOutboundTemplate,
   getTemplateCenterCatalog,
 } from '../server/_lib/templateCenter.js';
+import { cloneBundledPack } from '../src/lib/bundledTemplatePack.js';
 
 const MASTER_SECRET = 'test-master-hmac-secret-32-bytes-minimum-length-012345';
 
@@ -101,64 +102,35 @@ test('CONTRACT: Template center read-active contract and catalog compatibility',
   assert.ok(catalog.identifierKinds.includes('phone'));
   assert.ok(catalog.inboundPlaceholders.includes('amount'));
 
-  // Verified Yemeni starter pack payload
-  const yemeniStarterPack = {
-    wallets: [
-      { id: 'kuraimi', name: 'الكريمي جوال', status: 'active', sourceMode: 'sms', senderId: 'Kuraimi', packageName: 'com.kuraimi.bank', createdAt: '2026-10-19T00:00:00.000Z' },
-      { id: 'jeeb', name: 'محفظة جيب', status: 'active', sourceMode: 'sms', senderId: 'Jeeb', packageName: 'com.jeeb.wallet', createdAt: '2026-10-19T00:00:00.000Z' },
-      { id: 'onecash', name: 'ون كاش', status: 'active', sourceMode: 'sms', senderId: 'OneCash', packageName: null, createdAt: '2026-10-19T00:00:00.000Z' },
-    ],
-    transferTemplates: [
-      {
-        id: 'kuraimi-transfer',
-        name: 'تحويل وارد الكريمي',
-        pattern: 'تم تحويل مبلغ {amount} ريال الى {phone}',
-        identifierKind: 'phone',
-        walletId: 'kuraimi',
-        priority: 10,
-        isActive: true,
-        requireReference: false,
-      },
-      {
-        id: 'jeeb-deposit',
-        name: 'إيداع محفظة جيب',
-        pattern: 'تم استلام حوالة بمبلغ {amount} ريال من {phone}',
-        identifierKind: 'phone',
-        walletId: 'jeeb',
-        priority: 20,
-        isActive: true,
-        requireReference: false,
-      },
-    ],
-    outboundTemplates: [
-      {
-        key: 'customer_debt_payment_template',
-        body: 'تم استلام دفعة بقيمة {amount} ريال. شكراً لتعاملكم معنا.',
-      },
-      {
-        key: 'pos_order_success_template',
-        body: 'تم تنفيذ طلب نقطة البيع {pos_name} بنجاح. الكمية: {quantity_text}.',
-      },
-    ],
-  };
+  // Real canonical pack extracted from the official Android seeders — the ids
+  // here are the ones Android actually seeds, so publishing maps onto the same
+  // rows instead of creating duplicates.
+  const canonicalPack = cloneBundledPack('2026-10-21T00:00:00.000Z');
+  const validation = validateTemplatePayload(canonicalPack, { allowDrafts: false });
+  assert.equal(validation.ok, true, `canonical Android catalog must be publishable: ${(validation.errors || []).join(', ')}`);
 
-  const validation = validateTemplatePayload(yemeniStarterPack, { allowDrafts: false });
-  assert.equal(validation.ok, true, 'Yemeni starter pack payload is 100% valid');
+  // Every inbound template id matches the Android formula, and each links a wallet.
+  const walletIds = new Set(canonicalPack.wallets.map((wallet) => wallet.id));
+  for (const template of canonicalPack.transferTemplates) {
+    assert.match(template.id, /^tpl-default-[a-z0-9-]+$/);
+    assert.ok(walletIds.has(template.walletId), `${template.id} must link a canonical wallet`);
+  }
 
-  // Verify inbound simulation on Yemeni SMS
-  const sim = simulateInboundTemplates(yemeniStarterPack, {
-    body: 'تم تحويل مبلغ 5000 ريال الى 771234567',
-  });
+  // Verify inbound simulation on the canonical Jawali received sample (sender
+  // is the official Sender ID, as Android matches it exactly).
+  const jawali = canonicalPack.transferTemplates.find((template) => template.id === 'tpl-default-jawali-ar-received');
+  const sim = simulateInboundTemplates(canonicalPack, { body: jawali.sampleBody, sender: 'Jawali' });
   assert.equal(sim.matched, true);
-  assert.equal(sim.templateId, 'kuraimi-transfer');
-  assert.equal(sim.extracted.amount, '5000');
-  assert.equal(sim.extracted.phone, '771234567');
+  assert.equal(sim.templateId, 'tpl-default-jawali-ar-received');
   assert.equal(sim.financialSideEffect, false);
 
-  // Verify outbound preview
-  const preview = previewOutboundTemplate(yemeniStarterPack.outboundTemplates[0], { amount: '3500' });
+  // Verify outbound preview renders the canonical body.
+  const debt = canonicalPack.outboundTemplates.find((template) => template.key === 'customer_debt_payment_template');
+  const preview = previewOutboundTemplate(debt, {
+    amount: '1000', paid: '500', surplus: '500', balance: '5000', CURRENCY: 'ر.ي',
+  });
   assert.equal(preview.ok, true);
-  assert.equal(preview.preview, 'تم استلام دفعة بقيمة 3500 ريال. شكراً لتعاملكم معنا.');
+  assert.match(preview.preview, /تم استلام إيداع بمبلغ 1000/);
 });
 
 class FakeDocumentReference {
