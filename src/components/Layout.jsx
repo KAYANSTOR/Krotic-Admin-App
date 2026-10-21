@@ -7,16 +7,20 @@ import ChangeAdminPasswordModal from './ChangeAdminPasswordModal';
 import PhoneNotificationModal from './PhoneNotificationModal';
 import {
   Download, Menu, LogOut, WifiOff, KeyRound, TrendingUp, X,
-  Bell, BellOff,
+  Bell, BellOff, UserPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
 import { formatNumber } from '../lib/format';
 import {
   getNotificationPreferences,
   subscribeNotificationPreferences,
+  dispatchPhoneNotification,
+  shouldAlertNewEvent,
 } from '../lib/phoneNotifications';
 
 /** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
@@ -42,6 +46,7 @@ export default function Layout({ children }) {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [phoneNotifModalOpen, setPhoneNotifModalOpen] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
+  const [incomingUserAlert, setIncomingUserAlert] = useState(null);
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,6 +59,43 @@ export default function Layout({ children }) {
     return subscribeNotificationPreferences((prefs) => {
       setNotifPrefs(prefs);
     });
+  }, []);
+
+  // تنبيه مستخدم جديد بأقل قراءات: استمع لأحدث وثيقة فقط بدل تنزيل users كاملة.
+  useEffect(() => {
+    let initialSnapshot = true;
+    let timer = null;
+    const newestUsers = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(1));
+    const unsubscribe = onSnapshot(newestUsers, (snapshot) => {
+      if (initialSnapshot) {
+        initialSnapshot = false;
+        return;
+      }
+      snapshot.docChanges().forEach((change) => {
+        if (change.type !== 'added') return;
+        const data = change.doc.data() || {};
+        const docId = change.doc.id;
+        const createdMs = data.createdAt?.toMillis?.() || data.created_at?.toMillis?.()
+          || (data.createdAt ? new Date(data.createdAt).getTime() : Date.now());
+        if (!shouldAlertNewEvent('user', docId, createdMs)) return;
+        const name = data.networkName || data.name || data.phone || data.phoneNumber || 'مشترك جديد';
+        const phone = data.phone || data.phoneNumber || '';
+        setIncomingUserAlert({ id: docId, name, phone });
+        dispatchPhoneNotification({
+          title: '🎉 مستخدم جديد سجّل حسابه!',
+          body: phone ? `تم تسجيل شبكة جديدة: ${name} (${phone})` : `تم تسجيل شبكة جديدة: ${name}`,
+          url: `/users/${docId}`,
+          type: 'user',
+          tag: `user-${docId}`,
+        });
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(() => setIncomingUserAlert((current) => (current?.id === docId ? null : current)), 7000);
+      });
+    }, (error) => console.warn('Latest-user realtime subscription failed:', error));
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   // أعلِن عند عودة الاتصال، وأعد النبض لكل صفحة عبر حدث التحديث العام.
@@ -102,6 +144,18 @@ export default function Layout({ children }) {
     <div className="app-shell">
       <a href="#main-content" className="skip-link">تخطي إلى المحتوى</a>
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {incomingUserAlert && (
+        <aside role="status" className="fixed top-3 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-96 z-50 bg-slate-900 text-white p-3 rounded-2xl border border-sky-500/40 shadow-xl">
+          <div className="flex items-center gap-3">
+            <UserPlus className="w-5 h-5 text-sky-300 shrink-0" />
+            <button type="button" className="text-right min-w-0 flex-1" onClick={() => { navigate(`/users/${incomingUserAlert.id}`); setIncomingUserAlert(null); }}>
+              <span className="block text-xs font-black text-sky-300">مستخدم جديد سجّل حسابه</span>
+              <span className="block text-xs truncate">{incomingUserAlert.name}{incomingUserAlert.phone ? ` • ${incomingUserAlert.phone}` : ''}</span>
+            </button>
+            <button type="button" className="p-1 text-slate-300" aria-label="إغلاق التنبيه" onClick={() => setIncomingUserAlert(null)}><X className="w-4 h-4" /></button>
+          </div>
+        </aside>
+      )}
 
       <div className="app-body lg:ms-72">
         <header className="app-header">
