@@ -115,7 +115,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/template-center"
+        path="/template-center/*"
         element={
           <ProtectedRoute>
             <Layout>
