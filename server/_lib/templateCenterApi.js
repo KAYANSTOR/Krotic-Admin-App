@@ -359,14 +359,36 @@ export function createTemplateCenterHandler(deps = {}) {
         }
         case 'list-networks': {
           const snapshot = await db.collection('networks').limit(500).get();
-          const networks = snapshot.docs.map((entry) => {
-            const data = entry.data();
-            return {
-              id: entry.id,
-              ownerUid: data.owner_uid || data.ownerUid || null,
-              name: data.name || data.network_name || data.networkName || entry.id,
-            };
+          const byId = new Map();
+          snapshot.docs.forEach((entry) => {
+            const data = entry.data() || {};
+            const id = typeof data.networkId === 'string' && SAFE_ID.test(data.networkId) ? data.networkId : entry.id;
+            byId.set(id, {
+              id,
+              ownerUid: data.owner_uid || data.ownerUid || data.uid || null,
+              name: data.networkName || data.network_name || data.name || data.networkTitle || id,
+            });
           });
+          if (byId.size === 0) {
+            const [usersSnapshot, legacyUsersSnapshot] = await Promise.all([
+              db.collection('users').limit(500).get().catch(() => null),
+              db.collection('Users').limit(500).get().catch(() => null),
+            ]);
+            for (const sourceSnapshot of [usersSnapshot, legacyUsersSnapshot]) {
+              sourceSnapshot?.docs.forEach((entry) => {
+                const data = entry.data() || {};
+                const ownerUid = data.uid || entry.id;
+                const id = data.networkId || data.network_id || ownerUid;
+                if (typeof id !== 'string' || !SAFE_ID.test(id)) return;
+                byId.set(id, {
+                  id,
+                  ownerUid,
+                  name: data.networkName || data.network_name || data.networkTitle || data.name || ('شبكة ' + id),
+                });
+              });
+            }
+          }
+          const networks = [...byId.values()].sort((left, right) => left.name.localeCompare(right.name, 'ar'));
           return res.status(200).json({ success: true, networks });
         }
         case 'save-draft': {

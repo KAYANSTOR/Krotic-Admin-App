@@ -883,9 +883,11 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     ledgerUnsubscribers.set(uid, unsubscribe);
   };
 
-  usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+  const usersSource = targetNetworkId ? doc(db, 'users', targetNetworkId) : collection(db, 'users');
+  usersUnsubscribe = onSnapshot(usersSource, (snapshot) => {
     if (!active) return;
-    const currentUids = new Set(snapshot.docs.map((userDoc) => userDoc.id));
+    const userDocs = targetNetworkId ? (snapshot.exists() ? [snapshot] : []) : snapshot.docs;
+    const currentUids = new Set(userDocs.map((userDoc) => userDoc.id));
     if (initialNetworkIds === null || !readyCalled) initialNetworkIds = new Set(currentUids);
 
     for (const [uid, unsubscribe] of salesUnsubscribers) {
@@ -911,7 +913,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       metadataByUid.delete(uid);
     }
 
-    snapshot.docs.forEach((userDoc) => {
+    userDocs.forEach((userDoc) => {
       const user = { uid: userDoc.id, ...userDoc.data() };
       usersByUid.set(userDoc.id, user);
       const networkId = networkDocumentId(user);

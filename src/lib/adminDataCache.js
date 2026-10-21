@@ -75,7 +75,7 @@ export function createAdminDataCache({
         value: parsed.value,
         cachedAt,
         lastSyncedAt: Number.isFinite(parsedLastSyncedAt) && parsedLastSyncedAt > 0 ? parsedLastSyncedAt : null,
-        stale: !isFresh(cachedAt, LOCAL_CACHE_TTL),
+        stale: !isFresh(cachedAt, memoryTtl),
       };
     } catch {
       return null;
@@ -122,6 +122,11 @@ export function createAdminDataCache({
         const state = metadata.get(scopedKey) || {};
         metadata.set(scopedKey, { ...state, fromCache: true, cachedAt: cached.createdAt, stale: false });
         notify(scopedKey, cached.value);
+        if (!inFlight.has(scopedKey)) {
+          void readCached(key, loader, { force: false, uid: scopeUid, revalidate: true }).catch(() => {
+            // Keep serving the last known snapshot when offline.
+          });
+        }
         return cached.value;
       }
       const state = metadata.get(scopedKey) || {};

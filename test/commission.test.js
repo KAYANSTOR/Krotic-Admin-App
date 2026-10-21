@@ -58,6 +58,18 @@ test('shared financial summary excludes rolled-back and pending sales', () => {
   });
 });
 
+test('legacy sales totals include amount aliases and status-less records', () => {
+  const summary = summarizeCompletedSales([
+    { amount: 1500, commissionRiyal: 75 },
+    { amountRiyal: 250, status: 'COMPLETED', commissionRiyal: 12 },
+    { amountMinor: 12500, moneyPolicyVersion: 2, status: 'COMPLETED', commissionRiyal: 6 },
+    { faceValue: 900, status: 'SMS_PENDING', commissionRiyal: 10 },
+    { faceValue: 500, status: 'ROLLED_BACK', commissionRiyal: 5 },
+  ]);
+  assert.equal(summary.reportedSalesValue, 1875);
+  assert.equal(summary.reportedTransactions, 3);
+});
+
 test('isServerVerifiedSale accurately distinguishes cryptographically verified Ingest sales from legacy client sales', () => {
   const verifiedSale = {
     source: 'admin_api',

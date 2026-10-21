@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ADMIN_DATA_CACHE_PREFIX,
   LOCAL_CACHE_TTL,
+  MEMORY_CACHE_TTL,
   buildAdminDataStorageKey,
   createAdminDataCache,
   withAdminDataCacheMetadata,
@@ -187,6 +188,19 @@ test('a fresh persisted snapshot avoids a network read until TTL expiry or expli
     return { saved: 'forced refresh' };
   }, { force: true }), { saved: 'forced refresh' });
   assert.equal(networkReads, 1);
+});
+
+test('returns persisted cache instantly and revalidates after memory TTL', async () => {
+  const storage = fakeStorage();
+  const key = buildAdminDataStorageKey('admin-a', 'dashboard');
+  storage.setItem(key, JSON.stringify({ cachedAt: Date.now() - MEMORY_CACHE_TTL - 1000, value: { saved: 'cached snapshot' } }));
+  const cache = createAdminDataCache({ getUid: () => 'admin-a', getStorage: () => storage });
+  let loaderCalls = 0;
+  const value = await cache.readCached('dashboard', async () => ({ saved: 'network-' + (++loaderCalls) }));
+  assert.deepEqual(value, { saved: 'cached snapshot' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(loaderCalls, 1);
+  assert.deepEqual(JSON.parse(storage.getItem(key)).value, { saved: 'network-1' });
 });
 
 test('serves an old persisted snapshot offline and does not drop it at the freshness TTL', async () => {
