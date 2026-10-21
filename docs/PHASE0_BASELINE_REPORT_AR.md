@@ -2,7 +2,7 @@
 
 **المستودع:** `KAYANSTOR/Krotic-Admin-App` (خاص).
 **تاريخ التقرير:** 2026-10-21.
-**الفرع العامل:** `feature/admin-control-center-contracts`.
+**الفرع العامل:** `feature/krotak-admin-control-center`.
 **نوع المستند:** لقطة خط أساس. لا تغيير على `main`، ولا نشر إنتاجي، ولا قراءة
 غير مصرح بها لبيانات المستخدمين.
 
@@ -10,7 +10,7 @@
 
 | البند | القيمة |
 |---|---|
-| الفرع الحالي | `feature/admin-control-center-contracts` (أُنشئ من `main`) |
+| الفرع الحالي | `feature/krotak-admin-control-center` (أُنشئ من `main`) |
 | HEAD قبل الفرع | `61472fcd8d732e396e373553416cce74fe8943dc` |
 | `origin/main` | `61472fcd8d732e396e373553416cce74fe8943dc` (مطابق) |
 | رأس الإدارة المعروف سابقًا | `61472fc` — لا يزال الرأس الحالي، ولم يتقدّم |

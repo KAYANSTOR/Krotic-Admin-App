@@ -3,7 +3,7 @@
 > **الحالة:** المرحلة 1 — تثبيت العقود والحالات قبل بناء الشاشات. هذه الوثيقة
 > والمخططات في `contracts/` **عقود إصدار (versioned)** قابلة للاختبار، وليست
 > إعلانًا بأن أي شيء منفَّذ على Android أو منشور في الإنتاج.
-> **الفرع:** `feature/admin-control-center-contracts` (لا دمج، لا نشر).
+> **الفرع:** `feature/krotak-admin-control-center` (لا دمج، لا نشر).
 > **المرجع الحي:** قراءة فقط لمستودع `KAYANSTOR/Krotak-Pro` (فرع
 > `plan/krotak-android-template-sync`). لم يُعدَّل أي ملف Android.
 
