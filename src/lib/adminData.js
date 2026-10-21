@@ -7,6 +7,7 @@ import { mapWithConcurrency } from './mapWithConcurrency';
 import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
 import { normalizeUserAccess } from './accessStatus';
 import { summarizeCompletedSales } from './commission';
+import { mergeSalesByIdentity, saleIdentityKeys, salesNetworkIds } from './salesReadCompat';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
 const FAN_OUT_CONCURRENCY = 5;
@@ -242,15 +243,43 @@ async function fetchNetworkMeta(uid, options) {
 function networkDocumentId(user) {
   return typeof user?.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : user.uid;
 }
+function salesFromSnapshot(snapshot) {
+  return snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+}
+async function readSalesAcrossNetworkPaths(uid, networkId, buildQuery, readQuery) {
+  const [currentPath, legacyPath] = salesNetworkIds(uid, networkId);
+  const readPath = (path) => {
+    const ref = collection(db, 'networks', path, 'sales');
+    return readQuery(buildQuery(ref));
+  };
+  const snapshots = await Promise.all([
+    readPath(currentPath),
+    ...(legacyPath ? [readPath(legacyPath)] : []),
+  ]);
+  return mergeSalesByIdentity(salesFromSnapshot(snapshots[0]), snapshots[1] ? salesFromSnapshot(snapshots[1]) : []);
+}
+async function hasLegacyNetworkSales(uid, networkId, force) {
+  if (uid === networkId) return false;
+  const legacyQuery = query(collection(db, 'networks', uid, 'sales'), limit(1));
+  const snapshot = force ? await getDocsFromServer(legacyQuery) : await getDocs(legacyQuery);
+  return !snapshot.empty;
+}
 async function fetchSalesForUser(uid, recentOnly = false, options) {
   return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async ({ force = false } = {}) => {
     const userRef = doc(db, 'users', uid);
     const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
-    const ref = collection(db, 'networks', networkId, 'sales');
-    const salesQuery = recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref;
-    const snap = force ? await getDocsFromServer(salesQuery) : await getDocs(salesQuery);
-    return snap.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+    const readQuery = (salesQuery) => (force ? getDocsFromServer(salesQuery) : getDocs(salesQuery));
+    const sales = await readSalesAcrossNetworkPaths(
+      uid,
+      networkId,
+      (ref) => (recentOnly ? query(ref, orderBy('createdAt', 'desc'), limit(50)) : ref),
+      readQuery,
+    );
+    if (!recentOnly) return sales;
+    return sales
+      .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
+      .slice(0, 50);
   }, options);
 }
 function mergeByDocumentId(previous = [], incoming = []) {
@@ -272,7 +301,6 @@ export async function fetchUserBillingHistory(uid, options) {
     const userRef = doc(db, 'users', uid);
     const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
-    const salesRef = collection(db, 'networks', networkId, 'sales');
     const paymentsRef = collection(db, 'networks', networkId, 'payments');
     const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
     // Offline sales may arrive after a newer sale while carrying an older
@@ -286,12 +314,11 @@ export async function fetchUserBillingHistory(uid, options) {
       ? getDocsFromServer(firestoreQuery)
       : getDocs(firestoreQuery));
     const [salesSnapshot, paymentsSnapshot] = await Promise.all([
-      readQuery(query(salesRef, ...salesConstraints)),
+      readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => query(salesRef, ...salesConstraints), readQuery),
       readQuery(query(paymentsRef, ...paymentConstraints)),
     ]);
-    const incomingSales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
     const incomingPayments = paymentsSnapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() }));
-    const sales = incomingSales;
+    const sales = salesSnapshot;
     const payments = mergeByDocumentId(incrementalPayments ? cachedValue.payments : [], incomingPayments);
     const history = {
       sales,
@@ -466,18 +493,17 @@ async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
   const userRef = doc(db, 'users', uid);
   const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
-  const salesRef = collection(db, 'networks', networkId, 'sales');
-  const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
   const paymentsRef = collection(db, 'networks', networkId, 'payments');
-
+  const readQuery = (firestoreQuery) => (force ? getDocsFromServer(firestoreQuery) : getDocs(firestoreQuery));
   // This path is used only when the server aggregate document is absent.
   // Reading the completed sales once lets us report verified server commission
   // snapshots rather than silently setting the due amount to zero.
   const [salesSnapshot, paymentsAggregate] = await Promise.all([
-    force ? getDocsFromServer(completedQuery) : getDocs(completedQuery),
+    readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => query(salesRef, where('status', '==', 'COMPLETED')), readQuery),
     getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
   ]);
-  const sales = salesSnapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  const incomingSales = salesSnapshot;
+  const sales = incomingSales;
   const totals = summarizeCompletedSales(sales);
   const totalPaid = Number(paymentsAggregate.data().totalPaid) || 0;
   const minRecentDate = sixMonthsAgo();
@@ -500,15 +526,17 @@ async function fetchMonthlyBucketsFromFirestore(uid, { force = false } = {}) {
   const userRef = doc(db, 'users', uid);
   const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
-  const salesRef = collection(db, 'networks', networkId, 'sales');
   // Equality-only query uses Firestore's single-field index; avoid depending on
   // the composite status+createdAt index just to recover a missing summary.
-  const completedQuery = query(salesRef, where('status', '==', 'COMPLETED'));
-  const salesSnapshot = force ? await getDocsFromServer(completedQuery) : await getDocs(completedQuery);
+  const readQuery = (firestoreQuery) => (force ? getDocsFromServer(firestoreQuery) : getDocs(firestoreQuery));
+  const sales = await readSalesAcrossNetworkPaths(
+    uid,
+    networkId,
+    (salesRef) => query(salesRef, where('status', '==', 'COMPLETED')),
+    readQuery,
+  );
   const minRecentDate = sixMonthsAgo();
-  const recentSales = salesSnapshot.docs
-    .map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }))
-    .filter((sale) => {
+  const recentSales = sales.filter((sale) => {
       const date = toDate(sale.createdAt);
       return date && !Number.isNaN(date.getTime()) && date >= minRecentDate;
     });
@@ -523,6 +551,28 @@ async function fetchAggregate(uid, options) {
       aggregate = await fetchAggregateFromFirestore(uid, { force });
     } else {
       const data = snap.data() || {};
+      let legacySalesPresent = false;
+      try {
+        const userRef = doc(db, 'users', uid);
+        const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+        const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
+        legacySalesPresent = await hasLegacyNetworkSales(uid, networkId, force);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(`Legacy sales check failed for user ${uid}: ${detail}`);
+      }
+      if (legacySalesPresent) {
+        // Rebuild from the deduplicated server-side sales union instead of
+        // guessing whether an old aggregate already included the UID path.
+        // Keep paid totals from the trusted summary document unchanged.
+        const rebuilt = await fetchAggregateFromFirestore(uid, { force });
+        const paid = Number(data.totalPaid);
+        aggregate = {
+          ...rebuilt,
+          totalPaid: Number.isFinite(paid) ? paid : rebuilt.totalPaid,
+          source: 'aggregate+legacy-sales-reconciled',
+        };
+      } else {
       const hasMonthly = Object.hasOwn(data, 'monthly')
         && data.monthly !== null
         && typeof data.monthly === 'object'
@@ -545,6 +595,7 @@ async function fetchAggregate(uid, options) {
             source: 'aggregate',
           };
         }
+      }
       }
     }
     const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {}).map(([month, bucket]) => [
@@ -672,6 +723,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
   const salesCacheByUid = new Map();
   const ledgerCacheByUid = new Map();
   const salesUnsubscribers = new Map();
+  const salesPathSnapshots = new Map();
   const ledgerUnsubscribers = new Map();
   const initialSalesSnapshots = new Set();
   const initialLedgerSnapshots = new Set();
@@ -737,16 +789,28 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       metadataByUid.set(uid, meta);
       publish();
     }).catch((error) => reportError(error, uid));
-
-    const unsubscribe = onSnapshot(
-      collection(db, 'networks', networkId, 'sales'),
+    const paths = salesNetworkIds(uid, networkId);
+    const pathState = new Map(paths.map((path) => [path, { snapshot: null, settled: false }]));
+    salesPathSnapshots.set(uid, pathState);
+    const rebuildSales = () => mergeSalesByIdentity(
+      salesFromSnapshot(pathState.get(paths[0])?.snapshot || { docs: [] }),
+      paths.slice(1).flatMap((path) => salesFromSnapshot(pathState.get(path)?.snapshot || { docs: [] })),
+    );
+    const subscriptions = paths.map((path) => onSnapshot(
+      collection(db, 'networks', path, 'sales'),
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
-        const isInitialSnapshot = !initialSalesSnapshots.has(uid);
+        const wasReady = initialSalesSnapshots.has(uid);
+        const previousSales = salesByUid.get(uid) || [];
+        const state = pathState.get(path);
+        state.snapshot = snapshot;
+        state.settled = true;
+        const combinedSales = rebuildSales();
         const latestUser = usersByUid.get(uid);
         const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
-        const newSales = isInitialSnapshot ? [] : snapshot.docChanges()
+        const previousKeys = new Set(previousSales.flatMap((sale) => saleIdentityKeys(sale)));
+        const newSales = wasReady ? snapshot.docChanges()
           .filter((change) => change.type === 'added')
           .map((change) => ({
             uid,
@@ -756,21 +820,25 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
             commissionRiyal: change.doc.data().commissionRiyal ?? change.doc.data().commission ?? change.doc.data().commissionAmount ?? change.doc.data().commissionMinor ?? null,
             commissionMinor: change.doc.data().commissionMinor ?? change.doc.data().commission ?? null,
             commissionRate: resolveCommissionRate(latestUser, defaultCommissionRate),
-          }));
-        salesByUid.set(uid, snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() })));
-        salesCacheByUid.set(uid, snapshot.metadata.fromCache);
-        initialSalesSnapshots.add(uid);
+            id: change.doc.id,
+            ...change.doc.data(),
+          }))
+          .filter((sale) => !saleIdentityKeys(sale).some((key) => previousKeys.has(key))) : [];
+        salesByUid.set(uid, combinedSales);
+        salesCacheByUid.set(uid, [...pathState.values()].some((entry) => entry.snapshot?.metadata?.fromCache));
+        if ([...pathState.values()].every((entry) => entry.settled)) initialSalesSnapshots.add(uid);
         publish(newSales);
       },
       (error) => {
         reportError(error, uid);
-        initialSalesSnapshots.add(uid);
+        const state = pathState.get(path);
+        state.settled = true;
+        if ([...pathState.values()].every((entry) => entry.settled)) initialSalesSnapshots.add(uid);
         publish();
       },
-    );
-    salesUnsubscribers.set(uid, unsubscribe);
+    ));
+    salesUnsubscribers.set(uid, () => subscriptions.forEach((unsubscribe) => unsubscribe()));
   };
-
   const startFinancialLedgerSubscription = (uid, networkId) => {
     if (ledgerUnsubscribers.has(uid)) return;
     const unsubscribe = onSnapshot(
@@ -804,6 +872,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       salesUnsubscribers.delete(uid);
       salesByUid.delete(uid);
       salesCacheByUid.delete(uid);
+      salesPathSnapshots.delete(uid);
       initialSalesSnapshots.delete(uid);
     }
     for (const [uid, unsubscribe] of ledgerUnsubscribers) {
@@ -851,6 +920,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     salesUnsubscribers.forEach((unsubscribe) => unsubscribe());
     ledgerUnsubscribers.forEach((unsubscribe) => unsubscribe());
     salesUnsubscribers.clear();
+    salesPathSnapshots.clear();
     ledgerUnsubscribers.clear();
     salesCacheByUid.clear();
     ledgerCacheByUid.clear();
