@@ -75,6 +75,27 @@ export default function WalletsTab() {
     >
       <DraftScopePanel />
 
+      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
+        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
+          <WalletIcon className="h-4 w-4 text-brand-600" aria-hidden="true" />
+          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة المحافظ ومصادر الرسائل؟</span>
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">١. تحديد هوية المصدر فقط</strong>
+            هنا نعرّف أسماء مرسلي الرسائل (senderId) أو حزم التطبيقات (packageName) التي يستهلكها هاتف نقطة البيع لربط الرسالة بالقالب المناسب.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٢. الحفظ في المسودة</strong>
+            إضافة محفظة أو تعديل حالتها يُسجَّل في مسودة العمل الحالية فقط؛ ولا ينتقل إلى الأجهزة إلا بعد نشر الإصدار واستلام تأكيد موثوق.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٣. خلو القائمة هنا</strong>
+            كون القائمة فارغة في هذه الشاشة يشير إلى المسودة الحالية فقط، ولا يعني عدم وجود مصادر معرّفة على الأجهزة أو في الإصدارات الأخرى.
+          </div>
+        </div>
+      </div>
+
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-extrabold">المحافظ في المسودة ({wallets.length})</h2>

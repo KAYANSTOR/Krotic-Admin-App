@@ -15,7 +15,6 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
-import { subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { formatNumber } from '../lib/format';
 import {
   getNotificationPreferences,
@@ -47,7 +46,6 @@ export default function Layout({ children }) {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [phoneNotifModalOpen, setPhoneNotifModalOpen] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
-  const [incomingSaleAlert, setIncomingSaleAlert] = useState(null);
   const [incomingUserAlert, setIncomingUserAlert] = useState(null);
   const { adminData, logout } = useAuth();
   const navigate = useNavigate();
@@ -111,55 +109,6 @@ export default function Layout({ children }) {
       }
     );
 
-    return () => unsubscribe();
-  }, []);
-
-  // مراقبة وصول المبيعات في الوقت الفعلي في جميع الشاشات
-  useEffect(() => {
-    const unsubscribe = subscribeNetworkSalesRealtime(
-      (networks) => {
-        const allCompletedSales = [];
-        networks.forEach((net) => {
-          (net.sales || []).forEach((sale) => {
-            if (sale.status === 'COMPLETED') {
-              allCompletedSales.push({
-                ...sale,
-                networkName: net.networkName || 'شبكة المشترك',
-              });
-            }
-          });
-        });
-
-        // فحص هل هناك مبيعات جديدة دخلت للتو
-        for (const sale of allCompletedSales) {
-          const sid = sale.id || sale.saleId;
-          const createdMs = sale.createdAt?.toMillis?.()
-            || sale.createdAtMs
-            || (sale.createdAt ? new Date(sale.createdAt).getTime() : Date.now());
-
-          if (sid && shouldAlertNewEvent('sale', sid, createdMs)) {
-            setIncomingSaleAlert(sale);
-
-            // إرسال إشعار حي إلى شريط إشعارات الهاتف
-            dispatchPhoneNotification({
-              title: '💰 عملية بيع جديدة!',
-              body: `${sale.networkName || 'شبكة المشترك'} • مبيعات بقيمة ${formatNumber(sale.faceValue)} ر.ي`,
-              url: '/sales',
-              type: 'sale',
-              tag: `sale-${sid}`,
-            });
-
-            // إخفاء التنبيه تلقائياً بعد 6 ثوانٍ
-            setTimeout(() => {
-              setIncomingSaleAlert((curr) => ((curr?.id || curr?.saleId) === sid ? null : curr));
-            }, 6000);
-            break;
-          }
-        }
-      },
-      () => {},
-      () => {}
-    );
     return () => unsubscribe();
   }, []);
 
@@ -245,52 +194,6 @@ export default function Layout({ children }) {
                 onClick={(e) => {
                   e.stopPropagation();
                   setIncomingUserAlert(null);
-                }}
-                className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
-                aria-label="إغلاق التنبيه"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </aside>
-      )}
-
-      {/* شريط عائم احترافي يظهر فور وصول أي عملية بيع جديدة في جميع الشاشات */}
-      {incomingSaleAlert && (
-        <aside
-          role="status"
-          aria-label="تنبيه عملية بيع جديدة"
-          className="fixed top-3 inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-96 z-50 sale-pill-enter bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 rounded-2xl border border-emerald-500/50 shadow-2xl backdrop-blur-md cursor-pointer transition-all select-none"
-          onClick={() => {
-            navigate('/sales');
-            setIncomingSaleAlert(null);
-          }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-4 h-4 animate-bounce" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-black text-emerald-400">عملية بيع جديدة الآن!</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                </div>
-                <p className="text-xs text-slate-100 font-bold truncate mt-0.5">
-                  {incomingSaleAlert.networkName} • {formatNumber(incomingSaleAlert.faceValue)} ر.ي
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-md hover:bg-emerald-500/30">
-                عرض
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIncomingSaleAlert(null);
                 }}
                 className="p-1 text-slate-400 hover:text-white rounded-md transition-colors"
                 aria-label="إغلاق التنبيه"

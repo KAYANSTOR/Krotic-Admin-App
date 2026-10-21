@@ -17,7 +17,7 @@ import { planUserMigration, computeNetworkTotals, computeAggregate } from '../se
 import { parseNetworkId } from '../server/_lib/networkId.js';
 import { legacyAccessFields } from '../server/_lib/accessStatus.js';
 
-export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all'];
+export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all', 'migrate-legacy-sales'];
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
 const MAX_DOCS_PER_NETWORK = 2000;
@@ -57,6 +57,11 @@ export function validateMigrateInput(body) {
     const uid = typeof input.uid === 'string' ? input.uid.trim() : '';
     if (!UID_PATTERN.test(uid)) return { ok: false, error: 'uid_invalid' };
     return { ok: true, value: { action, uid } };
+  }
+  if (action === 'migrate-legacy-sales') {
+    const uid = typeof input.uid === 'string' && input.uid.trim() ? input.uid.trim() : null;
+    if (uid && !UID_PATTERN.test(uid)) return { ok: false, error: 'uid_invalid' };
+    return { ok: true, value: { action, uid, cursor, limit } };
   }
   return { ok: true, value: { action, cursor, limit } };
 }
@@ -227,6 +232,109 @@ async function rebuildAll(db, { cursor, limit, now, actorUid, rate }) {
   return { status: 'rebuilt-all', processed: results.length, nextCursor, done: !nextCursor, results };
 }
 
+export async function migrateLegacySalesForUser(db, { uid, actorUid, now }) {
+  const userDoc = await db.collection('users').doc(uid).get();
+  if (!userDoc.exists) {
+    return { status: 'user_not_found', uid };
+  }
+  const userData = userDoc.data() || {};
+  const rawNetId = String(userData.networkId || userData.network_id || '').trim();
+  const networkId = rawNetId || uid;
+
+  if (networkId === uid) {
+    return {
+      status: 'skipped_same_path',
+      uid,
+      networkId,
+      message: 'المسار الموحد يطابق معرّف المستخدم؛ لا توجد حاجة للترحيل.',
+      copiedCount: 0,
+    };
+  }
+
+  // Read sales from legacy path networks/{uid}/sales
+  const legacySnap = await db.collection('networks').doc(uid).collection('sales').limit(500).get();
+  if (legacySnap.empty) {
+    return {
+      status: 'no_legacy_sales',
+      uid,
+      networkId,
+      copiedCount: 0,
+    };
+  }
+
+  // Read existing sales from canonical path networks/{networkId}/sales
+  const canonicalSnap = await db.collection('networks').doc(networkId).collection('sales').limit(1000).get();
+  const canonicalKeys = new Set();
+  canonicalSnap.docs.forEach((doc) => {
+    const data = doc.data();
+    if (data.saleUuid) canonicalKeys.add(String(data.saleUuid));
+    if (data.saleId) canonicalKeys.add(String(data.saleId));
+    canonicalKeys.add(doc.id);
+  });
+
+  const toCopy = [];
+  legacySnap.docs.forEach((doc) => {
+    const data = doc.data();
+    const uuidKey = data.saleUuid ? String(data.saleUuid) : null;
+    const idKey = data.saleId ? String(data.saleId) : null;
+    if ((uuidKey && canonicalKeys.has(uuidKey)) || (idKey && canonicalKeys.has(idKey)) || canonicalKeys.has(doc.id)) {
+      return;
+    }
+    toCopy.push({ id: doc.id, data });
+  });
+
+  if (toCopy.length > 0) {
+    const batch = db.batch();
+    toCopy.slice(0, 450).forEach((item) => {
+      const targetRef = db.collection('networks').doc(networkId).collection('sales').doc(item.id);
+      batch.set(targetRef, {
+        ...item.data,
+        migratedFromLegacyPath: true,
+        legacyPath: `networks/${uid}/sales/${item.id}`,
+        migratedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  await db.collection('admin_audit_logs').doc().set({
+    action: 'MIGRATE_LEGACY_SALES',
+    actorUid,
+    targetType: 'network',
+    targetId: networkId,
+    details: {
+      uid,
+      networkId,
+      legacyCount: legacySnap.size,
+      copiedCount: toCopy.length,
+    },
+    createdAt: FieldValue.serverTimestamp(),
+    createdAtMs: now,
+  });
+
+  return {
+    status: 'migrated',
+    uid,
+    networkId,
+    legacyCount: legacySnap.size,
+    copiedCount: toCopy.length,
+  };
+}
+
+export async function migrateLegacySalesAll(db, { cursor, limit, now, actorUid }) {
+  let query = db.collection('users').orderBy(FieldPath.documentId()).limit(limit);
+  if (cursor) query = query.startAfter(cursor);
+  const snap = await query.get();
+
+  const results = [];
+  for (const docSnap of snap.docs) {
+    const res = await migrateLegacySalesForUser(db, { uid: docSnap.id, now, actorUid });
+    results.push(res);
+  }
+  const nextCursor = snap.size === limit ? snap.docs[snap.docs.length - 1].id : null;
+  return { status: 'migrated-legacy-sales-batch', processed: results.length, nextCursor, done: !nextCursor, results };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -249,6 +357,13 @@ export default async function handler(req, res) {
     } else if (parsed.value.action === 'rebuild-network') {
       result = await rebuildNetwork(db, { uid: parsed.value.uid, now, actorUid: caller.callerUid, rate: await globalRate(db) });
       if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });
+    } else if (parsed.value.action === 'migrate-legacy-sales') {
+      if (parsed.value.uid) {
+        result = await migrateLegacySalesForUser(db, { uid: parsed.value.uid, now, actorUid: caller.callerUid });
+        if (result.status === 'user_not_found') return res.status(404).json({ success: false, error: 'user_not_found' });
+      } else {
+        result = await migrateLegacySalesAll(db, { ...parsed.value, now, actorUid: caller.callerUid });
+      }
     } else {
       result = await rebuildAll(db, { ...parsed.value, now, actorUid: caller.callerUid, rate: await globalRate(db) });
     }

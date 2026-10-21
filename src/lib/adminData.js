@@ -329,6 +329,11 @@ export async function fetchUserBillingHistory(uid, options) {
     return force ? withAdminDataCacheMetadata(history, { fromCache: false }) : history;
   }, options);
 }
+
+let lastAuthSyncTime = 0;
+let cachedAuthUsers = [];
+const AUTH_SYNC_THROTTLE_MS = 20_000;
+
 export async function fetchAllUsers(options) {
   return readCached('all-users', async ({ force = false } = {}) => {
     const usersMap = new Map();
@@ -431,37 +436,49 @@ export async function fetchAllUsers(options) {
       });
     } catch {}
 
-    // 4. Mزامنة وإظهار كافة المستخدمين المسجلين في Firebase Auth الذين قد تنقصهم مستندات Firestore
+    // 4. مزامنة وإظهار كافة المستخدمين المسجلين في Firebase Auth الذين قد تنقصهم مستندات Firestore
     if (auth.currentUser) {
       try {
-        const idToken = await auth.currentUser.getIdToken();
-        const res = await fetch('/api/admin-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ action: 'sync-auth-users' }),
-        });
-        if (res.ok) {
-          const syncResult = await res.json();
-          if (syncResult?.success && Array.isArray(syncResult.users)) {
-            syncResult.users.forEach((u) => {
-              if (usersMap.has(u.uid)) {
-                const existing = usersMap.get(u.uid);
-                usersMap.set(u.uid, {
-                  ...existing,
-                  networkId: existing.networkId || u.networkId,
-                  networkName: existing.networkName || u.networkName,
-                  network_name: existing.network_name || u.network_name,
-                  phoneNumber: existing.phoneNumber || u.phoneNumber || u.phone,
-                  phone: existing.phone || u.phone,
-                });
-              } else {
-                usersMap.set(u.uid, normalizeUserAccess(u));
-              }
-            });
+        let authUsersList = null;
+        const nowMs = Date.now();
+        if (nowMs - lastAuthSyncTime < AUTH_SYNC_THROTTLE_MS && cachedAuthUsers.length > 0) {
+          authUsersList = cachedAuthUsers;
+        } else {
+          const idToken = await auth.currentUser.getIdToken();
+          const res = await fetch('/api/admin-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ action: 'sync-auth-users' }),
+          });
+          if (res.ok) {
+            const syncResult = await res.json();
+            if (syncResult?.success && Array.isArray(syncResult.users)) {
+              authUsersList = syncResult.users;
+              cachedAuthUsers = syncResult.users;
+              lastAuthSyncTime = nowMs;
+            }
           }
+        }
+
+        if (Array.isArray(authUsersList)) {
+          authUsersList.forEach((u) => {
+            if (usersMap.has(u.uid)) {
+              const existing = usersMap.get(u.uid);
+              usersMap.set(u.uid, {
+                ...existing,
+                networkId: existing.networkId || u.networkId,
+                networkName: existing.networkName || u.networkName,
+                network_name: existing.network_name || u.network_name,
+                phoneNumber: existing.phoneNumber || u.phoneNumber || u.phone,
+                phone: existing.phone || u.phone,
+              });
+            } else {
+              usersMap.set(u.uid, normalizeUserAccess(u));
+            }
+          });
         }
       } catch (authSyncErr) {
         console.warn('Sync auth users in fetchAllUsers failed:', authSyncErr);
@@ -709,7 +726,7 @@ export async function fetchNetworkSales(options) {
  * scoped to one network's sales collection, so Firestore rules can authorize
  * the same path the admin already reads for the initial page load.
  */
-export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePaymentTotals = false } = {}) {
+export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { includePaymentTotals = false, targetNetworkId = null } = {}) {
   let active = true;
   let defaultCommissionRate = 5;
   let usersUnsubscribe = null;
@@ -784,29 +801,33 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
 
   const startSalesSubscription = (uid, networkId) => {
     if (salesUnsubscribers.has(uid)) return;
+    if (targetNetworkId && targetNetworkId !== networkId && targetNetworkId !== uid) {
+      initialSalesSnapshots.add(uid);
+      return;
+    }
     fetchNetworkMeta(uid).then((meta) => {
       if (!active || !usersByUid.has(uid)) return;
       metadataByUid.set(uid, meta);
       publish();
     }).catch((error) => reportError(error, uid));
-    const paths = salesNetworkIds(uid, networkId);
-    const pathState = new Map(paths.map((path) => [path, { snapshot: null, settled: false }]));
-    salesPathSnapshots.set(uid, pathState);
-    const rebuildSales = () => mergeSalesByIdentity(
-      salesFromSnapshot(pathState.get(paths[0])?.snapshot || { docs: [] }),
-      paths.slice(1).flatMap((path) => salesFromSnapshot(pathState.get(path)?.snapshot || { docs: [] })),
+
+    // Scoped listener on canonical path with limit(50) and orderBy('createdAt', 'desc')
+    // Stop dual-path onSnapshot: listen only to unified canonical networkId path
+    const salesQuery = query(
+      collection(db, 'networks', networkId, 'sales'),
+      orderBy('createdAt', 'desc'),
+      limit(50),
     );
-    const subscriptions = paths.map((path) => onSnapshot(
-      collection(db, 'networks', path, 'sales'),
+    const unsubscribe = onSnapshot(
+      salesQuery,
       { includeMetadataChanges: true },
       (snapshot) => {
         if (!active || !usersByUid.has(uid)) return;
         const wasReady = initialSalesSnapshots.has(uid);
         const previousSales = salesByUid.get(uid) || [];
-        const state = pathState.get(path);
-        state.snapshot = snapshot;
-        state.settled = true;
-        const combinedSales = rebuildSales();
+        const incomingSales = salesFromSnapshot(snapshot);
+        // Offline sales may arrive after a newer sale while carrying an older
+        const sales = incomingSales;
         const latestUser = usersByUid.get(uid);
         const meta = metadataByUid.get(uid) || { networkName: '', phoneNumber: '' };
         const previousKeys = new Set(previousSales.flatMap((sale) => saleIdentityKeys(sale)));
@@ -824,20 +845,18 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
             ...change.doc.data(),
           }))
           .filter((sale) => !saleIdentityKeys(sale).some((key) => previousKeys.has(key))) : [];
-        salesByUid.set(uid, combinedSales);
-        salesCacheByUid.set(uid, [...pathState.values()].some((entry) => entry.snapshot?.metadata?.fromCache));
-        if ([...pathState.values()].every((entry) => entry.settled)) initialSalesSnapshots.add(uid);
+        salesByUid.set(uid, sales);
+        salesCacheByUid.set(uid, snapshot.metadata.fromCache);
+        initialSalesSnapshots.add(uid);
         publish(newSales);
       },
       (error) => {
         reportError(error, uid);
-        const state = pathState.get(path);
-        state.settled = true;
-        if ([...pathState.values()].every((entry) => entry.settled)) initialSalesSnapshots.add(uid);
+        initialSalesSnapshots.add(uid);
         publish();
       },
-    ));
-    salesUnsubscribers.set(uid, () => subscriptions.forEach((unsubscribe) => unsubscribe()));
+    );
+    salesUnsubscribers.set(uid, unsubscribe);
   };
   const startFinancialLedgerSubscription = (uid, networkId) => {
     if (ledgerUnsubscribers.has(uid)) return;
@@ -893,7 +912,12 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       const user = { uid: userDoc.id, ...userDoc.data() };
       usersByUid.set(userDoc.id, user);
       const networkId = networkDocumentId(user);
-      startSalesSubscription(userDoc.id, networkId);
+      if (!includePaymentTotals || targetNetworkId) {
+        startSalesSubscription(userDoc.id, networkId);
+      } else {
+        initialSalesSnapshots.add(userDoc.id);
+        salesByUid.set(userDoc.id, []);
+      }
       if (includePaymentTotals) startFinancialLedgerSubscription(userDoc.id, networkId);
     });
     publish();

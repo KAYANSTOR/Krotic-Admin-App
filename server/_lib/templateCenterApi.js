@@ -13,21 +13,12 @@ import {
   simulateInboundTemplates,
   validateTemplatePayload,
 } from './templateCenter.js';
-import {
-  ACK_COLLECTION,
-  ackIdempotencyKey,
-  validateAckInput,
-  verifyAck,
-} from './templateCenterAck.js';
-import {
-  DEFAULT_CATALOG_IMPORTS,
-  importDefaultCatalog,
-  summarizeCatalogImport,
-} from './defaultCatalogImport.js';
+import { validateTemplateAckPayload } from './templateAckContract.js';
 
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';
 const POINTERS = 'template_center_pointers';
+const DEVICE_ACKS = 'template_center_device_acks';
 const MAX_DRAFTS = 100;
 const MAX_RELEASES = 100;
 const SCHEMA_VERSION = 1;
@@ -68,67 +59,6 @@ async function authenticateUser(req) {
   }
 }
 
-/** يقرأ installation المرتبط بالحساب إن وُجد (users/{uid}.entitlementInstallationId). */
-async function readBoundInstallation(db, uid) {
-  try {
-    const snapshot = await db.collection('users').doc(uid).get();
-    const value = snapshot.exists ? snapshot.data()?.entitlementInstallationId : null;
-    return typeof value === 'string' && value ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * يستقبل ACK من Android: مصادقة مستخدم، مطابقة الإصدار/البصمة/النطاق/الجهاز،
- * وكتابة idempotent. لا يُعتبر ACK دليلًا إلا بعد نجاح التحقق.
- */
-async function handleAck(req, res, input, deps) {
-  const db = deps.getDb();
-  const caller = await deps.authenticateUser(req);
-  if (!caller.ok) return sendError(res, caller.status, caller.error);
-
-  const parsed = validateAckInput(input);
-  if (!parsed.ok) return sendError(res, 400, parsed.error);
-
-  // لا يُوثق بـ uid القادم من العميل؛ إن أُرسل ولم يطابق الرمز يُرفض.
-  if (input.uid !== undefined && input.uid !== caller.uid) {
-    return sendError(res, 403, 'uid_mismatch');
-  }
-
-  const releaseSnapshot = await db.collection(RELEASES).doc(parsed.value.releaseId).get();
-  const release = releaseSnapshot.exists ? { id: releaseSnapshot.id, ...releaseSnapshot.data() } : null;
-  const boundInstallationId = await readBoundInstallation(db, caller.uid);
-
-  const verified = verifyAck({ ack: parsed.value, uid: caller.uid, release, boundInstallationId });
-  if (!verified.ok) return sendError(res, verified.status, verified.error);
-
-  const ackId = ackIdempotencyKey({ uid: caller.uid, ...parsed.value });
-  const ackRef = db.collection(ACK_COLLECTION).doc(ackId);
-  const existing = await ackRef.get();
-  const receipt = {
-    success: true,
-    duplicate: existing.exists,
-    ackId,
-    releaseId: parsed.value.releaseId,
-    payloadHash: parsed.value.payloadHash,
-    installationId: parsed.value.installationId,
-    scopeKey: parsed.value.scopeKey,
-    outcome: parsed.value.outcome,
-  };
-  if (existing.exists) {
-    // إعادة إرسال نفس المفتاح: لا سجل ثانٍ ولا تغيير.
-    return res.status(200).json(receipt);
-  }
-  await ackRef.set({
-    ...verified.record,
-    ackId,
-    createdAt: FieldValue.serverTimestamp(),
-    createdAtMs: Date.now(),
-  });
-  return res.status(201).json(receipt);
-}
-
 function auditRecord({ action, actorUid, targetId, details = {} }) {
   return {
     action,
@@ -146,21 +76,6 @@ async function listDrafts(db) {
   return snapshot.docs
     .map((entry) => ({ id: entry.id, ...entry.data() }))
     .sort((left, right) => (right.updatedAt?.toMillis?.() ?? 0) - (left.updatedAt?.toMillis?.() ?? 0));
-}
-
-async function listCatalogImports(db) {
-  const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS)
-    .orderBy('importedAtMs', 'desc')
-    .limit(25)
-    .get();
-  return snapshot.docs.map((entry) => summarizeCatalogImport(entry.id, entry.data()));
-}
-
-async function listAcks(db, { limit = 200 } = {}) {
-  const snapshot = await db.collection(ACK_COLLECTION).limit(limit).get();
-  return snapshot.docs
-    .map((entry) => ({ id: entry.id, ...entry.data() }))
-    .sort((left, right) => Date.parse(right.appliedAt || 0) - Date.parse(left.appliedAt || 0));
 }
 
 async function listReleases(db, scope) {
@@ -318,37 +233,25 @@ async function publishDraft(db, {
   return { ok: true, releaseId, versionCode: releaseNumber };
 }
 
-const defaultDeps = {
-  ensureFirebaseAdmin,
-  authenticateAdmin: (req) => authenticateAdmin(req, { getAuth, getFirestore: getAppFirestore }),
-  authenticateUser,
-  getDb: getAppFirestore,
-};
+export function createTemplateCenterHandler(deps = {}) {
+  const ensureAdmin = deps.ensureFirebaseAdmin || ensureFirebaseAdmin;
+  const authUser = deps.authenticateUser || authenticateUser;
+  const authAdmin = deps.authenticateAdmin || authenticateAdmin;
+  const getDb = deps.getDb || getAppFirestore;
 
-/**
- * يبني معالج HTTP قابلًا للاختبار بحقن الاعتماديات (مصادقة، قاعدة بيانات، تهيئة).
- * في الإنتاج تُستخدم الاعتماديات الافتراضية (Firebase Admin الحقيقي).
- */
-export function createTemplateCenterHandler(overrides = {}) {
-  const deps = { ...defaultDeps, ...overrides };
-
-  return async function handler(req, res) {
+  return async function templateCenterHandler(req, res) {
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');
       return sendError(res, 405, 'method_not_allowed');
     }
-    const initialized = deps.ensureFirebaseAdmin();
+    const initialized = ensureAdmin();
     if (!initialized.ok) return sendError(res, 503, initialized.error);
     const input = normalizeBody(req.body);
     if (!input) return sendError(res, 400, 'request_body_invalid');
-    const db = deps.getDb();
-
-    if (input.action === 'ack') {
-      return handleAck(req, res, input, deps);
-    }
+    const db = getDb();
 
     if (input.action === 'read-active') {
-      const caller = await deps.authenticateUser(req);
+      const caller = await authUser(req);
       if (!caller.ok) return sendError(res, caller.status, caller.error);
       const appBuild = input.appBuild === undefined ? null : Number(input.appBuild);
       if (appBuild != null && (!Number.isInteger(appBuild) || appBuild < 0)) {
@@ -367,51 +270,92 @@ export function createTemplateCenterHandler(overrides = {}) {
       }
     }
 
-    const caller = await deps.authenticateAdmin(req);
+    if (input.action === 'ack') {
+      const caller = await authUser(req);
+      if (!caller.ok) return sendError(res, caller.status, caller.error);
+      const ackData = input.ack && typeof input.ack === 'object' ? input.ack : input;
+      if (ackData.uid && ackData.uid !== caller.uid) {
+        return sendError(res, 403, 'uid_mismatch');
+      }
+      const releaseId = typeof ackData.releaseId === 'string' ? ackData.releaseId.trim() : '';
+      if (!releaseId) return sendError(res, 400, 'release_id_missing');
+
+      const userDoc = await db.collection('users').doc(caller.uid).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data() || {};
+        if (userData.entitlementInstallationId && ackData.installationId && userData.entitlementInstallationId !== ackData.installationId) {
+          return sendError(res, 403, 'installation_mismatch');
+        }
+      }
+
+      const releaseDoc = await db.collection(RELEASES).doc(releaseId).get();
+      if (!releaseDoc.exists) {
+        return sendError(res, 404, 'release_not_found');
+      }
+      const release = releaseDoc.data();
+      const expectedHash = release.payloadHash || release.payloadHashSha256;
+      if (ackData.payloadHash && expectedHash && ackData.payloadHash.toLowerCase() !== expectedHash.toLowerCase()) {
+        return sendError(res, 409, 'payload_hash_mismatch');
+      }
+
+      const validation = validateTemplateAckPayload({ ...ackData, uid: caller.uid }, release);
+      if (!validation.ok) {
+        if (validation.error === 'payload_hash_mismatch') {
+          return sendError(res, 409, 'payload_hash_mismatch', validation.details);
+        }
+        return sendError(res, 400, validation.error, validation.details);
+      }
+
+      const ackDocId = `${caller.uid}_${validation.value.installationId}_${validation.value.releaseId}`;
+      const acksRef = db.collection('template_center_acks').doc(ackDocId);
+      const existing = await acksRef.get();
+      if (existing.exists) {
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          ackId: ackDocId,
+          releaseId: validation.value.releaseId,
+          payloadHash: validation.value.payloadHash,
+          installationId: validation.value.installationId,
+          scopeKey: ackData.scopeKey || release.scopeKey || 'global',
+        });
+      }
+
+      const ackRecord = {
+        ...validation.value,
+        recordedAt: FieldValue.serverTimestamp(),
+        recordedAtMs: Date.now(),
+        scopeKey: ackData.scopeKey || release.scopeKey || 'global',
+      };
+      await Promise.all([
+        acksRef.set(ackRecord),
+        db.collection(DEVICE_ACKS).doc(ackDocId).set(ackRecord, { merge: true }),
+      ]);
+      return res.status(201).json({
+        success: true,
+        duplicate: false,
+        ackId: ackDocId,
+        releaseId: validation.value.releaseId,
+        payloadHash: validation.value.payloadHash,
+        installationId: validation.value.installationId,
+        scopeKey: ackData.scopeKey || release.scopeKey || 'global',
+      });
+    }
+
+    const caller = await authAdmin(req, { getAuth, getFirestore: getDb });
     if (!caller.ok) return sendError(res, caller.status, caller.error);
 
     try {
       switch (input.action) {
         case 'catalog':
           return res.status(200).json({ success: true, catalog: getTemplateCenterCatalog() });
-        case 'import-default-catalog': {
-          const result = await importDefaultCatalog({
-            db,
-            catalogJson: input.catalogJson,
-            artifactSha256: input.artifactSha256,
-            actorUid: caller.callerUid,
-            sourceRevision: input.sourceRevision ?? null,
-          });
-          if (!result.ok) return sendError(res, result.status, result.error, result.details);
-          return res.status(result.alreadyImported ? 200 : 201).json({ success: true, ...result });
-        }
-        case 'list-default-catalog-imports':
-          return res.status(200).json({ success: true, imports: await listCatalogImports(db) });
-        case 'get-default-catalog-import': {
-          if (typeof input.importId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.importId)) {
-            return sendError(res, 400, 'catalog_import_id_invalid');
-          }
-          const snapshot = await db.collection(DEFAULT_CATALOG_IMPORTS).doc(input.importId).get();
-          if (!snapshot.exists) return sendError(res, 404, 'catalog_import_not_found');
-          const data = snapshot.data();
-          return res.status(200).json({
-            success: true,
-            catalog: data.manifest,
-            metadata: summarizeCatalogImport(snapshot.id, data),
-            draftId: data.draftId,
-            posTemplateDefinitions: data.posTemplateDefinitions || [],
-          });
-        }
         case 'list': {
-          const [drafts, releases, acks, catalogImports] = await Promise.all([
-            listDrafts(db),
-            listReleases(db),
-            listAcks(db),
-            listCatalogImports(db),
-          ]);
+          const [drafts, releases] = await Promise.all([listDrafts(db), listReleases(db)]);
           const pointersSnapshot = await db.collection(POINTERS).get();
           const pointers = pointersSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-          return res.status(200).json({ success: true, drafts, releases, pointers, acks, catalogImports });
+          const acksSnapshot = await db.collection(DEVICE_ACKS).limit(200).get();
+          const deviceAcks = acksSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+          return res.status(200).json({ success: true, drafts, releases, pointers, deviceAcks });
         }
         case 'list-networks': {
           const snapshot = await db.collection('networks').limit(500).get();
@@ -539,6 +483,114 @@ export function createTemplateCenterHandler(overrides = {}) {
           if (!result.ok) return sendError(res, result.status, result.error, result.details);
           return res.status(201).json({ success: true, ...result });
         }
+        case 'device-acks': {
+          const releaseId = typeof input.releaseId === 'string' ? input.releaseId.trim() : '';
+          let query = db.collection(DEVICE_ACKS);
+          if (releaseId) {
+            query = query.where('releaseId', '==', releaseId);
+          }
+          const acksSnapshot = await query.limit(200).get();
+          const acks = acksSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+          return res.status(200).json({ success: true, acks });
+        }
+        case 'import-default-catalog': {
+          const catalogJson = typeof input.catalogJson === 'string' ? input.catalogJson : JSON.stringify(input.catalogJson || {});
+          let parsedCatalog;
+          try {
+            parsedCatalog = typeof input.catalogJson === 'object' && input.catalogJson !== null
+              ? input.catalogJson
+              : JSON.parse(catalogJson);
+          } catch {
+            return sendError(res, 400, 'catalog_json_invalid');
+          }
+          const hash = input.artifactSha256 || createHash('sha256').update(catalogJson).digest('hex');
+          const importId = `catalog_${parsedCatalog.catalogId || 'default'}_${parsedCatalog.catalogVersion || '1.0.0'}`;
+          const importRef = db.collection('template_center_default_catalogs').doc(importId);
+          const existingImport = await importRef.get();
+          if (existingImport.exists) {
+            return res.status(200).json({
+              success: true,
+              alreadyImported: true,
+              importId,
+              draftId: existingImport.data().draftId,
+            });
+          }
+          const counts = {
+            wallets: Array.isArray(parsedCatalog.wallets) ? parsedCatalog.wallets.length : 0,
+            transferTemplates: Array.isArray(parsedCatalog.transferTemplates) ? parsedCatalog.transferTemplates.length : 0,
+            outboundTemplates: Array.isArray(parsedCatalog.outboundTemplates) ? parsedCatalog.outboundTemplates.length : 0,
+            posTemplateDefinitions: Array.isArray(parsedCatalog.posTemplateDefinitions) ? parsedCatalog.posTemplateDefinitions.length : 0,
+          };
+          const draftId = randomUUID();
+          const draftRecord = {
+            title: `كتالوج Android الافتراضي v${parsedCatalog.catalogVersion || '1.0.0'}`,
+            origin: 'android_builtin_seed',
+            scope: { type: 'global', networkId: null },
+            payload: {
+              wallets: parsedCatalog.wallets || [],
+              transferTemplates: parsedCatalog.transferTemplates || [],
+              outboundTemplates: parsedCatalog.outboundTemplates || [],
+            },
+            baseReleaseId: null,
+            createdAt: FieldValue.serverTimestamp(),
+            createdBy: caller.callerUid,
+            updatedAt: FieldValue.serverTimestamp(),
+            updatedBy: caller.callerUid,
+          };
+          await db.collection(DRAFTS).doc(draftId).set(draftRecord);
+          const catalogRecord = {
+            manifest: {
+              catalogId: parsedCatalog.catalogId,
+              catalogVersion: parsedCatalog.catalogVersion,
+            },
+            draftId,
+            posTemplateDefinitions: parsedCatalog.posTemplateDefinitions || [],
+            catalogId: parsedCatalog.catalogId,
+            catalogVersion: parsedCatalog.catalogVersion,
+            schemaVersion: parsedCatalog.schemaVersion || 1,
+            source: parsedCatalog.source || 'Krotak-Pro official seeders',
+            sourceRevision: input.sourceRevision || null,
+            contentHashSha256: hash,
+            counts,
+            status: 'imported',
+            importedAtMs: Date.now(),
+            importedAt: FieldValue.serverTimestamp(),
+            importedBy: caller.callerUid,
+          };
+          await importRef.set(catalogRecord);
+          await db.collection('admin_audit_logs').doc().set(auditRecord({
+            action: 'TEMPLATE_DEFAULT_CATALOG_IMPORT',
+            actorUid: caller.callerUid,
+            targetId: importId,
+            details: { catalogVersion: parsedCatalog.catalogVersion, counts },
+          }));
+          return res.status(201).json({
+            success: true,
+            imported: true,
+            importId,
+            draftId,
+            counts,
+          });
+        }
+        case 'get-default-catalog-import': {
+          const importId = input.importId;
+          if (!importId) return sendError(res, 400, 'import_id_missing');
+          const docSnap = await db.collection('template_center_default_catalogs').doc(importId).get();
+          if (!docSnap.exists) return sendError(res, 404, 'import_not_found');
+          const data = docSnap.data();
+          return res.status(200).json({
+            success: true,
+            catalog: {
+              catalogId: data.catalogId,
+              catalogVersion: data.catalogVersion,
+              schemaVersion: data.schemaVersion,
+              source: data.source,
+              counts: data.counts,
+            },
+            metadata: { id: docSnap.id, ...data },
+            posTemplateDefinitions: data.posTemplateDefinitions || [],
+          });
+        }
         default:
           return sendError(res, 400, 'unknown_action');
       }
@@ -550,5 +602,6 @@ export function createTemplateCenterHandler(overrides = {}) {
   };
 }
 
-export const handler = createTemplateCenterHandler();
-export default handler;
+const defaultHandler = createTemplateCenterHandler();
+export default defaultHandler;
+

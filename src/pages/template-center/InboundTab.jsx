@@ -87,6 +87,27 @@ export default function InboundTab() {
     >
       <DraftScopePanel />
 
+      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
+        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
+          <ArrowDownToLine className="h-4 w-4 text-brand-600" aria-hidden="true" />
+          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة قوالب التحويل الواردة؟</span>
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">١. تحليل الرسائل الواردة</strong>
+            تحدد هذه القوالب النصوص والأنماط التي يطابقها تطبيق Android عند استلام حوالة (مثل الكريمي، النجم، جيب، جوالي) لاستخراج المبلغ ورقم الهاتف والرقم المرجعي آلياً.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٢. محاكاة المطابقة والتجربة</strong>
+            صندوق الاختبار أدناه يتيح لك تجربة نص رسالة حقيقية والتحقق من صحة القالب فورياً في المتصفح. المحاكاة تجريبية بالكامل وبدون أي أثر مالي.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٣. التطبيق على الهواتف</strong>
+            القوالب المضافة تبقى داخل المسودة؛ وعند الضغط على «حفظ المسودة» ثم «نشر إصدار»، تستلمها هواتف Android عند اتصالها ليقوم محرك التحليل بالعمل بها.
+          </div>
+        </div>
+      </div>
+
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-extrabold">القوالب في المسودة ({templates.length})</h2>

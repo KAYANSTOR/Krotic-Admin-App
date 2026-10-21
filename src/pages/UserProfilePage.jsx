@@ -47,7 +47,7 @@ import { formatNumber, formatDate, isExpired } from '../lib/format';
 import { saleCommission, saleOutstanding, sumOutstanding, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import {
-  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData, subscribeNetworkSalesRealtime,
+  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
 } from '../lib/adminData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -113,27 +113,6 @@ export default function UserProfilePage() {
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeNetworkSalesRealtime(
-      (networks) => {
-        const network = networks.find((item) => item.uid === uid);
-        if (!network) return;
-        liveSalesSnapshotVersion.current += 1;
-        setHistory((previous) => ({
-          ...previous,
-          sales: (network.sales || []).filter((sale) => sale.status === 'COMPLETED'),
-        }));
-        setUpdatedAt(Date.now());
-        setLiveSalesError('');
-      },
-      (error, failedUid) => {
-        if (failedUid === uid || !failedUid) setLiveSalesError(error?.message || String(error));
-      },
-      () => {},
-    );
-    return unsubscribe;
-  }, [uid]);
 
   const allSales = history.sales || [];
   const allPayments = history.payments || [];

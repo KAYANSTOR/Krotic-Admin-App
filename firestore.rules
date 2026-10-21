@@ -129,7 +129,9 @@ service cloud.firestore {
     match /template_center_pointers/{scopeKey} {
       allow read, write: if false;
     }
-    // Per-device application ACKs are written and read only by the server API.
+    match /template_center_device_acks/{ackId} {
+      allow read, write: if false;
+    }
     match /template_center_acks/{ackId} {
       allow read, write: if false;
     }

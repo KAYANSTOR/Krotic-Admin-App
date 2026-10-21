@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
+  ArrowDownToLine, Send, Wallet, Archive, ListChecks,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
-/** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي. */
+/** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي مع شاشات مخصصة لكل وظيفة. */
 const navGroups = [
   {
     label: 'نظرة عامة',
@@ -19,11 +20,21 @@ const navGroups = [
     ],
   },
   {
+    label: 'القوالب والرسائل والنشر',
+    items: [
+      { path: '/template-center/inbound', label: 'قوالب التحويل الواردة', icon: ArrowDownToLine },
+      { path: '/template-center/outbound', label: 'الرسائل الصادرة (SMS)', icon: Send },
+      { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
+      { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
+      { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
+    ],
+  },
+  {
     label: 'النظام',
     items: [
       { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
       { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
-      { path: '/template-center', label: 'المحافظ والقوالب', icon: Layers3 },
+      { path: '/template-center', label: 'مركز القوالب الشامل', icon: Layers3 },
       { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
     ],
   },

@@ -212,6 +212,7 @@ export default function UsersPage() {
   // The first snapshot is the existing dataset, not a batch of new registrations.
   useEffect(() => {
     let initialSnapshot = true;
+    let debounceTimer = null;
     const unsubscribe = onSnapshot(
       collection(db, 'users'),
       (snapshot) => {
@@ -221,14 +222,20 @@ export default function UsersPage() {
         }
         const hasNewUser = snapshot.docChanges().some((change) => change.type === 'added');
         if (!hasNewUser) return;
-        invalidateAdminUserData();
-        fetchData({ force: true });
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          invalidateAdminUserData();
+          fetchData({ force: true });
+        }, 2000);
       },
       (listenerError) => {
         console.warn('Realtime user-list subscription failed:', listenerError);
       },
     );
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(debounceTimer);
+      unsubscribe();
+    };
   }, [fetchData]);
 
   useAppRefresh(() => fetchData({ force: true }));

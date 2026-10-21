@@ -126,10 +126,18 @@ export default function SalesPage() {
   }), []);
 
   useEffect(() => {
+    if (!expandedNetwork) {
+      setRealtimeReady(true);
+      return undefined;
+    }
     const unsubscribe = subscribeNetworkSalesRealtime(
       (data, freshness, addedSales = []) => {
         hasRealtimeSnapshot.current = true;
-        setNetworkSales(data);
+        setNetworkSales((currentNetworks) => {
+          if (!currentNetworks.length) return data;
+          const updatedNetworkMap = new Map(data.map((net) => [net.uid, net]));
+          return currentNetworks.map((net) => updatedNetworkMap.get(net.uid) || net);
+        });
         if (freshness?.ready || Number(freshness?.initialSnapshotsCount) > 0) setLoading(false);
         if (freshness?.ready) setRealtimeReady(true);
         setUpdatedAt(Date.now());
@@ -162,13 +170,14 @@ export default function SalesPage() {
         setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
       },
       () => { setRealtimeReady(true); setLoading(false); },
+      { targetNetworkId: expandedNetwork },
     );
     return () => {
       unsubscribe();
       if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
       latestRequestId.current += 1;
     };
-  }, []);
+  }, [expandedNetwork]);
 
   useAppRefresh(() => load({ force: true }));
 

@@ -8,6 +8,11 @@ const routeLoaders = {
   '/admins': () => import('../pages/AdminsPage'),
   '/audit': () => import('../pages/AuditPage'),
   '/template-center': () => import('../pages/TemplateCenterPage'),
+  '/template-center/wallets': () => import('../pages/TemplateCenterPage'),
+  '/template-center/inbound': () => import('../pages/TemplateCenterPage'),
+  '/template-center/outbound': () => import('../pages/TemplateCenterPage'),
+  '/template-center/releases': () => import('../pages/TemplateCenterPage'),
+  '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
 };
 
 const loadedRoutes = new Map();

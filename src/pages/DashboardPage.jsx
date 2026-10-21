@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  AlertTriangle, ArrowUpLeft, Bell, CreditCard,
-  RefreshCw, Settings, Sparkles,
+  AlertTriangle, Archive, ArrowDownToLine, ArrowUpLeft, Bell, CreditCard,
+  ListChecks, RefreshCw, Send, Settings, Sparkles,
   TrendingUp, UserPlus, Users, Wallet,
 } from 'lucide-react';
 import IconTile from '../components/ui/IconTile';
@@ -15,7 +15,7 @@ import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
 import { formatDate, formatNumber, toDate } from '../lib/format';
 import { summarizeCompletedSales } from '../lib/commission';
-import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 
@@ -142,34 +142,11 @@ export default function DashboardPage() {
     return () => { latestRequestId.current += 1; };
   }, [load]);
 
-  useEffect(() => subscribeNetworkSalesRealtime(
-    (networks, freshness) => {
-      const summary = summarizeRealtimeSales(networks);
-      realtimeSummary.current = summary;
-      setStats((current) => current ? { ...current, ...summary.stats } : current);
-      setMonthlySales(summary.monthlySales);
-      setRecentOperations(recentOperationsFromNetworks(networks));
-      setUpdatedAt(Date.now());
-      setCacheState((current) => ({
-        ...current,
-        fromCache: freshness?.fromCache ?? false,
-        lastSyncedAt: freshness?.fromCache ? current?.lastSyncedAt : Date.now(),
-      }));
-    },
-    (listenerError, uid) => {
-      console.error('Dashboard live sales listener error:', uid, listenerError);
-      const message = uid
-        ? `تعذر استقبال مبيعات الشبكة ${uid}: ${listenerError.message || listenerError}`
-        : `تعذر استقبال تحديثات المبيعات: ${listenerError.message || listenerError}`;
-      setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
-      setRealtimeDataWarning(true);
-    },
-    () => {
-      salesRealtimeReady.current = true;
-      setSalesSnapshotsReady(true);
-      if (dashboardDataReady.current) setLoading(false);
-    },
-  ), []);
+  useEffect(() => {
+    salesRealtimeReady.current = true;
+    setSalesSnapshotsReady(true);
+    if (dashboardDataReady.current) setLoading(false);
+  }, []);
 
   // السحب للأسفل على الجوال يعيد جلب بيانات اللوحة (force).
   useAppRefresh(() => load({ force: true }));
@@ -335,6 +312,31 @@ export default function DashboardPage() {
               <Link to="/notifications" className="dash-action">
                 <IconTile icon={Bell} tone="warning" />
                 <span className="dash-action__label">إرسال إشعار</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/template-center/inbound" className="dash-action">
+                <IconTile icon={ArrowDownToLine} tone="brand" />
+                <span className="dash-action__label">قوالب التحويل الواردة</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/template-center/outbound" className="dash-action">
+                <IconTile icon={Send} tone="brand" />
+                <span className="dash-action__label">الرسائل الصادرة (SMS)</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/template-center/wallets" className="dash-action">
+                <IconTile icon={Wallet} tone="gold" />
+                <span className="dash-action__label">المحافظ ومصادر الرسائل</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/template-center/releases" className="dash-action">
+                <IconTile icon={Archive} tone="neutral" />
+                <span className="dash-action__label">الإصدارات والنشر</span>
+                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+              </Link>
+              <Link to="/template-center/reconciliation" className="dash-action">
+                <IconTile icon={ListChecks} tone="neutral" />
+                <span className="dash-action__label">التسوية والعناصر القديمة</span>
                 <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
               </Link>
               <Link to="/settings" className="dash-action">

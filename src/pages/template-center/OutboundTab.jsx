@@ -97,6 +97,27 @@ export default function OutboundTab() {
     >
       <DraftScopePanel />
 
+      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
+        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
+          <Send className="h-4 w-4 text-brand-600" aria-hidden="true" />
+          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة الرسائل الصادرة (SMS)؟</span>
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">١. تخصيص رسائل SMS</strong>
+            تحدد صيغ الرسائل النصية القصيرة التي يرسلها هاتف نقطة البيع أو التطبيق (مثل إشعار تسليم الكرت أو تنبيه الرصيد) عبر شريحة SIM الخاصة بالهاتف.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٢. المعاينة الآمنة</strong>
+            أداة المعاينة أدناه تتيح لك اختبار دمج المتغيرات النصية لمعاينة شكل الرسالة النهائي قبل الاعتماد. لا تُرسَل أي رسالة ولا تستهلك أي رصيد.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٣. مسار منفصل تماماً</strong>
+            هذا القسم منفصل كلياً عن إشعارات التطبيق (FCM) في صفحة /notifications؛ فهنا نتحكم بقوالب SMS الهاتفية فقط.
+          </div>
+        </div>
+      </div>
+
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-extrabold">قوالب الرسائل الصادرة في المسودة ({templates.length})</h2>

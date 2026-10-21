@@ -37,9 +37,22 @@ export async function isAdminUid(uid, getFirestoreParam) {
   if (cached && cached.expiresAt > now) return cached.isAdmin;
   if (cached) adminMembershipCache.delete(uid);
 
+  // If primary admin, they are inherently authorized without needing extra Firestore quota
+  if (uid === PRIMARY_ADMIN_UID) {
+    adminMembershipCache.set(uid, { isAdmin: true, expiresAt: now + ADMIN_MEMBERSHIP_CACHE_TTL_MS });
+    return true;
+  }
+
   const db = (typeof getFirestoreParam === 'function' ? getFirestoreParam() : null) || getAppFirestore();
-  const snap = await db.collection('Admins').doc(uid).get();
-  const data = snap.exists ? snap.data() : null;
+  let snap = null;
+  try {
+    snap = await db.collection('Admins').doc(uid).get();
+  } catch (err) {
+    if (err?.code === 8 || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.warn('Admins check encountered Firestore quota limit');
+    }
+  }
+  const data = snap?.exists ? snap.data() : null;
   let isAdmin = Boolean(data && data.uid === uid);
 
   // If this is the primary owner account and the document is not yet in this database instance,

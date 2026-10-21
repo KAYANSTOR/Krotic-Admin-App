@@ -6,7 +6,7 @@ import {
   computeAggregate,
   planUserMigration,
 } from '../server/_lib/migration.js';
-import { mergeSalesPreferCurrent, validateMigrateInput } from '../api/migrate.js';
+import { mergeSalesPreferCurrent, validateMigrateInput, migrateLegacySalesForUser } from '../api/migrate.js';
 
 const NOW = 1_700_000_000_000;
 const DAY = 86_400_000;
@@ -128,3 +128,30 @@ test('migration plan keeps an existing server suspension and stale expiry unchan
   assert.equal(plan.accessStatus, 'SUSPENDED_GRACE');
   assert.equal(plan.subscriptionEndsAt, NOW + DAY);
 });
+
+test('validateMigrateInput validates migrate-legacy-sales action and uid', () => {
+  assert.equal(validateMigrateInput({ action: 'migrate-legacy-sales' }).ok, true);
+  assert.equal(validateMigrateInput({ action: 'migrate-legacy-sales', uid: 'user-1' }).ok, true);
+  assert.equal(validateMigrateInput({ action: 'migrate-legacy-sales', uid: 'invalid uid spaces' }).error, 'uid_invalid');
+});
+
+test('migrateLegacySalesForUser copies legacy UID sales to canonical networkId path idempotently', async () => {
+  const { createFakeFirestore } = await import('./helpers/fakeFirestore.js');
+  const db = createFakeFirestore({
+    'users/user-1': { uid: 'user-1', networkId: 'net-canonical' },
+    'networks/user-1/sales/sale-1': { saleUuid: 'uuid-1', status: 'COMPLETED', faceValue: 500 },
+    'networks/user-1/sales/sale-2': { saleUuid: 'uuid-2', status: 'COMPLETED', faceValue: 300 },
+    'networks/net-canonical/sales/sale-1': { saleUuid: 'uuid-1', status: 'COMPLETED', faceValue: 500 },
+  });
+
+  const res = await migrateLegacySalesForUser(db, { uid: 'user-1', actorUid: 'admin-1', now: NOW });
+  assert.equal(res.status, 'migrated');
+  assert.equal(res.copiedCount, 1);
+  assert.equal(res.legacyCount, 2);
+
+  // Second run copies 0 because sale-2 is now in canonical
+  const repeated = await migrateLegacySalesForUser(db, { uid: 'user-1', actorUid: 'admin-1', now: NOW });
+  assert.equal(repeated.status, 'migrated');
+  assert.equal(repeated.copiedCount, 0);
+});
+

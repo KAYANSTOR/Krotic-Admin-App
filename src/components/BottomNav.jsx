@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Archive,
+  ArrowDownToLine,
   Bell,
   DollarSign,
   LayoutDashboard,
   Layers3,
+  ListChecks,
   Plus,
   ScrollText,
+  Send,
   Settings,
   ShieldCheck,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
@@ -22,10 +27,15 @@ const primaryItems = [
 ];
 
 const quickItems = [
+  { path: '/template-center/inbound', label: 'قوالب التحويل الواردة', icon: ArrowDownToLine },
+  { path: '/template-center/outbound', label: 'الرسائل الصادرة (SMS)', icon: Send },
+  { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
+  { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
+  { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
+  { path: '/template-center', label: 'مركز القوالب والمحافظ', icon: Layers3 },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
   { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
-  { path: '/template-center', label: 'مركز القوالب', icon: Layers3 },
 ];
 
 function preloadRoute(path) {

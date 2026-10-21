@@ -92,6 +92,27 @@ export default function ReleasesTab() {
         </StatusCard>
       </div>
 
+      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
+        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
+          <Archive className="h-4 w-4 text-brand-600" aria-hidden="true" />
+          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة الإصدارات والنشر؟</span>
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">١. استقرار الإصدارات وسجلها</strong>
+            كل إصدار يُنشر هو لقطة بيانات مركزية غير قابلة للتعديل أو الحذف، لحماية النظام من التناقضات ومتابعة تدقيق كل تحديث بدقة.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٢. إجراء التراجع (Rollback)</strong>
+            عند طلب تراجع إلى إصدار سابق، لا يتم مسح التاريخ، بل يُنشأ إصدار جديد يشير إلى محتوى الإصدار المختار مع تحديث المؤشر النشط لترجع الأجهزة إليه.
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
+            <strong className="text-stone-900 block font-bold mb-1">٣. تأكيد الأجهزة (ACK)</strong>
+            حالة تطبيق أي إصدار تظل «غير معروف» حتى يقوم هاتف الأندرويد بمطابقة البصمة وتأكيد التحديث بنجاح، مما يمنع الافتراضات الخاطئة عن جاهزية الأجهزة.
+          </div>
+        </div>
+      </div>
+
       <Section title="المؤشرات النشطة" description="مؤشر واحد لكل نطاق (عام/شبكة) يشير إلى الإصدار النشط." className="mt-6">
         <Card className="p-4">
           {pointers.length === 0 ? (

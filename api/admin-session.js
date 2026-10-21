@@ -120,23 +120,62 @@ export default async function handler(req, res) {
   if (action === 'sync-auth-users') {
     try {
       // Caller must be an admin
-      const adminSnap = await db.collection('Admins').doc(callerUid).get().catch(() => null);
-      const isAdmin = Boolean(
-        callerEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() ||
-        callerUid === PRIMARY_ADMIN_UID ||
-        adminSnap?.exists
-      );
+      const isPrimary = callerEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || callerUid === PRIMARY_ADMIN_UID;
+      let isAdmin = isPrimary;
+      if (!isAdmin) {
+        try {
+          const adminSnap = await db.collection('Admins').doc(callerUid).get();
+          isAdmin = Boolean(adminSnap?.exists);
+        } catch (adminErr) {
+          console.warn('Admin check failed in sync-auth-users:', adminErr?.message);
+        }
+      }
 
       if (!isAdmin) {
         return res.status(403).json({ success: false, error: 'not_admin' });
       }
 
-      // Query all Firebase Auth users
-      const authList = await getAuth().listUsers(1000);
+      // Query all Firebase Auth users (Auth has separate quota from Firestore)
+      let authList;
+      try {
+        authList = await getAuth().listUsers(1000);
+      } catch (authErr) {
+        console.warn('getAuth().listUsers in sync-auth-users failed:', authErr?.message);
+        return res.status(200).json({ success: true, count: 0, users: [], warning: 'auth_unavailable' });
+      }
+
       const syncedUsers = [];
       const now = Date.now();
 
-      for (const authUser of authList.users) {
+      // Read existing Firestore users and networks in bulk (2 total requests instead of N*2)
+      const existingUserDocs = new Map();
+      const existingNetworkOwners = new Map();
+
+      try {
+        const [usersSnap, netsSnap] = await Promise.all([
+          db.collection('users').get().catch(() => null),
+          db.collection('networks').get().catch(() => null),
+        ]);
+        if (usersSnap) {
+          usersSnap.forEach((doc) => existingUserDocs.set(doc.id, doc.data()));
+        }
+        if (netsSnap) {
+          netsSnap.forEach((doc) => {
+            const data = doc.data() || {};
+            const owner = data.owner_uid || data.ownerUid;
+            if (owner && !existingNetworkOwners.has(owner)) {
+              existingNetworkOwners.set(owner, doc.id);
+            }
+          });
+        }
+      } catch (fsErr) {
+        console.warn('Firestore bulk read in sync-auth-users deferred:', fsErr?.message);
+      }
+
+      const missingUsersToCreate = [];
+      const missingNetsToCreate = [];
+
+      for (const authUser of (authList?.users || [])) {
         const uEmail = (authUser.email || '').toLowerCase();
         // Skip admins
         if (uEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || authUser.uid === PRIMARY_ADMIN_UID) {
@@ -147,14 +186,13 @@ export default async function handler(req, res) {
         const phoneFormatted = phone.startsWith('967') ? phone.slice(3) : phone;
         const displayName = authUser.displayName || `مشترك (${phoneFormatted || authUser.uid.slice(0, 6)})`;
         const netName = authUser.displayName || `شبكة ${phoneFormatted || authUser.uid.slice(0, 6)}`;
+        const defaultNetId = `NET-${authUser.uid.slice(0, 8).toUpperCase()}`;
 
-        // Check if user document exists in db
-        const userDocRef = db.collection('users').doc(authUser.uid);
-        const userDocSnap = await userDocRef.get();
-
+        const existingUserData = existingUserDocs.get(authUser.uid);
         let userData;
-        if (!userDocSnap.exists) {
-          // Synthesize missing user record
+        if (existingUserData) {
+          userData = { uid: authUser.uid, ...existingUserData };
+        } else {
           userData = {
             uid: authUser.uid,
             phone: phone || phoneFormatted,
@@ -164,23 +202,21 @@ export default async function handler(req, res) {
             name: displayName,
             platform: 'android',
             app_version: '1.0.0',
-            is_active: true,
+            is_active: !authUser.disabled,
             is_trial: true,
             accessStatus: 'TRIAL',
-            created_at: new Date(authUser.metadata.creationTime || now),
-            last_seen_at: new Date(authUser.metadata.lastSignInTime || now),
+            created_at: new Date(authUser.metadata?.creationTime || now),
+            last_seen_at: new Date(authUser.metadata?.lastSignInTime || now),
           };
-
-          await userDocRef.set(userData, { merge: true });
-        } else {
-          userData = { uid: authUser.uid, ...userDocSnap.data() };
+          missingUsersToCreate.push(userData);
         }
 
-        // Check if corresponding network exists
-        const netQuery = await db.collection('networks').where('owner_uid', '==', authUser.uid).get();
-        if (netQuery.empty) {
-          const defaultNetId = `NET-${authUser.uid.slice(0, 8).toUpperCase()}`;
-          const netRecord = {
+        const netId = existingNetworkOwners.get(authUser.uid);
+        if (netId) {
+          userData.networkId = netId;
+        } else {
+          userData.networkId = defaultNetId;
+          missingNetsToCreate.push({
             networkId: defaultNetId,
             owner_uid: authUser.uid,
             networkName: userData.network_name || netName,
@@ -192,17 +228,33 @@ export default async function handler(req, res) {
             totalCommissionDue: 0,
             totalPaidAmount: 0,
             outstandingBalance: 0,
-            createdAt: new Date(authUser.metadata.creationTime || now),
+            createdAt: new Date(authUser.metadata?.creationTime || now),
             updatedAt: new Date(now),
-          };
-
-          await db.collection('networks').doc(defaultNetId).set(netRecord, { merge: true });
-          userData.networkId = defaultNetId;
-        } else {
-          userData.networkId = netQuery.docs[0].id;
+          });
         }
 
         syncedUsers.push(userData);
+      }
+
+      // If any records were missing, persist in a single batch with try/catch to avoid breaking on quota exhaustion
+      if (missingUsersToCreate.length > 0 || missingNetsToCreate.length > 0) {
+        try {
+          const batch = db.batch();
+          let ops = 0;
+          for (const u of missingUsersToCreate.slice(0, 100)) {
+            batch.set(db.collection('users').doc(u.uid), u, { merge: true });
+            ops += 1;
+          }
+          for (const n of missingNetsToCreate.slice(0, 100)) {
+            batch.set(db.collection('networks').doc(n.networkId), n, { merge: true });
+            ops += 1;
+          }
+          if (ops > 0) {
+            await batch.commit();
+          }
+        } catch (batchErr) {
+          console.warn('Batch write in sync-auth-users deferred (quota or offline):', batchErr?.message);
+        }
       }
 
       return res.status(200).json({
@@ -211,8 +263,13 @@ export default async function handler(req, res) {
         users: syncedUsers,
       });
     } catch (err) {
-      console.error('sync-auth-users failed:', err);
-      return res.status(500).json({ success: false, error: 'sync_failed' });
+      console.warn('sync-auth-users caught error, returning safe fallback:', err?.message || err);
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        users: [],
+        warning: err?.message || 'sync_fallback',
+      });
     }
   }
 

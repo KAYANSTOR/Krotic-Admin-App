@@ -5,7 +5,8 @@
 
 class DocSnapshot {
   constructor(id, data) {
-    this.id = id;
+    this.id = String(id).split('/').pop();
+    this.path = id;
     this._data = data;
     this.exists = data !== undefined;
   }
@@ -19,6 +20,10 @@ class DocRef {
   constructor(store, path) {
     this.store = store;
     this.path = path;
+  }
+
+  collection(name) {
+    return new CollectionRef(this.store, `${this.path}/${name}`);
   }
 
   async get() {
@@ -49,6 +54,11 @@ class CollectionRef {
     this.store = store;
     this.name = name;
   }
+
+  limit() { return this; }
+  where() { return this; }
+  orderBy() { return this; }
+  startAfter() { return this; }
 
   doc(id = `auto-${Math.random().toString(36).slice(2, 10)}`) {
     return new DocRef(this.store, `${this.name}/${id}`);

@@ -138,10 +138,30 @@ export default function DraftScopePanel() {
         )}
       </div>
 
-      <p className="flex items-start gap-2 rounded-xl bg-stone-50 p-3 text-xs leading-5 text-stone-600">
-        <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        «استيراد كتالوج Android» ينسخ العناصر الافتراضية التي يزرعها التطبيق (المحافظ، قوالب التحويل الواردة، الرسائل الصادرة) **بنفس معرّفاتها** إلى محرر المتصفح فقط — فيطابق النشرُ العنصرَ نفسه بدل إنشاء نسخة مكررة. لا يُحفظ ولا يُنشر ولا يُرسل إلى أي جهاز حتى تضغط «حفظ المسودة» ثم «نشر إصدار»، ولا يُعرض «مطبق على الجهاز» إلا بعد ACK موثوق.
-      </p>
+      <div className="rounded-xl border border-stone-200 bg-stone-50/80 p-3.5 text-xs text-stone-700 space-y-2">
+        <p className="font-bold text-stone-900 flex items-center gap-1.5 text-xs">
+          <Archive className="h-4 w-4 text-stone-600" aria-hidden="true" />
+          <span>إرشادات الاستخدام: ماذا سوف يحدث عند تنفيذ كل إجراء؟</span>
+        </p>
+        <ul className="grid gap-2 sm:grid-cols-2 text-[11px] leading-5 text-stone-600">
+          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
+            <strong className="text-stone-900 block font-bold mb-0.5">١. حفظ المسودة</strong>
+            يحفظ التعديلات في السحابة كمسودة عمل خاصة بك. لا يتم إرسالها للأجهزة ولا تؤثر على الإصدار النشط مطلقاً.
+          </li>
+          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
+            <strong className="text-stone-900 block font-bold mb-0.5">٢. استيراد كتالوج Android</strong>
+            ينسخ القوالب والمحافظ الافتراضية المعرفة في كود Android إلى المسودة للبدء منها وتخصيصها بنفس المعرفات، دون تكرار أو مساس بالأجهزة.
+          </li>
+          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
+            <strong className="text-stone-900 block font-bold mb-0.5">٣. نشر إصدار</strong>
+            ينشئ إصداراً مركزياً غير قابل للتعديل ويحدّث مؤشر النطاق النشط؛ تستلمه الأجهزة عند اتصالها، ولن تظهر مطبقة إلا بعد ورود تأكيد ACK موثوق.
+          </li>
+          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
+            <strong className="text-stone-900 block font-bold mb-0.5">٤. حذف المسودة</strong>
+            يحذف مسودة العمل الحالية فقط؛ لا يؤثر ذلك على الإصدارات المنشورة سابقاً ولا يمس سجل العمليات أو الأجهزة.
+          </li>
+        </ul>
+      </div>
     </Card>
   );
 }
