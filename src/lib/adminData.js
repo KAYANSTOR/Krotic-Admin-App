@@ -648,6 +648,7 @@ export async function fetchUsersWithBilling(options) {
   return readCached('users-with-billing', async (loaderContext) => {
     const childOptions = nestedReadOptions(options, loaderContext);
     const [config, users] = await Promise.all([fetchGlobalConfig(childOptions), fetchAllUsers(childOptions)]);
+    const cachedUsersByUid = new Map((loaderContext?.cachedValue?.users || []).map((user) => [user.uid, user]));
     const { values: enrichedUsers, errors } = await mapUsersSoft(users, 'Billing data', (user) => enrichUserForBilling(user, childOptions));
     // Keep every user row; a failed network shows zeroed aggregates but is still
     // listed, and the error is reported so the UI can flag incomplete data.
@@ -656,13 +657,19 @@ export async function fetchUsersWithBilling(options) {
       const fallbackNetName = u?.network_name || u?.networkName || u?.name || '';
       const fallbackPhone = u?.phone || u?.phoneNumber || '';
       if (!enriched) {
+        const previous = cachedUsersByUid.get(u?.uid) || {};
         return {
           ...u,
-          networkName: fallbackNetName,
-          phoneNumber: fallbackPhone,
-          reportedSalesValue: 0,
-          reportedTransactions: 0,
-          recordedPayments: 0,
+          networkName: previous.networkName || fallbackNetName,
+          phoneNumber: previous.phoneNumber || fallbackPhone,
+          // Preserve the last known financial summary when a refresh for this
+          // user fails. Do not overwrite valid figures with transient zeroes.
+          reportedSalesValue: previous.reportedSalesValue ?? 0,
+          reportedTransactions: previous.reportedTransactions ?? 0,
+          recordedPayments: previous.recordedPayments ?? 0,
+          commissionDue: previous.commissionDue ?? 0,
+          outstandingCommission: previous.outstandingCommission ?? 0,
+          billingSummaryStale: previous.reportedSalesValue != null,
         };
       }
       return {
@@ -721,7 +728,7 @@ export async function fetchNetworkSales(options = {}) {
     const [users, config] = await Promise.all([fetchAllUsers(childOptions), fetchGlobalConfig(childOptions)]);
     const defaultCommissionRate = Number(config.default_commission_rate ?? 5);
     const { values: rawNetworks, errors } = await mapUsersSoft(users, 'Network sales', async (user) => {
-      const [meta, sales, aggregate] = await Promise.all([
+      const [meta, initialSales, aggregate] = await Promise.all([
         fetchNetworkMeta(user.uid, childOptions),
         fetchSalesForUser(user.uid, !fullHistory, childOptions),
         fetchAggregate(user.uid, childOptions).catch((error) => {
@@ -729,10 +736,18 @@ export async function fetchNetworkSales(options = {}) {
           return null;
         }),
       ]);
+      const summaryAvailable = Boolean(aggregate);
+      let sales = initialSales;
+      let fullHistoryLoaded = fullHistory;
+      if (!summaryAvailable && !fullHistory) {
+        // Never label a last-50 fallback as a lifetime total when the trusted
+        // aggregate is unavailable. Read the full ledger only for that network.
+        sales = await fetchSalesForUser(user.uid, false, childOptions);
+        fullHistoryLoaded = true;
+      }
       if (!sales.length && !Number(aggregate?.totalTransactions)) return null;
       const commissionRate = resolveCommissionRate(user, defaultCommissionRate);
       const fallback = summarizeCompletedSales(sales);
-      const summaryAvailable = Boolean(aggregate);
       return {
         uid: user.uid,
         networkName: meta.networkName,
@@ -744,7 +759,7 @@ export async function fetchNetworkSales(options = {}) {
         totalCommissionDue: summaryAvailable ? (Number(aggregate.totalCommissionDue) || 0) : fallback.commissionDue,
         totalPaid: summaryAvailable ? (Number(aggregate.totalPaid) || 0) : fallback.recordedPayments,
         summaryAvailable,
-        fullHistoryLoaded: fullHistory,
+        fullHistoryLoaded,
       };
     });
     const value = rawNetworks.filter(Boolean);

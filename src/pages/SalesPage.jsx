@@ -483,6 +483,7 @@ export default function SalesPage() {
             <span className="text-emerald-700 font-bold">{formatNumber(grandTotals.verifiedCount)} معتمدة</span>
             <span>•</span>
             <span className="text-amber-800 font-semibold">{formatNumber(grandTotals.legacyCount)} قديمة</span>
+            <span className="text-muted">(ضمن السجلات المحمّلة)</span>
           </div>
         </div>
 
