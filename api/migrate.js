@@ -75,6 +75,35 @@ async function readAll(query, cap = MAX_DOCS_PER_NETWORK) {
   return docs.slice(0, cap);
 }
 
+function saleIdentityKeys(sale = {}) {
+  return [
+    ['saleUuid', sale.saleUuid],
+    ['saleId', sale.saleId],
+    ['documentId', sale.id],
+  ].flatMap(([prefix, raw]) => {
+    const value = typeof raw === 'string' ? raw.trim() : '';
+    return value ? [`${prefix}:${value}`] : [];
+  });
+}
+
+/** Prefer current networkId records and include only unique UID-path legacy sales. */
+export function mergeSalesPreferCurrent(currentSales = [], legacySales = []) {
+  const merged = [];
+  const identityToIndex = new Map();
+  for (const sale of [...currentSales, ...legacySales]) {
+    const keys = saleIdentityKeys(sale);
+    const existingIndex = keys.map((key) => identityToIndex.get(key)).find((index) => index !== undefined);
+    if (existingIndex !== undefined) {
+      keys.forEach((key) => identityToIndex.set(key, existingIndex));
+      continue;
+    }
+    const index = merged.length;
+    merged.push(sale);
+    keys.forEach((key) => identityToIndex.set(key, index));
+  }
+  return merged;
+}
+
 function resolveRate(user, globalRate) {
   const rate = Number(user?.commission_rate);
   return user?.commission_rate != null && user.commission_rate !== '' && Number.isFinite(rate) ? rate : globalRate;
@@ -156,10 +185,22 @@ async function rebuildNetwork(db, { uid, now, actorUid, rate }) {
   const networkRef = db.collection('networks').doc(networkId);
   const resolvedRate = resolveRate(user, rate);
 
-  const [sales, payments] = await Promise.all([
+  const [currentSales, legacySales, currentPayments, legacyPayments] = await Promise.all([
     readAll(networkRef.collection('sales').orderBy('createdAt', 'asc')),
+    networkId !== uid
+      ? readAll(db.collection('networks').doc(uid).collection('sales').orderBy('createdAt', 'asc'))
+      : Promise.resolve([]),
     readAll(networkRef.collection('payments')),
+    networkId !== uid
+      ? readAll(db.collection('networks').doc(uid).collection('payments'))
+      : Promise.resolve([]),
   ]);
+  const sales = mergeSalesPreferCurrent(currentSales, legacySales);
+  const paymentsById = new Map(currentPayments.map((payment) => [payment.id, payment]));
+  legacyPayments.forEach((payment) => {
+    if (!paymentsById.has(payment.id)) paymentsById.set(payment.id, payment);
+  });
+  const payments = [...paymentsById.values()];
   const totals = computeNetworkTotals(sales, payments, resolvedRate);
   const aggregate = computeAggregate(sales, resolvedRate);
 
@@ -217,4 +258,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'migration_failed' });
   }
 }
-

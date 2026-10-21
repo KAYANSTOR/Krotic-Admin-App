@@ -44,7 +44,9 @@ export default async function handler(req, res) {
       return res.status(403).json({ success: false, error: 'network_owner_mismatch' });
     }
 
-    const { networkSecret } = await ensureNetworkSecret(db, networkRef);
+    const { networkSecret } = await ensureNetworkSecret(db, networkRef, {
+      recoverUndecryptable: true,
+    });
     return res.status(200).json({
       success: true,
       networkId,

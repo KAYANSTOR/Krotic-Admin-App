@@ -6,7 +6,7 @@ import {
   computeAggregate,
   planUserMigration,
 } from '../server/_lib/migration.js';
-import { validateMigrateInput } from '../api/migrate.js';
+import { mergeSalesPreferCurrent, validateMigrateInput } from '../api/migrate.js';
 
 const NOW = 1_700_000_000_000;
 const DAY = 86_400_000;
@@ -58,6 +58,21 @@ test('aggregate mirrors the panel schema and never goes negative', () => {
   assert.equal(aggregate.totalCommissionDue, 13); // round(5)+round(5)+round(3)
   assert.deepEqual(aggregate.monthly['2026-01'], { face: 200, count: 2 });
   assert.deepEqual(aggregate.monthly['2026-02'], { face: 50, count: 1 });
+});
+
+test('migration rebuild prefers networkId sales and adds unique legacy UID sales once', () => {
+  const current = [
+    { id: 'current-1', saleUuid: 'sale-1', status: 'COMPLETED', faceValue: 500 },
+  ];
+  const legacy = [
+    { id: 'legacy-1', saleUuid: 'sale-1', status: 'COMPLETED', faceValue: 500 },
+    { id: 'legacy-2', saleId: 'sale-2', status: 'COMPLETED', faceValue: 300 },
+  ];
+  const merged = mergeSalesPreferCurrent(current, legacy);
+  assert.deepEqual(merged, [current[0], legacy[1]]);
+  const aggregate = computeAggregate(merged, 5);
+  assert.equal(aggregate.totalFaceValue, 800);
+  assert.equal(aggregate.totalTransactions, 2);
 });
 
 test('a legacy user migration plan links the network and preserves the trial window', () => {
