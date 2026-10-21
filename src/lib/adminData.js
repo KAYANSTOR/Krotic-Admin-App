@@ -6,7 +6,7 @@ import { toDate } from './format';
 import { mapWithConcurrency } from './mapWithConcurrency';
 import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCache';
 import { normalizeUserAccess } from './accessStatus';
-import { summarizeCompletedSales } from './commission';
+import { summarizeCompletedSales, isCompletedSale, saleFaceValue } from './commission';
 import { mergeSalesByIdentity, saleIdentityKeys, salesNetworkIds } from './salesReadCompat';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
@@ -244,7 +244,10 @@ function networkDocumentId(user) {
   return typeof user?.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : user.uid;
 }
 function salesFromSnapshot(snapshot) {
-  return snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }));
+  return snapshot.docs.map((saleDoc) => {
+    const data = saleDoc.data() || {};
+    return { id: saleDoc.id, ...data, faceValue: saleFaceValue(data) };
+  });
 }
 async function readSalesAcrossNetworkPaths(uid, networkId, buildQuery, readQuery) {
   const [currentPath, legacyPath] = salesNetworkIds(uid, networkId);
@@ -307,14 +310,13 @@ export async function fetchUserBillingHistory(uid, options) {
     // createdAt. A createdAt cursor would silently omit those late-arriving
     // records, so the customer's full history is re-read on each load.
     const incrementalPayments = !force && Array.isArray(cachedValue?.payments) && Number.isFinite(paymentsCursor);
-    const salesConstraints = [where('status', '==', 'COMPLETED'), orderBy('createdAt', 'asc')];
     const paymentConstraints = [orderBy('timestamp', 'asc')];
     if (incrementalPayments) paymentConstraints.push(startAt(Timestamp.fromMillis(paymentsCursor)));
     const readQuery = (firestoreQuery) => (force
       ? getDocsFromServer(firestoreQuery)
       : getDocs(firestoreQuery));
     const [salesSnapshot, paymentsSnapshot] = await Promise.all([
-      readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => query(salesRef, ...salesConstraints), readQuery),
+      readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => salesRef, readQuery),
       readQuery(query(paymentsRef, ...paymentConstraints)),
     ]);
     const incomingPayments = paymentsSnapshot.docs.map((paymentDoc) => ({ id: paymentDoc.id, ...paymentDoc.data() }));
@@ -495,9 +497,10 @@ function monthKey(input) {
 function buildMonthlyBuckets(sales) {
   const buckets = {};
   sales.forEach((sale) => {
+    if (!isCompletedSale(sale)) return;
     const key = monthKey(sale.createdAt); if (!key) return;
     const bucket = buckets[key] || { face: 0, count: 0 };
-    const face = Number(sale.faceValue) || 0;
+    const face = saleFaceValue(sale);
     bucket.face += face; bucket.count += 1; buckets[key] = bucket;
   });
   return buckets;
@@ -516,7 +519,7 @@ async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
   // Reading the completed sales once lets us report verified server commission
   // snapshots rather than silently setting the due amount to zero.
   const [salesSnapshot, paymentsAggregate] = await Promise.all([
-    readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => query(salesRef, where('status', '==', 'COMPLETED')), readQuery),
+    readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => salesRef, readQuery),
     getAggregateFromServer(paymentsRef, { totalPaid: sum('amount') }),
   ]);
   const incomingSales = salesSnapshot;
@@ -549,7 +552,7 @@ async function fetchMonthlyBucketsFromFirestore(uid, { force = false } = {}) {
   const sales = await readSalesAcrossNetworkPaths(
     uid,
     networkId,
-    (salesRef) => query(salesRef, where('status', '==', 'COMPLETED')),
+    (salesRef) => salesRef,
     readQuery,
   );
   const minRecentDate = sixMonthsAgo();

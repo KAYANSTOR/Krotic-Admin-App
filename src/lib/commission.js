@@ -3,6 +3,21 @@
  * القيم الخادمية: commissionMinor / commissionAmount / commission.
  * تُرجع null للسجلات القديمة غير المتحقق منها خادمياً.
  */
+export function isCompletedSale(sale) {
+  return !sale?.status || sale.status === 'COMPLETED';
+}
+
+export function saleFaceValue(sale) {
+  const major = sale?.faceValue ?? sale?.amount ?? sale?.amountRiyal;
+  if (major !== null && major !== undefined) {
+    const value = Number(major);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+  const raw = Number(sale?.amountMinor);
+  const value = Number(sale?.moneyPolicyVersion) === 2 ? raw / 100 : raw;
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 export function saleCommission(sale) {
   const raw = sale?.commissionRiyal ?? sale?.commissionMinor ?? sale?.commissionAmount ?? sale?.commission;
   if (raw === null || raw === undefined || raw === '') return null;
@@ -70,7 +85,7 @@ export function sumVerifiedOutstanding(sales = []) {
 export function sumLegacyUnverifiedSales(sales = []) {
   return sales
     .filter((s) => !isServerVerifiedSale(s))
-    .reduce((sum, s) => sum + (Number(s.faceValue ?? s.amount) || 0), 0);
+    .reduce((sum, s) => sum + saleFaceValue(s), 0);
 }
 
 /**
@@ -80,12 +95,12 @@ export function sumLegacyUnverifiedSales(sales = []) {
  * Separates verified Ingest sales from legacy unverified sales without mutating past records.
  */
 export function summarizeCompletedSales(sales = []) {
-  const completedSales = sales.filter((sale) => sale?.status === 'COMPLETED');
+  const completedSales = sales.filter(isCompletedSale);
   const commissionDue = sumCommission(completedSales);
   const outstandingCommission = sumOutstanding(completedSales);
 
   return {
-    reportedSalesValue: completedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0),
+    reportedSalesValue: completedSales.reduce((sum, sale) => sum + saleFaceValue(sale), 0),
     reportedTransactions: completedSales.length,
     commissionDue,
     outstandingCommission,
@@ -95,7 +110,7 @@ export function summarizeCompletedSales(sales = []) {
 
 export function summarizeSalesWithVerification(sales = []) {
   const base = summarizeCompletedSales(sales);
-  const completedSales = sales.filter((sale) => sale?.status === 'COMPLETED');
+  const completedSales = sales.filter(isCompletedSale);
   const verifiedSales = completedSales.filter(isServerVerifiedSale);
   const legacySales = completedSales.filter((s) => !isServerVerifiedSale(s));
 
@@ -103,10 +118,10 @@ export function summarizeSalesWithVerification(sales = []) {
     ...base,
     verifiedTransactions: verifiedSales.length,
     legacyTransactions: legacySales.length,
-    verifiedSalesValue: verifiedSales.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0),
+    verifiedSalesValue: verifiedSales.reduce((sum, s) => sum + saleFaceValue(s), 0),
     verifiedCommissionDue: sumVerifiedCommission(verifiedSales),
     verifiedOutstandingCommission: sumVerifiedOutstanding(verifiedSales),
-    legacySalesValue: legacySales.reduce((sum, s) => sum + (Number(s.faceValue) || 0), 0),
+    legacySalesValue: legacySales.reduce((sum, s) => sum + saleFaceValue(s), 0),
     legacyEstimatedCommission: legacySales.reduce((sum, s) => sum + (saleCommission(s) ?? 0), 0),
   };
 }

@@ -10,7 +10,6 @@ import {
   getAdminDataCacheState,
   invalidateAdminUserData,
   subscribeAdminDataCache,
-  subscribeNetworkSalesRealtime,
 } from '../lib/adminData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
@@ -31,7 +30,6 @@ import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired, toDate } from '../lib/format';
-import { summarizeCompletedSales, summarizeSalesWithVerification } from '../lib/commission';
 import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
@@ -100,9 +98,6 @@ export default function UsersPage() {
   const [cacheState, setCacheState] = useState(null);
   const [partialErrors, setPartialErrors] = useState([]);
   const [billingRefreshing, setBillingRefreshing] = useState(false);
-  const [liveBillingByUid, setLiveBillingByUid] = useState({});
-  const [liveSalesReady, setLiveSalesReady] = useState(false);
-  const [liveSalesErrors, setLiveSalesErrors] = useState({});
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
@@ -164,44 +159,6 @@ export default function UsersPage() {
     hasLoadedUsers.current = true;
     setLoading(false);
   }), []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeNetworkSalesRealtime(
-      (networks, freshness) => {
-        const next = Object.fromEntries(networks.map((network) => [
-          network.uid,
-          {
-            ...summarizeCompletedSales(network.sales || []),
-          ...summarizeSalesWithVerification(network.sales || []),
-            recordedPayments: network.recordedPayments == null
-              ? undefined
-              : (Number(network.recordedPayments) || 0),
-          },
-        ]));
-        setLiveBillingByUid(next);
-        const recoveredUids = networks
-          .filter((network) => network.recordedPayments != null)
-          .map((network) => network.uid);
-        if (recoveredUids.length) {
-          setLiveSalesErrors((previous) => {
-            const updated = { ...previous };
-            recoveredUids.forEach((uid) => { delete updated[uid]; });
-            return updated;
-          });
-        }
-        if (freshness?.ready) setLiveSalesReady(true);
-      },
-      (listenerError, uid) => {
-        setLiveSalesErrors((previous) => ({
-          ...previous,
-          [uid || '_global']: listenerError?.message || String(listenerError),
-        }));
-      },
-      () => setLiveSalesReady(true),
-      { includePaymentTotals: true },
-    );
-    return unsubscribe;
-  }, []);
 
   useEffect(() => {
     fetchData();
@@ -585,35 +542,7 @@ export default function UsersPage() {
 
   const accessRepairCount = users.filter((user) => user.accessNeedsRepair === true).length;
 
-  const getUserBilling = (user) => {
-    const live = liveBillingByUid[user.uid];
-    if (live) {
-      const { recordedPayments, ...liveSales } = live;
-      return {
-        ...user,
-        ...liveSales,
-        recordedPayments: recordedPayments == null ? user.recordedPayments : recordedPayments,
-      };
-    }
-    if (liveSalesReady && !liveSalesErrors[user.uid] && !liveSalesErrors._global) {
-      return {
-        ...user,
-        reportedSalesValue: 0,
-        reportedTransactions: 0,
-        commissionDue: 0,
-        outstandingCommission: 0,
-        recordedPayments: 0,
-        verifiedTransactions: 0,
-        legacyTransactions: 0,
-        verifiedSalesValue: 0,
-        legacySalesValue: 0,
-        verifiedCommissionDue: 0,
-        verifiedOutstandingCommission: 0,
-        legacyEstimatedCommission: 0,
-      };
-    }
-    return user;
-  };
+  const getUserBilling = (user) => user;
 
   const configuredGlobalCommission = Number(globalConfig?.default_commission_rate);
   const defaultCommission = globalConfig?.default_commission_rate != null
@@ -731,16 +660,6 @@ export default function UsersPage() {
           <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
             إعادة المحاولة
           </Button>
-        </div>
-      )}
-
-      {!liveSalesReady && (
-        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
-          <span className="users-error__icon"><RefreshCw className="w-5 h-5" /></span>
-          <div className="users-error__body">
-            <p className="users-error__title">جارٍ مزامنة مؤشرات المبيعات والعمولات</p>
-            <p className="users-error__msg">تُحدَّث أرقام كل شبكة مع وصول سجلها المباشر. قد تكون الأرقام لبعض الشبكات مؤقتة حتى اكتمال التحميل.</p>
-          </div>
         </div>
       )}
 

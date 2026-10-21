@@ -17,7 +17,8 @@ import { formatNumber, formatDate, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { fetchNetworkSales, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { invalidateAdminUserData } from '../lib/adminData';
-import { saleCommission, sumOutstanding, hasUnverifiedCommission, isServerVerifiedSale, sumVerifiedOutstanding, sumLegacyUnverifiedSales } from '../lib/commission';
+import { saleCommission, saleFaceValue, isCompletedSale, sumOutstanding, hasUnverifiedCommission, isServerVerifiedSale, sumVerifiedOutstanding, sumLegacyUnverifiedSales } from '../lib/commission';
+import { mergeSalesByIdentity } from '../lib/salesReadCompat';
 
 const NETWORK_PAGE_SIZE = 12;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v4';
@@ -136,7 +137,11 @@ export default function SalesPage() {
         setNetworkSales((currentNetworks) => {
           if (!currentNetworks.length) return data;
           const updatedNetworkMap = new Map(data.map((net) => [net.uid, net]));
-          return currentNetworks.map((net) => updatedNetworkMap.get(net.uid) || net);
+          return currentNetworks.map((net) => {
+            const update = updatedNetworkMap.get(net.uid);
+            if (!update) return net;
+            return { ...net, ...update, sales: mergeSalesByIdentity(update.sales || [], net.sales || []) };
+          });
         });
         if (freshness?.ready || Number(freshness?.initialSnapshotsCount) > 0) setLoading(false);
         if (freshness?.ready) setRealtimeReady(true);
@@ -204,11 +209,11 @@ export default function SalesPage() {
 
   const calcNetworkStats = useCallback((network) => {
     const filtered = filterSales(network.sales || []);
-    const completed = filtered.filter((sale) => sale.status === 'COMPLETED');
+    const completed = filtered.filter(isCompletedSale);
     const verified = completed.filter(isServerVerifiedSale);
     const legacy = completed.filter((s) => !isServerVerifiedSale(s));
 
-    const totalFaceValue = completed.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
+    const totalFaceValue = completed.reduce((sum, sale) => sum + saleFaceValue(sale), 0);
     const verifiedFaceValue = verified.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
     const legacyFaceValue = legacy.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
 
@@ -728,7 +733,7 @@ export default function SalesPage() {
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-black text-ink font-mono">
-                                  {formatNumber(sale.faceValue)} ر.ي
+                                  {formatNumber(saleFaceValue(sale))} ر.ي
                                 </span>
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusLabel[sale.status]?.class || 'bg-slate-100 text-slate-800'}`}>
@@ -812,7 +817,7 @@ export default function SalesPage() {
                       <p className="text-[11px] text-muted" dir="rtl">{formatDate(sale.createdAt, { withTime: true })}</p>
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-black text-ink font-mono">{formatNumber(sale.faceValue)} ر.ي</p>
+                      <p className="text-sm font-black text-ink font-mono">{formatNumber(saleFaceValue(sale))} ر.ي</p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusLabel[sale.status]?.class || 'bg-slate-100 text-slate-800'}`}>
                         {statusLabel[sale.status]?.text || sale.status}
                       </span>
