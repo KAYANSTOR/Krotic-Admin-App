@@ -135,7 +135,7 @@ export default function TemplateCenterLayout() {
           ) : (
             <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              لا يوجد ACK موثوق مطابق لهذا الإصدار بعد. تظهر الأجهزة كـ«غير معروف» حتى يُعتمد عقد ACK ويُرسله تطبيق Android.
+              لا يوجد ACK موثوق مطابق لهذا الإصدار بعد. تبقى حالة الجهاز «غير معروف» حتى يزامن تطبيق Android الإصدار ويرسل تأكيدًا مطابقًا.
             </p>
           )}
         </Card>

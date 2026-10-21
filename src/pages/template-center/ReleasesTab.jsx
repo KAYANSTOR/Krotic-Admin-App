@@ -170,7 +170,7 @@ export default function ReleasesTab() {
 
       <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
         <Send className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        النشر مركزي فقط. لا تعني هذه الصفحة أن أي جهاز Android استلم البيانات أو طبّقها؛ ذلك يحتاج ACK موثوقًا غير مُفعَّل بعد.
+        النشر مركزي فقط؛ التطبيق على الجهاز لا يُثبت إلا بإقرار ACK موثوق. تعرض الجداول أعلاه الأجهزة التي أكدت كل إصدار؛ وما لم يصل ACK تبقى الحالة «غير معروف».
       </p>
     </Section>
   );
