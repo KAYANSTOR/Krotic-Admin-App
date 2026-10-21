@@ -61,6 +61,10 @@ test('ACK endpoint records a verified ACK and is idempotent on resend', async ()
   assert.equal(res1.statusCode, 201);
   assert.equal(res1.body.success, true);
   assert.equal(res1.body.duplicate, false);
+  assert.equal(res1.body.releaseId, 'release-1');
+  assert.equal(res1.body.payloadHash, hash);
+  assert.equal(res1.body.installationId, 'install-1');
+  assert.equal(res1.body.scopeKey, 'global');
 
   const res2 = createRes();
   await handler(post(validAck()), res2);
@@ -70,6 +74,27 @@ test('ACK endpoint records a verified ACK and is idempotent on resend', async ()
 
   const ackDocs = [...db._store.keys()].filter((key) => key.startsWith('template_center_acks/'));
   assert.equal(ackDocs.length, 1);
+});
+
+test('ACK endpoint accepts and echoes the published network scope', async () => {
+  const data = seed();
+  data['template_center_releases/release-network'] = {
+    status: 'published',
+    scopeKey: 'network:network-1',
+    scope: { type: 'network', networkId: 'network-1' },
+    payloadHashSha256: hash,
+    payload: { wallets: [], transferTemplates: [], outboundTemplates: [] },
+  };
+  const db = createFakeFirestore(data);
+  const handler = makeHandler({ db });
+  const res = createRes();
+  await handler(post(validAck({
+    releaseId: 'release-network',
+    scopeKey: 'network:network-1',
+  })), res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.scopeKey, 'network:network-1');
+  assert.equal(res.body.releaseId, 'release-network');
 });
 
 test('ACK endpoint rejects unauthenticated callers and mismatched uid', async () => {

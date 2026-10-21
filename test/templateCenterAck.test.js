@@ -34,6 +34,8 @@ const publishedRelease = {
 
 test('ACK input validation pins version and required identity fields', () => {
   assert.equal(validateAckInput(validAck()).ok, true);
+  assert.equal(validateAckInput(validAck({ scopeKey: 'network:net-1' })).ok, true);
+  assert.equal(validateAckInput(validAck({ scopeKey: 'network:bad id' })).error, 'scope_key_invalid');
   assert.equal(validateAckInput({ ...validAck(), ackVersion: 2 }).error, 'ack_version_unsupported');
   assert.equal(validateAckInput({ ...validAck(), payloadHash: 'short' }).error, 'payload_hash_invalid');
   assert.equal(validateAckInput({ ...validAck(), outcome: 'ok' }).error, 'outcome_invalid');
@@ -42,6 +44,18 @@ test('ACK input validation pins version and required identity fields', () => {
   assert.equal(validateAckInput({ ...validAck(), insertedCount: -1 }).error, 'ack_counts_invalid');
   const { installationId, ...withoutInstall } = validAck();
   assert.equal(validateAckInput(withoutInstall).error, 'installation_id_invalid');
+});
+
+test('ACK verification accepts a matching network-scoped release', () => {
+  const ack = validateAckInput(validAck({ scopeKey: 'network:net-1' })).value;
+  const release = {
+    ...publishedRelease,
+    scopeKey: 'network:net-1',
+    scope: { type: 'network', networkId: 'net-1' },
+  };
+  const verified = verifyAck({ ack, uid: 'u1', release });
+  assert.equal(verified.ok, true);
+  assert.equal(verified.record.scopeKey, 'network:net-1');
 });
 
 test('ACK verification rejects unknown, unpublished, hash-mismatch and scope-mismatch', () => {

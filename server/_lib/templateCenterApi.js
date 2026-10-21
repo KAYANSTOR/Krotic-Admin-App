@@ -106,9 +106,19 @@ async function handleAck(req, res, input, deps) {
   const ackId = ackIdempotencyKey({ uid: caller.uid, ...parsed.value });
   const ackRef = db.collection(ACK_COLLECTION).doc(ackId);
   const existing = await ackRef.get();
+  const receipt = {
+    success: true,
+    duplicate: existing.exists,
+    ackId,
+    releaseId: parsed.value.releaseId,
+    payloadHash: parsed.value.payloadHash,
+    installationId: parsed.value.installationId,
+    scopeKey: parsed.value.scopeKey,
+    outcome: parsed.value.outcome,
+  };
   if (existing.exists) {
     // إعادة إرسال نفس المفتاح: لا سجل ثانٍ ولا تغيير.
-    return res.status(200).json({ success: true, duplicate: true, ackId });
+    return res.status(200).json(receipt);
   }
   await ackRef.set({
     ...verified.record,
@@ -116,7 +126,7 @@ async function handleAck(req, res, input, deps) {
     createdAt: FieldValue.serverTimestamp(),
     createdAtMs: Date.now(),
   });
-  return res.status(201).json({ success: true, duplicate: false, ackId });
+  return res.status(201).json(receipt);
 }
 
 function auditRecord({ action, actorUid, targetId, details = {} }) {

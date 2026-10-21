@@ -49,7 +49,9 @@ export function validateAckInput(input) {
   if (typeof input.payloadHash !== 'string' || !HASH_PATTERN.test(input.payloadHash)) {
     return { ok: false, error: 'payload_hash_invalid' };
   }
-  if (input.scopeKey !== undefined && input.scopeKey !== 'global') {
+  if (input.scopeKey !== undefined
+      && (typeof input.scopeKey !== 'string'
+        || !/^(global|network:[A-Za-z0-9_-]{1,128})$/.test(input.scopeKey))) {
     return { ok: false, error: 'scope_key_invalid' };
   }
   if (!ACK_OUTCOMES.includes(input.outcome)) return { ok: false, error: 'outcome_invalid' };
