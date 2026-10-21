@@ -134,7 +134,7 @@ export default function OutboundTab() {
         )}
 
         {templates.length === 0 ? (
-          <EmptyState icon={Send} title="لا توجد رسائل صادرة في المسودة" description="أضف قوالب، أو حمّل الحزمة المضمّنة. القائمة الفارغة لا تعني عدم وجود قوالب على الأجهزة." />
+          <EmptyState icon={Send} title="لا توجد رسائل صادرة في المسودة" description="أضف قوالب، أو استورد كتالوج زرع Android. القائمة الفارغة لا تعني عدم وجود قوالب على الأجهزة." />
         ) : (
           <ul className="mt-4 divide-y divide-stone-100">
             {templates.map((template) => {

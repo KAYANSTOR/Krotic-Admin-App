@@ -119,7 +119,7 @@ export default function WalletsTab() {
           <EmptyState
             icon={WalletIcon}
             title="لا توجد محافظ في المسودة"
-            description="أضف محافظ، أو حمّل الحزمة المضمّنة إلى المسودة لبدء التحرير. وجود قائمة فارغة هنا لا يعني عدم وجود محافظ على الأجهزة."
+            description="أضف محافظ، أو استورد كتالوج زرع Android إلى المسودة لبدء التحرير. وجود قائمة فارغة هنا لا يعني عدم وجود محافظ على الأجهزة."
           />
         ) : (
           <ul className="mt-4 divide-y divide-stone-100">

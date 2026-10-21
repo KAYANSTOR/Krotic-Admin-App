@@ -2,7 +2,7 @@
 // Helpers عرض مركز القوالب — دوال نقية قابلة للاختبار (بلا React/شبكة).
 // ------------------------------------------------------------
 // تفصل بوضوح بين:
-//   - الحزمة المضمّنة في المصدر (bundled pack)
+//   - كتالوج زرع Android الافتراضي (bundled pack)
 //   - المسودة المحفوظة (draft)
 //   - الإصدار المنشور (release) والمؤشر النشط (pointer)
 //   - حالة تطبيق الأجهزة (application state) — Unknown افتراضيًا
@@ -16,7 +16,7 @@ export function scopeKeyFor(scope) {
 }
 
 /**
- * مصدر الحزمة المضمّنة في كود المصدر — ليست بيانات إنتاج ولا مسودة محفوظة.
+ * مصدر كتالوج الزرع الافتراضي في Android — ليست بيانات إنتاج ولا مسودة محفوظة.
  * تُعرض دائمًا على أنها «مضمّنة في المصدر» لا «مزروعة».
  */
 export const BUNDLED_PACK_SOURCE = Object.freeze({
@@ -109,7 +109,7 @@ export function deriveApplicationState({ pointer = null, ack = null } = {}) {
 }
 
 /**
- * توصيف مصدر عنصر مسودة: هل هو من الحزمة المضمّنة، أو محرَّر يدويًا،
+ * توصيف مصدر عنصر مسودة: هل هو من كتالوج زرع Android، أو محرَّر يدويًا،
  * أو وارد ضمن مسودة محمَّلة من إصدار سابق؟
  *
  * لا يمكن الجزم بأن عنصرًا «مزروع سابقًا» في الإنتاج؛ نكتفي بوسم ما هو
@@ -118,7 +118,7 @@ export function deriveApplicationState({ pointer = null, ack = null } = {}) {
 export function describeEntrySource(entry, { bundledIds = new Set(), releaseIds = new Set() } = {}) {
   const id = entry?.key ?? entry?.id;
   if (id != null && bundledIds.has(id)) {
-    return { kind: 'bundled', label: 'مطابق للحزمة المضمّنة' };
+    return { kind: 'bundled', label: 'مطابق لكتالوج زرع Android' };
   }
   if (id != null && releaseIds.has(id)) {
     return { kind: 'release', label: 'موجود في إصدار منشور' };

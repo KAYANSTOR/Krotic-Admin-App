@@ -143,7 +143,7 @@ export default function InboundTab() {
         )}
 
         {templates.length === 0 ? (
-          <EmptyState icon={ArrowDownToLine} title="لا توجد قوالب تحويل واردة في المسودة" description="أضف قوالب، أو حمّل الحزمة المضمّنة إلى المسودة. القائمة الفارغة هنا لا تعني عدم وجود قوالب على الأجهزة." />
+          <EmptyState icon={ArrowDownToLine} title="لا توجد قوالب تحويل واردة في المسودة" description="أضف قوالب، أو استورد كتالوج زرع Android إلى المسودة. القائمة الفارغة هنا لا تعني عدم وجود قوالب على الأجهزة." />
         ) : (
           <ul className="mt-4 divide-y divide-stone-100">
             {templates.map((template) => {

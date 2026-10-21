@@ -130,15 +130,15 @@ export function TemplateCenterProvider({ children }) {
     });
   }, [drafts]);
 
-  /** تحميل الحزمة المضمّنة إلى المسودة (إجراء محلي — ليس «زرعًا» على أي جهاز). */
+  /** استيراد كتالوج الزرع الافتراضي في Android إلى المسودة (إجراء محلي — ليس «زرعًا» على أي جهاز). */
   const loadBundledPack = useCallback(() => {
-    if (draftIsDirty && !window.confirm('سيتم استبدال محتوى المسودة الحالية بالحزمة المضمّنة. هل تريد المتابعة؟')) {
+    if (draftIsDirty && !window.confirm('سيتم استبدال محتوى المسودة الحالية بكتالوج زرع Android. هل تريد المتابعة؟')) {
       return;
     }
     setPayload(cloneBundledPack());
-    if (!title.trim()) setTitle('حزمة المحافظ والقوالب اليمنية المعتمدة');
+    if (!title.trim()) setTitle('كتالوج الزرع الافتراضي في Android');
     setDraftIsDirty(true);
-    toast.success('حُمّلت الحزمة المضمّنة إلى المسودة (محليًا فقط — لم تُحفظ أو تُنشر)');
+    toast.success('استُورد كتالوج زرع Android إلى المسودة (محليًا فقط — لم تُحفظ أو تُنشر)');
   }, [draftIsDirty, title]);
 
   const saveDraft = useCallback(async () => {

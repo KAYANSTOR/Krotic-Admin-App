@@ -22,20 +22,20 @@ test('template center exposes a clear sub-route per domain', async () => {
   assert.match(page, /<Navigate to="wallets" replace \/>/);
 });
 
-test('draft actions are separated: load-to-draft, save draft, publish, rollback', async () => {
+test('draft actions are separated: import catalog, save draft, publish, rollback', async () => {
   const [panel, releases] = await Promise.all([
     read('src/pages/template-center/DraftScopePanel.jsx'),
     read('src/pages/template-center/ReleasesTab.jsx'),
   ]);
   assert.match(panel, /حفظ المسودة/);
-  assert.match(panel, /تحميل إلى المسودة/);
+  assert.match(panel, />\s*استيراد كتالوج Android\s*</);
   assert.match(panel, /نشر إصدار/);
   assert.match(releases, /تراجع/);
 });
 
-test('the pack-load action is labelled as loading to the draft, never as seeding', async () => {
+test('the import action is labelled as importing into the draft, never as seeding', async () => {
   const panel = await read('src/pages/template-center/DraftScopePanel.jsx');
-  assert.match(panel, /تحميل إلى المسودة/);
+  assert.match(panel, />\s*استيراد كتالوج Android\s*</);
   // No positive seeding claim anywhere in the UI (negations such as «لا تُزرع» are allowed).
   const tabs = await readTabs();
   for (const [name, source] of Object.entries(tabs)) {

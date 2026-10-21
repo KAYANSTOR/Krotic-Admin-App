@@ -28,7 +28,7 @@ function StatusCard({ icon: Icon, title, badge = null, children }) {
 }
 
 /**
- * تبويب الإصدارات والمؤشرات: يفرّق بوضوح بين الحزمة المضمّنة، والمسودة،
+ * تبويب الإصدارات والمؤشرات: يفرّق بوضوح بين كتالوج زرع Android، والمسودة،
  * والإصدار المنشور، وحالة تطبيق الأجهزة (Unknown افتراضيًا).
  */
 export default function ReleasesTab() {
@@ -62,8 +62,8 @@ export default function ReleasesTab() {
       description="الإصدارات المنشورة غير قابلة للتعديل. التراجع ينشئ إصدارًا جديدًا بدل حذف التاريخ."
     >
       <div className="grid gap-3 lg:grid-cols-4">
-        <StatusCard icon={Package} title="الحزمة المضمّنة في المصدر">
-          <p>قيم ابتدائية في كود اللوحة: {bundledCounts.wallets} محفظة، {bundledCounts.transferTemplates} قالب وارد، {bundledCounts.outboundTemplates} رسالة صادرة.</p>
+        <StatusCard icon={Package} title="كتالوج زرع Android الافتراضي">
+          <p>العناصر الافتراضية التي يزرعها التطبيق (بنفس المعرّفات): {bundledCounts.wallets} محفظة، {bundledCounts.transferTemplates} قالب وارد، {bundledCounts.outboundTemplates} رسالة صادرة.</p>
           <p className="mt-2 text-xs text-stone-500">ليست بيانات إنتاج، ولا مسودة محفوظة، ولا تعني أي شيء عن الأجهزة.</p>
         </StatusCard>
         <StatusCard icon={Archive} title="المسودة المحفوظة">
