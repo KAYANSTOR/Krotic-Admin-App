@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import toast from 'react-hot-toast';
 import { callAdminApi, adminApiError } from '../../lib/adminApi';
 import { EMPTY_PAYLOAD, cloneBundledPack } from '../../lib/bundledTemplatePack';
-import { scopeKeyFor } from '../../lib/templateCenterView';
+import { scopeKeyFor, selectVerifiedAck } from '../../lib/templateCenterView';
 
 const TemplateCenterContext = createContext(null);
 
@@ -26,6 +26,7 @@ export function TemplateCenterProvider({ children }) {
   const [drafts, setDrafts] = useState([]);
   const [releases, setReleases] = useState([]);
   const [pointers, setPointers] = useState([]);
+  const [acks, setAcks] = useState([]);
   const [networks, setNetworks] = useState([]);
   const [catalog, setCatalog] = useState(null);
   const [activeDraftId, setActiveDraftId] = useState('');
@@ -43,6 +44,10 @@ export function TemplateCenterProvider({ children }) {
     networkId: scopeType === 'network' ? networkId : null,
   }), [scopeType, networkId]);
   const currentPointer = pointers.find((item) => item.id === scopeKeyFor(scope)) || null;
+  const currentAck = useMemo(
+    () => selectVerifiedAck(acks, { releaseId: currentPointer?.releaseId ?? null, scopeKey: scopeKeyFor(scope) }),
+    [acks, currentPointer?.releaseId, scope],
+  );
 
   const request = useCallback(async (action, rest = {}) => {
     const response = await callAdminApi('/api/template-center', { action, ...rest });
@@ -67,6 +72,7 @@ export function TemplateCenterProvider({ children }) {
       setDrafts(data.drafts || []);
       setReleases(data.releases || []);
       setPointers(data.pointers || []);
+      setAcks(data.acks || []);
       setNetworks(networkData.networks || []);
       setCatalog(catalogData.catalog || null);
       return true;
@@ -268,7 +274,8 @@ export function TemplateCenterProvider({ children }) {
 
   const value = useMemo(() => ({
     loading, saving, working,
-    drafts, releases, pointers, networks, catalog,
+    drafts, releases, pointers, acks, networks, catalog,
+    currentAck,
     activeDraft, activeDraftId, selectDraft, startNewDraft,
     title, setTitle, scopeType, setScopeType, networkId, setNetworkId,
     minAppVersion, setMinAppVersion, minAppBuild, setMinAppBuild,
@@ -276,7 +283,8 @@ export function TemplateCenterProvider({ children }) {
     refresh, saveDraft, publish, rollback, deleteDraft, loadBundledPack,
     simulateInbound, previewOutbound,
   }), [
-    loading, saving, working, drafts, releases, pointers, networks, catalog,
+    loading, saving, working, drafts, releases, pointers, acks, networks, catalog,
+    currentAck,
     activeDraft, activeDraftId, selectDraft, startNewDraft, title, scopeType,
     networkId, minAppVersion, minAppBuild, payload, setSection, draftIsDirty,
     markDirty, scope, currentPointer, refresh, saveDraft, publish, rollback,

@@ -43,14 +43,19 @@ test('the pack-load action is labelled as loading to the draft, never as seeding
   }
 });
 
-test('device application state is never claimed without an ACK source', async () => {
-  const layout = await read('src/pages/template-center/TemplateCenterLayout.jsx');
-  const releases = await read('src/pages/template-center/ReleasesTab.jsx');
-  // The layout passes ack:null (no ACK source enabled yet) and shows Unknown.
-  assert.match(layout, /ack: null/);
-  assert.match(layout, /لا يوجد مصدر ACK/);
+test('device application state is only shown from a verified ACK, never assumed', async () => {
+  const [layout, releases, context] = await Promise.all([
+    read('src/pages/template-center/TemplateCenterLayout.jsx'),
+    read('src/pages/template-center/ReleasesTab.jsx'),
+    read('src/pages/template-center/TemplateCenterContext.jsx'),
+  ]);
+  // The state is derived from the real (possibly null) ACK, not a hardcoded success.
+  assert.match(layout, /deriveApplicationState\(\{ pointer: currentPointer, ack: currentAck \}\)/);
+  assert.match(context, /selectVerifiedAck/);
+  // The fallback wording must say the device state is unknown, not applied.
+  assert.match(layout, /لا يوجد ACK موثوق/);
   assert.match(releases, /غير معروف/);
-  // Never render a bare success claim about devices.
+  // Never render a bare seeding/success claim about devices.
   assert.doesNotMatch(layout, /تم الزرع/);
   assert.doesNotMatch(releases, /تم الزرع/);
 });

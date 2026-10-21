@@ -50,7 +50,7 @@
 بناءً على نجاح حفظ أو نشر مركزي، ولا بناءً على `Fetched`/`Cached`. يحتاج ACK
 يطابق الإصدار والبصمة والجهاز.
 
-## 4. عقد ACK من Android (مقترح — غير منفّذ)
+## 4. عقد ACK من Android (المستقبل منفَّذ — المرسل في Android غير منفّذ)
 
 المرجع: `contracts/schemas/android-ack.schema.json`.
 
@@ -61,15 +61,28 @@
 - **Idempotency:** المفتاح الفعلي `(uid, installationId, releaseId, payloadHash, outcome)`؛
   إعادة الإرسال بنفس المفتاح لا تنشئ سجلًا ثانيًا.
 - **لا أسرار ولا محتوى رسائل:** أعداد ورموز حالة فقط. الحقول غير المعروفة تُرفض.
-- **التحقق الخادمي عند التنفيذ:** يُستخرج `uid` من Firebase ID token لا من الحقل،
+- **التحقق الخادمي (منفَّذ):** يُستخرج `uid` من Firebase ID token لا من الحقل،
   ويُقارَن `installationId` بـ `users/{uid}.entitlementInstallationId` إن كان مربوطًا،
-  ويُطابَق `payloadHash` مع `payloadHashSha256` في وثيقة الإصدار.
+  ويُطابَق `payloadHash` مع `payloadHashSha256` في وثيقة الإصدار، ويُطابَق `scopeKey`.
 
-**الاعتماد الخارجي (مُسجَّل بدقة):** لا يوجد في أي من المستودعين endpoint يستقبل
-هذا ACK، ولا مرسل له في Android. حالة Android الحالية: `TemplateCenterService.sync`
+**المستقبل الخادمي (منفَّذ في هذه المهمة):**
+
+- المسار: `POST /api/template-center?__apiRoute=template-center` مع `action=ack`
+  (عبر `api/settings.js` — بلا دالة Vercel جديدة).
+- الكود: `server/_lib/templateCenterAck.js` (تحقق + idempotency) و`handleAck`
+  في `server/_lib/templateCenterApi.js` (مصادقة + كتابة).
+- التخزين: مجموعة `template_center_acks` بمعرّف حتمي؛ تُعرض في `action=list`
+  كحقل `acks` (فقط السجلات `verified=true` تُستخدم لإثبات حالة الجهاز).
+- حالات الرفض: `401` (بلا رمز)، `403` (`uid_mismatch` / `installation_mismatch`)،
+  `404` (`release_not_found`)، `409` (`release_not_published` / `payload_hash_mismatch`
+  / `scope_mismatch`)، `400` (شكل غير صالح).
+
+**الاعتماد الخارجي المتبقي (مُسجَّل بدقة):** لا يوجد في مستودع Android أي مُرسل
+لهذا ACK. حالة Android الحالية: `TemplateCenterService.sync`
 و`TemplateCenterActivationService` (معطّلة خلف `_templateCenterActivationEnabled=false`)
-تحفظان الإصدار محليًا لكنهما **لا تُرسلان ACK**. تنفيذ ACK يتطلب تغييرًا في مستودع
-Android — ممنوع في هذه المهمة. يُوثَّق العقد ويُنتظر قرار المالك.
+تحفظان الإصدار محليًا لكنهما **لا تُرسلان ACK**. لذلك تبقى حالة الأجهزة في اللوحة
+`Unknown` حتى يُنفَّذ الإرسال في مستودع Android — وهو ممنوع في هذه المهمة. هذا
+العمل يُجهّز المستقبل ويُوثّق العقد وينتظر قرار المالك بإنفاذ الإرسال في Android.
 
 ## 5. الاستحقاق المدفوع: ثلاث طبقات منفصلة
 

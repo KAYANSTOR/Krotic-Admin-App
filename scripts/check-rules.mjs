@@ -28,6 +28,7 @@ const REQUIRED = [
   { pattern: /match\s+\/template_center_drafts\/\{draftId\}\s*\{\s*allow read, write:\s*if false;/, why: 'مسودات القوالب يجب أن تكون خادمية فقط' },
   { pattern: /match\s+\/template_center_releases\/\{releaseId\}\s*\{\s*allow read, write:\s*if false;/, why: 'إصدارات القوالب يجب أن تكون خادمية فقط' },
   { pattern: /match\s+\/template_center_pointers\/\{scopeKey\}\s*\{\s*allow read, write:\s*if false;/, why: 'مؤشرات الإصدارات يجب أن تكون خادمية فقط' },
+  { pattern: /match\s+\/template_center_acks\/\{ackId\}\s*\{\s*allow read, write:\s*if false;/, why: 'سجلات ACK يجب أن تكون خادمية فقط' },
 ];
 
 const failures = [];

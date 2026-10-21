@@ -201,6 +201,30 @@ export function validateOutboundTemplate({ key, body, catalog } = {}) {
   return { ok: errors.length === 0, errors, usedVariables: used, required: definition?.required || [] };
 }
 
+/**
+ * يختار أحدث ACK موثوق مطابق للإصدار والنطاق من قائمة سجلات الإدارة.
+ * لا يُشتق أي تأكيد من سجل غير موثوق (verified !== true)، ولا من إصدار مختلف.
+ */
+export function selectVerifiedAck(acks = [], { releaseId = null, scopeKey = 'global' } = {}) {
+  if (!releaseId) return null;
+  return acks
+    .filter((ack) => ack?.verified === true
+      && ack.releaseId === releaseId
+      && (ack.scopeKey || 'global') === scopeKey)
+    .sort((left, right) => Date.parse(right.appliedAt || 0) - Date.parse(left.appliedAt || 0))[0] || null;
+}
+
+/** عدد الأجهزة المميزة التي أكدت تطبيق إصدار معيّن (installationId فريد). */
+export function countAcknowledgingDevices(acks = [], { releaseId = null, scopeKey = 'global' } = {}) {
+  if (!releaseId) return 0;
+  const devices = new Set();
+  for (const ack of acks) {
+    if (ack?.verified !== true || ack.releaseId !== releaseId || (ack.scopeKey || 'global') !== scopeKey) continue;
+    if (typeof ack.installationId === 'string' && ack.installationId) devices.add(ack.installationId);
+  }
+  return devices.size;
+}
+
 /** وصف نطاق مقروء (عام / اسم شبكة). */
 export function describeScope(scope, networks = []) {
   if (!scope || scope.type === 'global') return 'عام لكل الشبكات';

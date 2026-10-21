@@ -7,7 +7,8 @@ import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
 import { useTemplateCenter } from './TemplateCenterContext';
 import {
-  APPLICATION_STATE_LABELS, deriveApplicationState, describeScope, formatTimestamp,
+  APPLICATION_STATE_LABELS, countAcknowledgingDevices, deriveApplicationState, describeScope,
+  formatTimestamp, scopeKeyFor, selectVerifiedAck,
 } from '../../lib/templateCenterView';
 import { BUNDLED_TEMPLATE_PACK } from '../../lib/bundledTemplatePack';
 
@@ -31,7 +32,7 @@ function StatusCard({ icon: Icon, title, badge = null, children }) {
  * والإصدار المنشور، وحالة تطبيق الأجهزة (Unknown افتراضيًا).
  */
 export default function ReleasesTab() {
-  const { releases, pointers, networks, drafts, working, rollback } = useTemplateCenter();
+  const { releases, pointers, networks, drafts, acks, currentPointer, currentAck, working, rollback } = useTemplateCenter();
 
   const bundledCounts = useMemo(() => ({
     wallets: BUNDLED_TEMPLATE_PACK.wallets.length,
@@ -39,7 +40,21 @@ export default function ReleasesTab() {
     outboundTemplates: BUNDLED_TEMPLATE_PACK.outboundTemplates.length,
   }), []);
 
-  const deviceState = deriveApplicationState({ pointer: null, ack: null });
+  const activeScopeKey = scopeKeyFor(currentPointer?.scope || { type: 'global' });
+  const deviceState = deriveApplicationState({ pointer: currentPointer, ack: currentAck });
+  const acknowledgingDevices = countAcknowledgingDevices(acks, {
+    releaseId: currentPointer?.releaseId ?? null,
+    scopeKey: activeScopeKey,
+  });
+
+  const ackSummary = (release) => {
+    const ack = selectVerifiedAck(acks, { releaseId: release.id, scopeKey: release.scopeKey || 'global' });
+    if (!ack) return { tone: 'warning', label: 'غير معروف' };
+    const count = countAcknowledgingDevices(acks, { releaseId: release.id, scopeKey: release.scopeKey || 'global' });
+    if (ack.outcome === 'failed' || ack.outcome === 'rejected') return { tone: 'danger', label: `${count} جهاز — فشل` };
+    if (ack.outcome === 'partially_applied') return { tone: 'warning', label: `${count} جهاز — جزئي` };
+    return { tone: 'success', label: `${count} جهاز أكّد` };
+  };
 
   return (
     <Section
@@ -65,9 +80,15 @@ export default function ReleasesTab() {
             ? <p>لا توجد إصدارات منشورة.</p>
             : <p>{releases.length} إصدار منشور، و{pointers.length} نطاق له مؤشر نشط.</p>}
         </StatusCard>
-        <StatusCard icon={Smartphone} title="حالة تطبيق الأجهزة">
+        <StatusCard
+          icon={Smartphone}
+          title="حالة تطبيق الأجهزة"
+          badge={<Badge tone={deviceState.tone}>{APPLICATION_STATE_LABELS[deviceState.state]}</Badge>}
+        >
           <p>{deviceState.detail}</p>
-          <p className="mt-2 text-xs text-stone-500">لا مصدر ACK مُفعَّل — الحالة «غير معروف» دائمًا حاليًا.</p>
+          {currentAck
+            ? <p className="mt-2 text-xs text-stone-500">{acknowledgingDevices} جهاز أكّد هذا الإصدار.</p>
+            : <p className="mt-2 text-xs text-stone-500">لا ACK موثوق بعد — الحالة «غير معروف» حتى يرسل تطبيق Android تأكيدًا.</p>}
         </StatusCard>
       </div>
 
@@ -87,7 +108,10 @@ export default function ReleasesTab() {
                     <Badge tone="success" dot>نشط</Badge>
                     <Badge tone="neutral">versionCode {pointer.versionCode ?? '—'}</Badge>
                     <Badge tone="neutral">Android ≥ {pointer.minAppVersion || '0.0.0'} · build {pointer.minAppBuild ?? 0}</Badge>
-                    <Badge tone="warning">الأجهزة: غير معروف</Badge>
+                    {(() => {
+                      const summary = ackSummary({ id: pointer.releaseId, scopeKey: pointer.id });
+                      return <Badge tone={summary.tone}>الأجهزة: {summary.label}</Badge>;
+                    })()}
                   </div>
                 </li>
               ))}
@@ -130,7 +154,7 @@ export default function ReleasesTab() {
                         <td className="px-3 py-3">{formatTimestamp(release.publishedAt)}</td>
                         <td className="px-3 py-3"><span className="font-mono text-xs" dir="ltr">{release.publishedBy || release.createdBy || '—'}</span></td>
                         <td className="px-3 py-3">{isActive ? <Badge tone="success" dot>نشط</Badge> : <Badge tone="neutral">سابق</Badge>}</td>
-                        <td className="px-3 py-3"><Badge tone="warning">غير معروف</Badge></td>
+                        <td className="px-3 py-3"><Badge tone={ackSummary(release).tone}>{ackSummary(release).label}</Badge></td>
                         <td className="px-3 py-3">
                           <Button size="sm" variant="secondary" icon={RotateCcw} disabled={Boolean(working)} onClick={() => rollback(release)}>تراجع</Button>
                         </td>

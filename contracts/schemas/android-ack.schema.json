@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "krotak://contracts/android-ack.schema.json",
-  "title": "Android template-application ACK (proposal, v1)",
-  "description": "عقد مقترح: ACK يرسله تطبيق Android ليعلن أن إصدارًا مركزيًا محددًا قُبِل وطُبِّق فعليًا على المخازن المحلية. هذا ليس موجودًا بعد في أي من المستودعين (لا endpoint ولا مرسل) — راجع docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md §4. الحالة: مقترح غير منفّذ.",
+  "title": "Android template-application ACK (v1, receiver implemented)",
+  "description": "عقد ACK يرسله تطبيق Android ليعلن أن إصدارًا مركزيًا محددًا قُبِل وطُبِّق فعليًا على المخازن المحلية. الحالة (2026-10-21): المستقبل الخادمي منفَّذ في لوحة الإدارة عبر POST /api/template-center?__apiRoute=template-center مع action=ack (server/_lib/templateCenterAck.js) ويطبّق التحقق أدناه. المرسل في Android غير موجود بعد، لذا تبقى حالة الأجهزة Unknown حتى يُنفَّذ الإرسال في مستودع Krotak-Pro (ممنوع تعديله في هذه المهمة) — راجع docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md §4.",
   "schemaVersion": 1,
   "type": "object",
   "additionalProperties": false,

@@ -25,9 +25,9 @@ function toneForState(tone) {
 }
 
 export default function TemplateCenterLayout() {
-  const { loading, drafts, releases, pointers, networks, currentPointer, scope, refresh } = useTemplateCenter();
+  const { loading, drafts, releases, pointers, networks, currentPointer, currentAck, scope, refresh } = useTemplateCenter();
 
-  const applicationState = deriveApplicationState({ pointer: currentPointer, ack: null });
+  const applicationState = deriveApplicationState({ pointer: currentPointer, ack: currentAck });
 
   if (loading) {
     return (
@@ -105,10 +105,39 @@ export default function TemplateCenterLayout() {
               </div>
             </dl>
           )}
-          <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            لا يوجد مصدر ACK مُفعَّل بعد، لذلك لا تُعرض أي حالة «مطبَّق على الجهاز». تظهر الأجهزة كـ«غير معروف» حتى يُعتمد عقد ACK ويُرسله تطبيق Android.
-          </p>
+          {currentAck ? (
+            <dl className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">آخر تأكيد موثوق</dt>
+                <dd>{formatTimestamp(currentAck.appliedAt)}</dd>
+              </div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">الجهاز (installationId)</dt>
+                <dd className="font-mono text-xs" dir="ltr">{currentAck.installationId}</dd>
+              </div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">النتيجة</dt>
+                <dd>{currentAck.outcome === 'partially_applied' ? 'مطبَّق جزئيًا' : 'مطبَّق بالكامل'}{currentAck.parserRefreshed ? ' + أُعيد بناء المحلل' : ''}</dd>
+              </div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">العناصر المُدرجة</dt>
+                <dd className="tabular-nums">{currentAck.insertedCount ?? 0}</dd>
+              </div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">التعارضات المتروكة</dt>
+                <dd className="tabular-nums">{currentAck.conflictCount ?? 0}</dd>
+              </div>
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <dt className="font-semibold text-stone-600">البصمة المطابقة</dt>
+                <dd className="font-mono text-xs" dir="ltr">{currentAck.payloadHash ? `${currentAck.payloadHash.slice(0, 12)}…` : '—'}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              لا يوجد ACK موثوق مطابق لهذا الإصدار بعد. تظهر الأجهزة كـ«غير معروف» حتى يُعتمد عقد ACK ويُرسله تطبيق Android.
+            </p>
+          )}
         </Card>
       </Section>
 

@@ -8,6 +8,8 @@ import {
   collectReleaseEntryIds,
   extractTemplateVariables,
   validateOutboundTemplate,
+  selectVerifiedAck,
+  countAcknowledgingDevices,
 } from '../src/lib/templateCenterView.js';
 import { getTemplateCenterCatalog } from '../server/_lib/templateCenter.js';
 import { BUNDLED_TEMPLATE_PACK, cloneBundledPack } from '../src/lib/bundledTemplatePack.js';
@@ -49,6 +51,41 @@ test('failed ACK downgrades the device state instead of reporting success', () =
   const state = deriveApplicationState({ pointer: { releaseId: 'rel-1' }, ack: { outcome: 'failed', failureReason: 'x' } });
   assert.equal(state.state, 'Unknown');
   assert.equal(state.tone, 'danger');
+});
+
+test('selectVerifiedAck ignores unverified records and other releases/scopes', () => {
+  const acks = [
+    { verified: false, releaseId: 'r1', scopeKey: 'global', appliedAt: '2026-01-05T00:00:00.000Z', installationId: 'a' },
+    { verified: true, releaseId: 'r2', scopeKey: 'global', appliedAt: '2026-01-05T00:00:00.000Z', installationId: 'b' },
+    { verified: true, releaseId: 'r1', scopeKey: 'network:n1', appliedAt: '2026-01-05T00:00:00.000Z', installationId: 'c' },
+    { verified: true, releaseId: 'r1', scopeKey: 'global', appliedAt: '2026-01-03T00:00:00.000Z', installationId: 'old' },
+    { verified: true, releaseId: 'r1', scopeKey: 'global', appliedAt: '2026-01-04T00:00:00.000Z', installationId: 'new' },
+  ];
+  const latest = selectVerifiedAck(acks, { releaseId: 'r1', scopeKey: 'global' });
+  assert.equal(latest.installationId, 'new');
+  assert.equal(selectVerifiedAck(acks, { releaseId: null }), null);
+  assert.equal(selectVerifiedAck(acks, { releaseId: 'r9' }), null);
+});
+
+test('countAcknowledgingDevices counts distinct installations only', () => {
+  const acks = [
+    { verified: true, releaseId: 'r1', scopeKey: 'global', installationId: 'dev-1' },
+    { verified: true, releaseId: 'r1', scopeKey: 'global', installationId: 'dev-1' },
+    { verified: true, releaseId: 'r1', scopeKey: 'global', installationId: 'dev-2' },
+    { verified: false, releaseId: 'r1', scopeKey: 'global', installationId: 'dev-3' },
+    { verified: true, releaseId: 'r2', scopeKey: 'global', installationId: 'dev-4' },
+  ];
+  assert.equal(countAcknowledgingDevices(acks, { releaseId: 'r1', scopeKey: 'global' }), 2);
+  assert.equal(countAcknowledgingDevices(acks, { releaseId: null }), 0);
+});
+
+test('a verified ACK flips the derived state to AppliedLocally', () => {
+  const state = deriveApplicationState({
+    pointer: { releaseId: 'r1' },
+    ack: { outcome: 'applied', parserRefreshed: false },
+  });
+  assert.equal(state.state, 'AppliedLocally');
+  assert.equal(state.evidence, 'ack');
 });
 
 test('reconciliation reports unknown legacy data when there are no central releases', () => {
