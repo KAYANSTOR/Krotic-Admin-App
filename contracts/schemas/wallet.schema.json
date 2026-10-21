@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "krotak://contracts/wallet.schema.json",
+  "title": "Wallet (message source definition)",
+  "description": "تعريف مصدر رسائل فقط (SMS/إشعار). ليس محفظة مالية ولا يحمل رصيدًا أو أي حقل مالي. مطابق لجدول Drift `wallets` + إعداد `wallet_extras` في تطبيق Android، وللتحقق الخادمي في server/_lib/templateCenter.js (validateWallet).",
+  "schemaVersion": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "description": "مفتاح ثابت لا يتغيّر بعد الإنشاء ولا يُعاد استخدامه. المصدر: admin TemplateCenterPage / wallet.id؛ المستهلك: Drift wallets.id."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "الاسم المعروض. المصدر: لوحة الإدارة؛ المستهلك: Drift wallets.name."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "suspended", "archived"],
+      "description": "حالة المحفظة كمصدر رسائل. المصدر: لوحة الإدارة؛ المستهلك: Drift wallets.status + فلترة القوالب النشطة."
+    },
+    "sourceMode": {
+      "type": "string",
+      "enum": ["sms", "notification"],
+      "default": "sms",
+      "description": "طريقة قراءة الرسالة. الغياب يعني sms (لا يعني notification). المصدر: wallet_extras.sourceMode؛ المستهلك: WalletSourceMode في Android."
+    },
+    "senderId": {
+      "type": ["string", "null"],
+      "maxLength": 120,
+      "description": "معرّف المرسل الظاهر في الرسالة (مثل JAIB). المصدر: wallet_extras.senderId."
+    },
+    "packageName": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "اسم حزمة Android عند القراءة من الإشعارات. مطلوب فعليًا عندما sourceMode=notification. المصدر: wallet_extras.packageName."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "وقت إنشاء المحفظة. مطلوب عند النشر (allowDrafts=false) في التحقق الخادمي. المصدر: Drift wallets.createdAt."
+    }
+  },
+  "$comment": "ممنوع صراحةً: أي حقل رصيد/مبلغ/دفتر مالي. الحقول المالية للمحفظة غير معرّفة في هذا العقد (Unknown / يحتاج قرارًا) — راجع docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md §5."
+}

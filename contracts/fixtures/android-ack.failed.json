@@ -1,0 +1,19 @@
+{
+  "_synthetic": true,
+  "_note": "بيانات اختبار اصطناعية غير إنتاجية",
+  "ackVersion": 1,
+  "uid": "sample-uid-1",
+  "installationId": "sample-install-2",
+  "releaseId": "sample-release-3",
+  "payloadHash": "2222222222222222222222222222222222222222222222222222222222222222",
+  "scopeKey": "global",
+  "scope": { "type": "global", "networkId": null },
+  "outcome": "failed",
+  "appliedAt": "2026-01-01T00:07:00.000Z",
+  "insertedCount": 0,
+  "conflictCount": 0,
+  "parserRefreshed": false,
+  "failureReason": "payload_sections_missing",
+  "appVersion": "1.0.15",
+  "appBuild": 15
+}
