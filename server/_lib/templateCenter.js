@@ -48,6 +48,26 @@ const OUTBOUND_TEMPLATES = Object.freeze({
   salafni_template_rejected: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['reason'] },
   salafni_template_settled: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['amount'] },
   low_stock_alert_template: { scope: VARIABLE_SCOPE.outboundSystem, required: ['category'] },
+  card_delivery_cash_template: {
+    scope: VARIABLE_SCOPE.outboundCustomer,
+    required: ['network_name', 'serial', 'secret', 'card_value'],
+  },
+  card_delivery_credit_template: {
+    scope: VARIABLE_SCOPE.outboundCustomer,
+    required: ['network_name', 'serial', 'secret', 'card_value'],
+  },
+  card_delivery_gift_template: {
+    scope: VARIABLE_SCOPE.outboundCustomer,
+    required: ['network_name', 'serial', 'secret', 'card_value'],
+  },
+  salafni_card_delivery_template: {
+    scope: VARIABLE_SCOPE.outboundCustomer,
+    required: ['network_name', 'serial', 'secret', 'card_value'],
+  },
+  deposit_no_stock_template: {
+    scope: VARIABLE_SCOPE.outboundSystem,
+    required: ['first_customer_name', 'amount'],
+  },
 });
 
 const VARIABLE_ALIASES = Object.freeze({
