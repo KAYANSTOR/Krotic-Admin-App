@@ -165,3 +165,16 @@ test('all modal dialogs escape the pull-to-refresh containing block on mobile', 
   assert.match(modal, /const onCloseRef = useRef\(onClose\)/);
   assert.match(modal, /\}, \[isOpen\]\);/);
 });
+
+test('paid-features screen writes through the server path and never touches Firestore directly', async () => {
+  const page = await read('src/pages/PaidFeaturesPage.jsx');
+  // الكتابة تمر بالمسار الخادمي المقيّد فقط.
+  assert.match(page, /updatePaidFeatureEntitlements/);
+  assert.match(page, /fetchPaidFeatureEntitlements/);
+  // لا كتابة عميل مباشرة على Firestore من الشاشة.
+  assert.doesNotMatch(page, /from 'firebase\/firestore'/);
+  assert.doesNotMatch(page, /setDoc|updateDoc|addDoc/);
+  // تُظهر بصدق أن المستهلك على Android غير مُثبَت (لا ادّعاء تطبيق على الجهاز).
+  assert.match(page, /PaidFeatureGate/);
+  assert.match(page, /غير موجود/);
+});

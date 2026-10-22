@@ -26,3 +26,10 @@ test('template-center keeps its public API URL through the shared settings funct
     && rule.destination === '/api/settings?__apiRoute=template-center'));
   assert.equal(await readFile(path.join(root, 'api', 'template-center.js')).then(() => true, () => false), false);
 });
+
+test('paid-features reuses the shared settings function without a new API file', async () => {
+  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/paid-features'
+    && rule.destination === '/api/settings?__apiRoute=paid-features'));
+  assert.equal(await readFile(path.join(root, 'api', 'paid-features.js')).then(() => true, () => false), false);
+});

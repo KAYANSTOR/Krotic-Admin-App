@@ -13,6 +13,7 @@ const routeLoaders = {
   '/template-center/outbound': () => import('../pages/TemplateCenterPage'),
   '/template-center/releases': () => import('../pages/TemplateCenterPage'),
   '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
+  '/paid-features': () => import('../pages/PaidFeaturesPage'),
 };
 
 const loadedRoutes = new Map();

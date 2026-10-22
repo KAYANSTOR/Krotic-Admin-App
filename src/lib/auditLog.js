@@ -44,6 +44,7 @@ export const AUDIT_ACTIONS = {
   SALE_CONFLICT_DETECTED: { label: 'تعارض في معرّف أو محتوى بيع', tone: 'danger' },
   LEGACY_SALES_RECONCILE: { label: 'تسوية ومطابقة مبيعات قديمة يدوياً', tone: 'warning' },
   COMMISSION_AUDIT_VERIFIED: { label: 'تدقيق واعتماد كشف حساب الشبكة', tone: 'success' },
+  PAID_FEATURE_ENTITLEMENT_UPDATE: { label: 'تعديل المزايا المدفوعة لحساب', tone: 'brand' },
 };
 
 export function auditActionLabel(action) {

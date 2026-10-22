@@ -24,7 +24,9 @@ service cloud.firestore {
     // تتغيّر فقط عبر نقاط النهاية الخادمية الموقّعة (Admin SDK).
     function accessFields() {
       return ['accessStatus', 'trialStartedAt', 'subscriptionEndsAt', 'is_active',
-              'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning'];
+              'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning',
+              'feature_entitlements', 'feature_entitlements_updated_at',
+              'feature_entitlements_updated_by'];
     }
     function touchesAccessFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());

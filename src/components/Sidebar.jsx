@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
-  ArrowDownToLine, Send, Wallet, Archive, ListChecks,
+  ArrowDownToLine, Send, Wallet, Archive, ListChecks, Sparkles,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
@@ -27,6 +27,7 @@ const navGroups = [
       { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
       { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
       { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
+      { path: '/paid-features', label: 'المزايا المدفوعة', icon: Sparkles },
     ],
   },
   {

@@ -17,6 +17,10 @@
       "destination": "/api/settings?__apiRoute=template-center"
     },
     {
+      "source": "/api/paid-features",
+      "destination": "/api/settings?__apiRoute=paid-features"
+    },
+    {
       "source": "/api/request-otp",
       "destination": "/api/manage-user-auth?__apiRoute=request-otp"
     },

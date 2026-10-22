@@ -101,6 +101,10 @@ export const ADMIN_API_ERRORS = {
   template_center_read_failed: 'تعذرت قراءة الإصدار المنشور. أعد المحاولة لاحقًا.',
   template_center_failed: 'تعذر تنفيذ إجراء مركز القوالب. لم يكتمل الطلب.',
   request_body_invalid: 'تعذر قراءة بيانات الطلب. حدّث الصفحة وأعد المحاولة.',
+  paid_feature_update_failed: 'تعذر حفظ المزايا المدفوعة على الخادم.',
+  entitlements_must_be_object: 'بيانات المزايا غير صالحة.',
+  entitlements_empty: 'لم يتم تحديد أي ميزة للتعديل.',
+  unknown_feature: 'ميزة غير معروفة في الطلب.',
 };
 
 /** يسجّل دفعة/تسوية عبر الخادم الآمن idempotent. */
@@ -383,4 +387,16 @@ export async function callAdminApi(path, payload) {
     console.error(`adminApi: ${path} failed`, error);
     return { ok: false, error: 'network_error' };
   }
+}
+
+/**
+ * المزايا المدفوعة: قراءة/كتابة خريطة `users/{uid}.feature_entitlements`
+ * عبر المسار الخادمي المقيّد فقط (لا كتابة عميل مباشرة على Firestore).
+ */
+export async function fetchPaidFeatureEntitlements(uid) {
+  return callAdminApi('/api/paid-features', { action: 'get', uid });
+}
+
+export async function updatePaidFeatureEntitlements({ uid, entitlements }) {
+  return callAdminApi('/api/paid-features', { action: 'set', uid, entitlements });
 }

@@ -22,6 +22,7 @@ const FORBIDDEN = [
 const REQUIRED = [
   { pattern: /function\s+touchesAccessFields\s*\(/, why: 'قفل حقول الصلاحية يجب أن يوجد' },
   { pattern: /function\s+accessFields\s*\(/, why: 'تعريف حقول الصلاحية يجب أن يوجد' },
+  { pattern: /'feature_entitlements'/, why: 'خريطة المزايا المدفوعة يجب أن تكون محجوبة عن كتابة العميل' },
   { pattern: /match\s+\/networks\/\{networkId\}/, why: 'نموذج الشبكة NET يجب أن يوجد' },
   { pattern: /match\s+\/\{path=\*\*\}\/sales\/\{saleId\}\s*\{\s*allow read:\s*if isAdmin\(\);/, why: 'قراءة collectionGroup للمبيعات يجب أن تكون للمدير فقط' },
   { pattern: /match\s+\/\{path=\*\*\}\/payments\/\{paymentId\}\s*\{\s*allow read:\s*if isAdmin\(\);/, why: 'قراءة collectionGroup للدفعات يجب أن تكون للمدير فقط' },

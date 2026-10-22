@@ -195,6 +195,26 @@ test('feature-entitlements contract is boolean-only and separate from lease', as
   assert.ok(validateSchema({ installationId: 'i1' }, schema).length > 0);
 });
 
+test('paid-feature write path is server-only and keyed to the contract', async () => {
+  const {
+    PAID_FEATURE_KEYS,
+    validatePaidFeatureInput,
+    normalizeStoredEntitlements,
+  } = await import('../server/_lib/paidFeatureEntitlements.js');
+  const schema = await loadSchema('feature-entitlements.schema.json');
+  // المفاتيح المعتمدة خادميًا يجب أن تطابق حقول المخطط (لا مفاتيح مخترعة).
+  assert.deepEqual([...PAID_FEATURE_KEYS].sort(), Object.keys(schema.properties).sort());
+  // رفض أي مفتاح خارج العقد، وقبول البولياني فقط.
+  assert.equal(validatePaidFeatureInput({ unknown_feature: true }).ok, false);
+  assert.equal(validatePaidFeatureInput({ hotspot_template_editor: 1 }).ok, false);
+  // التطبيع لا يمرّر مفاتيح غير معتمدة إلى التخزين.
+  assert.deepEqual(Object.keys(normalizeStoredEntitlements({ leaseExpiry: 'x' })).sort(),
+    [...PAID_FEATURE_KEYS].sort());
+  // المسار محجوب عن كتابة العميل في القواعد.
+  const rules = await readFile(path.join(root, 'firestore.rules'), 'utf8');
+  assert.match(rules, /'feature_entitlements'/u, 'rules must block client writes to feature_entitlements');
+});
+
 test('release fixture also passes the real server publish validation (not just the schema)', async () => {
   const release = stripMarkers(await loadJson(path.join(fixturesDir, 'template-release.sample.json')));
   const publish = validateTemplatePayload(release, { allowDrafts: false });
