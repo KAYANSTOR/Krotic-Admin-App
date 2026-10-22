@@ -72,7 +72,11 @@ test('the server atomically creates one network and a bounded 30-day trial', asy
   assert.equal(user.phone_verified_manual, false);
   assert.equal(user.subscription_end_date.toMillis(), result.subscriptionEndsAtMs);
   assert.equal(user.subscriptionEndsAt.toMillis(), result.subscriptionEndsAtMs);
+  assert.equal(user.createdAtMs, now);
+  assert.equal(user.updatedAtMs, now);
   assert.equal(network.owner_uid, 'client_1');
+  assert.equal(network.createdAtMs, now);
+  assert.equal(network.updatedAtMs, now);
   assert.equal(typeof network.networkSecretEncrypted, 'string');
   assert.equal(db.docs.get('networks/NET-10001/_metadata/info').phoneNumber, validInput.phone);
   assert.equal(db.docs.has(`network_registration_phone_index/${createHash('sha256').update(validInput.phone).digest('hex')}`), true);

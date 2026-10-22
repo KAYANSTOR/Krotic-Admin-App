@@ -150,6 +150,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       settlementId,
       month: value.month,
       networkAccessPatch: accessPatch,
+      now,
     });
     if (ledger.status === 'month_balance_exceeded') {
       return {
@@ -186,6 +187,8 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       fingerprint,
       approvedBy: callerUid,
       approvedAt: FieldValue.serverTimestamp(),
+      createdAtMs: now,
+      updatedAtMs: now,
       recordedAtMs: now,
     }, { merge: false });
 
@@ -195,6 +198,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       transaction.update(userRef, {
         ...accessPatch,
         updated_at: FieldValue.serverTimestamp(),
+        updatedAtMs: now,
       });
     }
 

@@ -119,6 +119,7 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
       owner_uid: plan.ownerUid,
       migratedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     };
     batch.set(docSnap.ref, accessPatch, { merge: true });
 
@@ -136,6 +137,7 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
       networkId,
       owner_uid: plan.ownerUid,
       updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     }, { merge: true });
   }
   if (snap.size) await batch.commit();
@@ -143,7 +145,7 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
   const nextCursor = snap.size === limit ? snap.docs[snap.docs.length - 1].id : null;
   await db.collection('admin_audit_logs').add({
     action: 'MIGRATION_CLASSIFY_USERS', actorUid, targetType: 'migration', targetId: cursor || 'start',
-    details: { processed: snap.size, nextCursor }, createdAt: FieldValue.serverTimestamp(), createdAtMs: now,
+    details: { processed: snap.size, nextCursor }, createdAt: FieldValue.serverTimestamp(), createdAtMs: now, updatedAtMs: now,
   });
   return { status: 'classified', processed: snap.size, nextCursor, done: !nextCursor };
 }
@@ -163,11 +165,11 @@ async function rebuildNetwork(db, { uid, now, actorUid, rate }) {
   const totals = computeNetworkTotals(sales, payments, resolvedRate);
   const aggregate = computeAggregate(sales, resolvedRate);
 
-  await networkRef.set({ ...totals, networkId, owner_uid: uid, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  await db.collection('admin_aggregates').doc(uid).set({ ...aggregate, updatedAt: FieldValue.serverTimestamp() }, { merge: false });
+  await networkRef.set({ ...totals, networkId, owner_uid: uid, updatedAt: FieldValue.serverTimestamp(), updatedAtMs: now }, { merge: true });
+  await db.collection('admin_aggregates').doc(uid).set({ ...aggregate, updatedAt: FieldValue.serverTimestamp(), updatedAtMs: now }, { merge: false });
   await db.collection('admin_audit_logs').add({
     action: 'MIGRATION_REBUILD_NETWORK', actorUid, targetType: 'network', targetId: uid,
-    details: { networkId, totals }, createdAt: FieldValue.serverTimestamp(), createdAtMs: now,
+    details: { networkId, totals }, createdAt: FieldValue.serverTimestamp(), createdAtMs: now, updatedAtMs: now,
   });
   return { status: 'rebuilt', uid, networkId, totals, aggregate: { totalFaceValue: aggregate.totalFaceValue, totalTransactions: aggregate.totalTransactions, totalCommissionDue: aggregate.totalCommissionDue } };
 }

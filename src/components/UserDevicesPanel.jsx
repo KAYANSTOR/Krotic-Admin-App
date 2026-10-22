@@ -8,6 +8,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { SkeletonLine } from './ui/Skeleton';
 import { formatDate } from '../lib/format';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
+import { trackRead } from '../lib/localDb/readMeter';
 
 function deviceLabel(device) {
   const version = device.app_version || device.appVersion;
@@ -36,7 +37,7 @@ export default function UserDevicesPanel({ userId, userLabel }) {
     setLoading(true);
     setError(null);
     try {
-      const snapshot = await getDocs(collection(db, 'users', userId, 'devices'));
+      const snapshot = await trackRead('user-devices:list', () => getDocs(collection(db, 'users', userId, 'devices')));
       setDevices(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
     } catch (err) {
       console.error('Error fetching devices:', err);

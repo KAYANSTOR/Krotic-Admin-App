@@ -207,6 +207,7 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
       paidMinor: 0, paidRiyal: 0, verified: true, source: 'admin_api',
       verificationReceipt: receipt, payloadHash, payloadPolicyVersion: 2, moneyPolicyVersion: 2,
       createdAt: new Date(payload.createdMs), created_at: new Date(payload.createdMs),
+      createdAtMs: payload.createdMs, updatedAtMs: now,
       verifiedAt: FieldValue.serverTimestamp(), ingestedAtMs: now,
     }, { merge: false });
 
@@ -218,6 +219,7 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
       totalSalesAmount, totalCommissionDue, totalPaidAmount,
       outstandingBalance: Math.max(0, totalCommissionDue - totalPaidAmount),
       updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     }, { merge: true });
 
     return {

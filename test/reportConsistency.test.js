@@ -57,10 +57,10 @@ test('aggregate triggers resolve the owner UID instead of confusing it with netw
 
 test('forced refresh bypasses Firestore local cache for current reports', async () => {
   const data = await read('src/lib/adminData.js');
-  assert.match(data, /force \? await getDocsFromServer\(usersRef\) : await getDocs\(usersRef\)/);
-  assert.match(data, /force \? await getDocFromServer\(aggregateRef\) : await getDoc\(aggregateRef\)/);
-  assert.match(data, /force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)/);
-  assert.match(data, /force \? await getDocFromServer\(configRef\) : await getDoc\(configRef\)/);
+  assert.match(data, /trackRead\('users:canonical',\s*\(\)\s*=>\s*\(force \? getDocsFromServer\(usersRef\) : getDocs\(usersRef\)\)\)/);
+  assert.match(data, /trackRead\(`aggregate:summary:\$\{uid\}`,\s*\(\)\s*=>\s*\(force \? getDocFromServer\(aggregateRef\) : getDoc\(aggregateRef\)\)\)/);
+  assert.match(data, /trackRead\(label,\s*\(\)\s*=>\s*\(force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)\)\)/);
+  assert.match(data, /trackRead\('config:global',\s*\(\)\s*=>\s*\(force \? getDocFromServer\(configRef\) : getDoc\(configRef\)\)\)/);
 });
 
 test('user billing totals stream the real payment ledger, not inferred sale allocations', async () => {

@@ -108,6 +108,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
           : {}),
       };
       if (Object.keys(profilePatch).length > 0) {
+        profilePatch.updatedAtMs = Number(now);
         transaction.set(userRef, profilePatch, { merge: true });
       }
       if (!existingMetadataSnap.exists) {
@@ -165,6 +166,8 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       networkSecretVersion: 1,
       networkSecretUpdatedAt: FieldValue.serverTimestamp(),
       createdAt: startedAt,
+      createdAtMs: startedAtMs,
+      updatedAtMs: startedAtMs,
       createdBy: 'self-registration',
     };
     const userData = {
@@ -180,6 +183,8 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       created_at: startedAt,
       last_seen_at: startedAt,
       updatedAt: FieldValue.serverTimestamp(),
+      createdAtMs: startedAtMs,
+      updatedAtMs: startedAtMs,
       ...accessFields,
     };
     const metadataRef = networkRef.collection('_metadata').doc('info');
@@ -204,6 +209,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       details: { networkId },
       createdAt: FieldValue.serverTimestamp(),
       createdAtMs: startedAtMs,
+      updatedAtMs: startedAtMs,
     });
 
     return { status: 'created', networkId, trialStartedAtMs: startedAtMs, subscriptionEndsAtMs: endsAtMs };

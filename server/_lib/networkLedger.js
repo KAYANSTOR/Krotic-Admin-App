@@ -57,6 +57,7 @@ export async function settleNetworkPayment(transaction, {
   settlementId,
   month,
   networkAccessPatch = {},
+  now = Date.now(),
 }) {
   const networkSnap = await transaction.get(networkRef);
   const network = networkSnap.exists ? networkSnap.data() : {};
@@ -92,6 +93,7 @@ export async function settleNetworkPayment(transaction, {
       paidRiyal: entry.paidAfterRiyal,
       settlementId,
       settledAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     });
   });
 
@@ -105,6 +107,7 @@ export async function settleNetworkPayment(transaction, {
     lastPaymentMinor: amountMinor,
     lastPaymentAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    updatedAtMs: now,
     ...networkAccessPatch,
   }, { merge: true });
 

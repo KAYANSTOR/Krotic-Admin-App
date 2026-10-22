@@ -16,6 +16,7 @@ import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
 import { subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { trackSnapshot } from '../lib/localDb/readMeter';
 import { formatNumber } from '../lib/format';
 import {
   getNotificationPreferences,
@@ -66,9 +67,12 @@ export default function Layout({ children }) {
   // مراقبة تسجيل أي مستخدم جديد في الوقت الفعلي وإرسال إشعار حي للهاتف
   useEffect(() => {
     const usersCol = collection(db, 'users');
+    let initialSnapshot = true;
     const unsubscribe = onSnapshot(
       usersCol,
       (snapshot) => {
+        trackSnapshot('layout:users-realtime', snapshot, { initial: initialSnapshot });
+        initialSnapshot = false;
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
             const data = change.doc.data() || {};

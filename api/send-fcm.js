@@ -279,6 +279,8 @@ export default async function handler(req, res) {
         createdBy: callerUid,
         createdAt: FieldValue.serverTimestamp(),
         timestamp: nowMs,
+        createdAtMs: nowMs,
+        updatedAtMs: nowMs,
         status: failed && !sent ? 'failed' : 'sent',
       };
 

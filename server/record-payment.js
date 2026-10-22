@@ -89,6 +89,7 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
       amountMinor: value.amount,
       settlementId: paymentRef.id,
       month: value.month,
+      now,
     });
     if (ledger.status === 'month_balance_exceeded') {
       return {
@@ -115,6 +116,8 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
       outstandingBalance: ledger.outstandingBalance,
       settledSales: ledger.settledSales,
       createdAt: FieldValue.serverTimestamp(),
+      createdAtMs: now,
+      updatedAtMs: now,
     }, { merge: false });
 
     return { status: 'created', paymentId: paymentRef.id, outstandingBalance: ledger.outstandingBalance, settledSales: ledger.settledSales };

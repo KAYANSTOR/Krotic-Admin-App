@@ -274,10 +274,13 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
   const docs = new Map([
     ['users/user_del', { uid: 'user_del', networkId: 'NET-99999', phone: '967771234567' }],
     ['networks/NET-99999', { owner_uid: 'user_del', networkId: 'NET-99999' }],
+    ['networks/NET-99999/sales/sale_del', { saleId: 'sale_del' }],
+    ['networks/NET-99999/payments/payment_del', { amount: 10 }],
     ['admin_aggregates/user_del', { totalSales: 50 }],
   ]);
   const deletedDocs = new Set();
   const audits = [];
+  let generatedId = 0;
 
   function makeDocRef(path) {
     return {
@@ -302,18 +305,23 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
 
   function makeColRef(path) {
     return {
+      id: path.split('/').pop(),
       limit() {
         return this;
       },
       async get() {
+        const prefix = `${path}/`;
+        const matches = [...docs.entries()]
+          .filter(([key]) => key.startsWith(prefix) && key.split('/').length === path.split('/').length + 1)
+          .map(([key, value]) => ({ id: key.split('/').pop(), ref: makeDocRef(key), data: () => value }));
         return {
-          empty: true,
-          size: 0,
-          docs: [],
+          empty: matches.length === 0,
+          size: matches.length,
+          docs: matches,
         };
       },
       doc(id) {
-        return makeDocRef(`${path}/${id}`);
+        return makeDocRef(`${path}/${id ?? `generated-${++generatedId}`}`);
       },
       where() {
         return {
@@ -329,7 +337,7 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
     collection(name) {
       return {
         doc(id) {
-          return makeDocRef(`${name}/${id}`);
+          return makeDocRef(`${name}/${id ?? `generated-${++generatedId}`}`);
         },
         where(field, op, val) {
           return {
@@ -353,13 +361,19 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
     batch() {
       const ops = [];
       return {
+        set(ref, value) {
+          ops.push({ type: 'set', ref, value });
+        },
         delete(ref) {
-          ops.push(ref);
+          ops.push({ type: 'delete', ref });
         },
         async commit() {
-          for (const ref of ops) {
-            deletedDocs.add(ref.path);
-            docs.delete(ref.path);
+          for (const operation of ops) {
+            if (operation.type === 'set') docs.set(operation.ref.path, operation.value);
+            else {
+              deletedDocs.add(operation.ref.path);
+              docs.delete(operation.ref.path);
+            }
           }
         },
       };
@@ -376,7 +390,17 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
   assert.equal(result.uid, 'user_del');
   assert.equal(docs.has('users/user_del'), false);
   assert.equal(docs.has('networks/NET-99999'), false);
+  assert.equal(docs.has('networks/NET-99999/sales/sale_del'), false);
+  assert.equal(docs.has('networks/NET-99999/payments/payment_del'), false);
   assert.equal(docs.has('admin_aggregates/user_del'), false);
+  const tombstones = [...docs.entries()]
+    .filter(([path]) => path.startsWith('sync_tombstones/'))
+    .map(([, value]) => value);
+  assert.ok(tombstones.some((entry) => entry.collection === 'sales' && entry.networkId === 'NET-99999' && entry.id === 'sale_del'));
+  assert.ok(tombstones.some((entry) => entry.collection === 'payments' && entry.networkId === 'NET-99999' && entry.id === 'payment_del'));
+  assert.ok(tombstones.some((entry) => entry.collection === 'users' && entry.id === 'user_del'));
+  assert.ok(tombstones.some((entry) => entry.collection === 'networks' && entry.id === 'NET-99999'));
+  assert.ok(tombstones.some((entry) => entry.collection === 'admin_aggregates' && entry.id === 'user_del'));
   assert.equal(audits.length, 1);
   assert.equal(audits[0].action, 'NETWORK_DELETE');
 });

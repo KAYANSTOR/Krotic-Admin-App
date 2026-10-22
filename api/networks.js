@@ -157,6 +157,7 @@ async function audit(db, { action, actorUid, uid, details, now }) {
     details: details || null,
     createdAt: FieldValue.serverTimestamp(),
     createdAtMs: now,
+    updatedAtMs: now,
   });
 }
 
@@ -194,6 +195,8 @@ async function provision(db, { ownerUid, actorUid, now }) {
       networkSecretVersion: 1,
       networkSecretUpdatedAt: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
+      createdAtMs: now,
+      updatedAtMs: now,
       createdBy: actorUid,
     }, { merge: false });
     transaction.set(userRef, {
@@ -204,6 +207,7 @@ async function provision(db, { ownerUid, actorUid, now }) {
       trialStartedAt: Timestamp.fromMillis(trialStartedAt),
       subscriptionEndsAt: subscriptionEndsAtTimestamp,
       updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     }, { merge: true });
   });
   await audit(db, { action: 'NETWORK_PROVISION', actorUid, uid: ownerUid, details: { networkId }, now });
@@ -242,6 +246,7 @@ export async function updateAccess(db, { value, actorUid, now }) {
     }
   }
   patch.updatedAt = FieldValue.serverTimestamp();
+  patch.updatedAtMs = now;
 
   const userRef = db.collection('users').doc(value.uid);
   const result = await db.runTransaction(async (transaction) => {
@@ -336,6 +341,7 @@ export async function repairLegacyAccess(db, { value, actorUid, now }) {
           accessStatus,
           ...legacyAccessFields(accessStatus),
           updatedAt: FieldValue.serverTimestamp(),
+          updatedAtMs: now,
         };
         if (endAt != null) {
           patch.subscriptionEndsAt = endAt;
@@ -392,6 +398,7 @@ async function renew(db, { value, actorUid, now }) {
       ...legacyAccessFields('ACTIVE_PAID', endAt),
       subscriptionEndsAt: endAt,
       updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
     };
 
     const networkId = typeof user.networkId === 'string' && UID_PATTERN.test(user.networkId)
@@ -437,6 +444,7 @@ async function batchExpiry(db, { value, actorUid, now }) {
         subscriptionEndsAt: end,
         subscription_end_date: end,
         updatedAt: FieldValue.serverTimestamp(),
+        updatedAtMs: now,
       };
       batch.set(docSnap.ref, patch, { merge: true });
       updated += 1;
@@ -454,29 +462,61 @@ async function batchExpiry(db, { value, actorUid, now }) {
   return { status: 'batched', updated, networksUpdated };
 }
 
-async function deleteSubcollection(db, colRef) {
+function addSyncTombstone(db, batch, { collection, networkId = null, id, now }) {
+  batch.set(db.collection('sync_tombstones').doc(), {
+    collection,
+    networkId,
+    id,
+    updatedAtMs: now,
+  });
+}
+
+async function deleteSubcollection(db, colRef, { networkId = null, now }) {
   while (true) {
     const snap = await colRef.limit(100).get();
     if (snap.empty) break;
     const batch = db.batch();
-    snap.docs.forEach((d) => batch.delete(d.ref));
+    snap.docs.forEach((document) => {
+      if (networkId && (colRef.id === 'sales' || colRef.id === 'payments')) {
+        addSyncTombstone(db, batch, {
+          collection: colRef.id,
+          networkId,
+          id: document.id,
+          now,
+        });
+      }
+      batch.delete(document.ref);
+    });
     await batch.commit();
     if (snap.size < 100) break;
   }
 }
 
-async function purgeDocAndAllSubcollections(db, docRef) {
+async function purgeDocAndAllSubcollections(db, docRef, { collection, id, now }) {
   try {
     const subcollections = await docRef.listCollections();
     for (const subCol of subcollections) {
-      await deleteSubcollection(db, subCol);
+      await deleteSubcollection(db, subCol, {
+        networkId: collection === 'networks' && (subCol.id === 'sales' || subCol.id === 'payments') ? id : null,
+        now,
+      });
     }
   } catch {
     for (const sub of ['sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications']) {
-      await deleteSubcollection(db, docRef.collection(sub));
+      await deleteSubcollection(db, docRef.collection(sub), {
+        networkId: collection === 'networks' && (sub === 'sales' || sub === 'payments') ? id : null,
+        now,
+      });
     }
   }
-  await docRef.delete().catch(() => {});
+  if (collection === 'users' || collection === 'networks') {
+    const batch = db.batch();
+    addSyncTombstone(db, batch, { collection, id, now });
+    batch.delete(docRef);
+    await batch.commit();
+  } else {
+    await docRef.delete().catch(() => {});
+  }
 }
 
 export async function deleteAccount(db, { uid, actorUid, now }) {
@@ -487,7 +527,7 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
   const phone = userData?.phone || userData?.phoneNumber || null;
 
   // 1. Purge user document and all subcollections (devices, notifications, etc.)
-  await purgeDocAndAllSubcollections(db, userRef);
+  await purgeDocAndAllSubcollections(db, userRef, { collection: 'users', id: uid, now });
 
   // 2. Discover all network documents related to this user/owner
   const networksToDelete = new Map();
@@ -504,11 +544,15 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
 
   // 3. Purge all network documents and their subcollections (sales, payments, settlements, _metadata)
   for (const [, netRef] of networksToDelete.entries()) {
-    await purgeDocAndAllSubcollections(db, netRef);
+    await purgeDocAndAllSubcollections(db, netRef, { collection: 'networks', id: netRef.id, now });
   }
 
   // 4. Purge admin billing aggregates
-  await db.collection('admin_aggregates').doc(uid).delete().catch(() => {});
+  const aggregateRef = db.collection('admin_aggregates').doc(uid);
+  const aggregateBatch = db.batch();
+  addSyncTombstone(db, aggregateBatch, { collection: 'admin_aggregates', id: uid, now });
+  aggregateBatch.delete(aggregateRef);
+  await aggregateBatch.commit();
 
   // 5. Purge phone registration index if exists
   if (phone) {

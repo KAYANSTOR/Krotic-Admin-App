@@ -16,6 +16,7 @@ import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonPageHeader, SkeletonCard } from '../components/ui/Skeleton';
 import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
+import { trackRead } from '../lib/localDb/readMeter';
 import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
 import {
   fetchAuditLogs as loadAuditLogs, getAdminDataCacheState, subscribeAdminDataCache,
@@ -191,14 +192,14 @@ export default function AuditPage() {
     setLoadingMore(true);
     setError(null);
     try {
-      const snapshot = await getDocs(
+      const snapshot = await trackRead('audit:next-page', () => getDocs(
         query(
           collection(db, 'admin_audit_logs'),
           orderBy('createdAtMs', 'desc'),
           startAfter(cursorMs),
           limit(PAGE_SIZE)
         )
-      );
+      ));
       const page = mapAuditDocs(snapshot.docs);
       setLogs((current) => mergeAuditLogs(current, page));
       setHasMore(snapshot.docs.length === PAGE_SIZE);

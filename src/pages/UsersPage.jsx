@@ -36,6 +36,7 @@ import { renewNetwork, updateNetworkAccess, repairAccessPage, deleteNetworkAccou
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
+import { trackSnapshot } from '../lib/localDb/readMeter';
 import { getAppUpdateStatus } from '../lib/appVersion';
 import useAppRefresh from '../lib/useAppRefresh';
 
@@ -215,6 +216,7 @@ export default function UsersPage() {
     const unsubscribe = onSnapshot(
       collection(db, 'users'),
       (snapshot) => {
+        trackSnapshot('users:realtime-page', snapshot, { initial: initialSnapshot });
         if (initialSnapshot) {
           initialSnapshot = false;
           return;

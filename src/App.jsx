@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute } from './lib/routeLoaders';
+import ReadMeterPanel from './components/ReadMeterPanel';
 
 const DashboardPage = lazy(() => loadRoute('/'));
 const SettingsPage = lazy(() => loadRoute('/settings'));
@@ -155,6 +156,7 @@ export default function App() {
             },
           }}
         />
+        <ReadMeterPanel />
         <AppRoutes />
       </AuthProvider>
     </Router>

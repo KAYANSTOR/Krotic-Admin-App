@@ -95,8 +95,8 @@ async function finalize(db, ref, claimId, patch, delivery, inbox = null) {
     const currentSnap = await transaction.get(ref);
     const current = currentSnap.exists ? currentSnap.data() || {} : {};
     if (!currentSnap.exists || current.dispatchClaimId !== claimId || current.status !== 'processing') return false;
-    transaction.update(ref, { ...patch, dispatchLeaseUntil: null, updatedAt: FieldValue.serverTimestamp() });
-    if (delivery) transaction.set(db.collection('notification_deliveries').doc(ref.id), delivery, { merge: true });
+    transaction.update(ref, { ...patch, dispatchLeaseUntil: null, updatedAt: FieldValue.serverTimestamp(), updatedAtMs: Date.now() });
+    if (delivery) transaction.set(db.collection('notification_deliveries').doc(ref.id), { ...delivery, updatedAtMs: Date.now() }, { merge: true });
     if (inbox) {
       transaction.set(
         db.collection('users').doc(inbox.uid).collection('notifications').doc(ref.id),

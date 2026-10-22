@@ -121,6 +121,7 @@ test('the same sale event is applied once even when delivered twice', async () =
     eventType: 'sale',
     eventId: 'sale-event-1',
     updater: saleUpdater(sale(100)),
+    now: 1_800_000_000_123,
   };
 
   assert.equal(await __test.updateAggregateForEvent(args), true);
@@ -132,6 +133,7 @@ test('the same sale event is applied once even when delivered twice', async () =
     totalPaid: 0,
     monthly: { '2026-01': { face: 100, count: 1 } },
     updatedAt: 'SERVER_TIMESTAMP',
+    updatedAtMs: 1_800_000_000_123,
   });
 });
 
