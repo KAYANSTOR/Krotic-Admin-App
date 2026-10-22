@@ -167,6 +167,9 @@ cd functions && npm install && npm test   # 18/18 ناجح
 
 # اختبارات القواعد تحتاج Java 21 + منفذ 8080 حرًا
 npm run test:rules       # 20/20 ناجح (شغّلتها محليًا بـ Temurin 21)
+
+# فحص «لا متغيّر غير معرّف» في الواجهة (يكتشف ما لا يكتشفه vite build)
+npx --yes eslint@10 --no-config-lookup -c scripts/eslint-no-undef.config.mjs src/
 ```
 
 > في هذه البيئة كان المنفذ 8080 مشغولًا و`::1` غير متاح، فشغّلت المحاكي بملف

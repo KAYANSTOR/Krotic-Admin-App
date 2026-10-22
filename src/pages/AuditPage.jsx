@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ScrollText, Search, Download, Inbox, ShieldCheck, KeyRound,
   UserCheck, DollarSign, Bell, Settings, ShieldAlert,
@@ -231,7 +231,7 @@ export default function AuditPage() {
             <p className="users-error__title">تعذر تحميل السجل</p>
             <p className="users-error__msg">{error}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={load}>إعادة المحاولة</Button>
+          <Button variant="secondary" size="sm" onClick={refresh}>إعادة المحاولة</Button>
         </div>
       )}
 

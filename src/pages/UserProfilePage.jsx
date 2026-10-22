@@ -82,6 +82,10 @@ export default function UserProfilePage() {
   const [selectedMonthForBilling, setSelectedMonthForBilling] = useState(null);
   const [expandedMonths, setExpandedMonths] = useState(() => new Set([getCurrentMonthKey()]));
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [billing, setBilling] = useState(false);
+  const [authModal, setAuthModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const { runSync, syncing, lastSyncAt } = useLocalDb();
 
   // الملف والتاريخ المالي من القاعدة المحلية فقط.

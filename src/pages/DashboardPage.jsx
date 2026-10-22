@@ -286,7 +286,7 @@ export default function DashboardPage() {
             <p className="dash-error__title">حدث خطأ</p>
             <p className="dash-error__msg">{error}</p>
           </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={load}>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh}>
             إعادة المحاولة
           </Button>
         </div>
