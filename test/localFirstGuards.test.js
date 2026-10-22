@@ -95,6 +95,30 @@ test('no data cache is kept in localStorage anymore', async () => {
   assert.deepEqual(offenders, []);
 });
 
+test('collection-group sync queries have the indexes they need', async () => {
+  const raw = await read(new URL('../firestore.indexes.json', import.meta.url));
+  const indexes = JSON.parse(raw);
+  const overrides = indexes.fieldOverrides || [];
+  for (const group of ['sales', 'payments']) {
+    const override = overrides.find((entry) => entry.collectionGroup === group && entry.fieldPath === 'updatedAtMs');
+    assert.ok(override, `${group}.updatedAtMs needs a fieldOverride for the collection-group sync query`);
+    const scopes = override.indexes.map((entry) => `${entry.order}:${entry.queryScope}`);
+    assert.ok(scopes.includes('ASCENDING:COLLECTION_GROUP'), `${group} needs ASCENDING COLLECTION_GROUP`);
+    assert.ok(scopes.includes('DESCENDING:COLLECTION_GROUP'), `${group} needs DESCENDING COLLECTION_GROUP`);
+    // لا نُلغي نطاق المجموعة العادي الذي تستخدمه قراءات الشبكة الواحدة.
+    assert.ok(scopes.includes('ASCENDING:COLLECTION'), `${group} must keep COLLECTION scope`);
+  }
+});
+
+test('the sync engine only queries collections covered by those indexes', async () => {
+  const sync = await read(new URL('lib/localDb/syncEngine.js', SRC));
+  const groups = [...sync.matchAll(/collectionGroup\(firestore, '([^']+)'\)/g)].map((match) => match[1]);
+  assert.deepEqual(groups.sort(), ['payments', 'sales']);
+  // كل مصدر مجموعة يجب أن يفلتر/يرتّب على updatedAtMs حتى يعمل الفهرس الأحادي.
+  assert.match(sync, /where\('updatedAtMs', '>=', cursorMs\), orderBy\('updatedAtMs', 'asc'\)/);
+  assert.match(sync, /orderBy\('updatedAtMs', 'desc'\), limit\(1\)/);
+});
+
 test('manual refresh routes go through the incremental sync, never a forced full read', async () => {
   const sales = await read(new URL('pages/SalesPage.jsx', SRC));
   const users = await read(new URL('pages/UsersPage.jsx', SRC));
