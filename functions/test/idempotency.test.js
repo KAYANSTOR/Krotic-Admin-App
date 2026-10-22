@@ -112,6 +112,25 @@ function saleUpdater(value) {
   return (summary) => __test.applySaleDelta(summary, null, value);
 }
 
+test('legacy completed sale contributions normalize status and amount aliases', () => {
+  assert.deepEqual(__test.saleContribution({
+    amount: 250,
+    commissionRiyal: 12,
+    createdAt: '2026-01-10T00:00:00.000Z',
+  }), { face: 250, count: 1, commission: 12, month: '2026-01' });
+
+  assert.deepEqual(__test.saleContribution({
+    amountMinor: 12500,
+    moneyPolicyVersion: 2,
+    commissionRiyal: 6,
+    createdAt: '2026-01-10T00:00:00.000Z',
+  }), { face: 125, count: 1, commission: 6, month: '2026-01' });
+
+  assert.deepEqual(__test.saleContribution({
+    status: 'SMS_PENDING', faceValue: 500, createdAt: '2026-01-10T00:00:00.000Z',
+  }), { face: 0, count: 0, commission: 0, month: null });
+});
+
 test('the same sale event is applied once even when delivered twice', async () => {
   const firestore = new FakeFirestore();
   const args = {

@@ -191,9 +191,9 @@ async function rebuildNetwork(db, { uid, now, actorUid, rate }) {
   const resolvedRate = resolveRate(user, rate);
 
   const [currentSales, legacySales, currentPayments, legacyPayments] = await Promise.all([
-    readAll(networkRef.collection('sales').orderBy('createdAt', 'asc')),
+    readAll(networkRef.collection('sales')),
     networkId !== uid
-      ? readAll(db.collection('networks').doc(uid).collection('sales').orderBy('createdAt', 'asc'))
+      ? readAll(db.collection('networks').doc(uid).collection('sales'))
       : Promise.resolve([]),
     readAll(networkRef.collection('payments')),
     networkId !== uid
@@ -210,7 +210,11 @@ async function rebuildNetwork(db, { uid, now, actorUid, rate }) {
   const aggregate = computeAggregate(sales, resolvedRate);
 
   await networkRef.set({ ...totals, networkId, owner_uid: uid, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-  await db.collection('admin_aggregates').doc(uid).set({ ...aggregate, updatedAt: FieldValue.serverTimestamp() }, { merge: false });
+  await db.collection('admin_aggregates').doc(uid).set({
+    ...aggregate,
+    totalPaid: totals.totalPaidAmount,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: false });
   await db.collection('admin_audit_logs').add({
     action: 'MIGRATION_REBUILD_NETWORK', actorUid, targetType: 'network', targetId: uid,
     details: { networkId, totals }, createdAt: FieldValue.serverTimestamp(), createdAtMs: now,

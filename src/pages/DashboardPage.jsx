@@ -13,11 +13,14 @@ import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import toast from 'react-hot-toast';
+import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { formatDate, formatNumber, toDate } from '../lib/format';
 import { summarizeCompletedSales } from '../lib/commission';
-import { fetchDashboardStats, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
+import { fetchDashboardStats, getAdminDataCacheState, invalidateAdminDataCache, subscribeAdminDataCache } from '../lib/adminData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const AGGREGATE_REPAIR_PROGRESS_KEY = 'krotak:aggregate-repair-progress:v1';
 
 function summarizeRealtimeSales(networks) {
   const now = new Date();
@@ -86,6 +89,17 @@ export default function DashboardPage() {
   const [realtimeDataWarning, setRealtimeDataWarning] = useState(false);
   const [salesSnapshotsReady, setSalesSnapshotsReady] = useState(false);
   const [partialErrors, setPartialErrors] = useState([]);
+  const [rebuildingAggregates, setRebuildingAggregates] = useState(false);
+  const [aggregateRepairProgress, setAggregateRepairProgress] = useState(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(AGGREGATE_REPAIR_PROGRESS_KEY) || 'null');
+      return saved && typeof saved === 'object'
+        ? { processed: Math.max(0, Number(saved.processed) || 0), cursor: typeof saved.cursor === 'string' ? saved.cursor : null, done: saved.done === true }
+        : { processed: 0, cursor: null, done: false };
+    } catch {
+      return { processed: 0, cursor: null, done: false };
+    }
+  });
   const latestRequestId = useRef(0);
   const realtimeSummary = useRef(null);
   const dashboardDataReady = useRef(false);
@@ -123,6 +137,55 @@ export default function DashboardPage() {
       if (requestId === latestRequestId.current && dashboardDataReady.current && salesRealtimeReady.current) setLoading(false);
     }
   }, []);
+
+  const repairFinancialAggregates = useCallback(async () => {
+    if (rebuildingAggregates || aggregateRepairProgress.done) return;
+    const resume = Boolean(aggregateRepairProgress.cursor);
+    const accepted = window.confirm(
+      (resume ? 'استئناف' : 'بدء') + ' إعادة بناء المجاميع المالية من سجلات المبيعات والمدفوعات؟ هذه العملية قد تستهلك آلاف قراءات Firestore؛ بما أن الحصة المجانية قد تكون مستنفدة، شغّلها بعد تجدد الحصة اليومية. تتم المعالجة على دفعات قابلة للاستئناف، وبحد أقصى 2000 سجل لكل مجموعة في الشبكة.'
+    );
+    if (!accepted) return;
+    setRebuildingAggregates(true);
+    let cursor = aggregateRepairProgress.cursor || null;
+    let processed = Number(aggregateRepairProgress.processed) || 0;
+    try {
+      do {
+        const response = await callAdminApi('/api/migrate', {
+          action: 'rebuild-all',
+          limit: 5,
+          ...(cursor ? { cursor } : {}),
+        });
+        if (!response.ok) throw new Error(adminApiError(response.error, 'تعذر إعادة بناء المجاميع المالية'));
+        const result = response.data || {};
+        processed += Number(result.processed) || 0;
+        cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null;
+        const nextProgress = { processed, cursor, done: false };
+        setAggregateRepairProgress(nextProgress);
+        try {
+          if (cursor) window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
+          else window.localStorage.removeItem(AGGREGATE_REPAIR_PROGRESS_KEY);
+        } catch { /* progress persistence is best-effort */ }
+        if (result.done === true || !cursor) break;
+      } while (cursor);
+      invalidateAdminDataCache([
+        'all-users', 'users-with-billing', 'dashboard-stats', 'network-sales', 'network-sales-full',
+        'aggregate:*', 'sales:*', 'network-meta:*', 'billing-history:*',
+      ]);
+      setAggregateRepairProgress({ processed, cursor: null, done: true });
+      await load({ force: true });
+      toast.success(`اكتملت إعادة بناء مجاميع ${formatNumber(processed)} شبكة. حدّث شاشة المستخدمين إذا كانت مفتوحة.`);
+    } catch (repairError) {
+      const nextProgress = { processed, cursor, done: false };
+      setAggregateRepairProgress(nextProgress);
+      try {
+        if (cursor) window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
+        else window.localStorage.removeItem(AGGREGATE_REPAIR_PROGRESS_KEY);
+      } catch { /* progress persistence is best-effort */ }
+      toast.error(repairError instanceof Error ? repairError.message : 'توقفت إعادة بناء المجاميع. يمكنك الاستئناف بعد تجدد حصة Firestore.');
+    } finally {
+      setRebuildingAggregates(false);
+    }
+  }, [aggregateRepairProgress, rebuildingAggregates, load]);
 
   useEffect(() => subscribeAdminDataCache('dashboard-stats', (data, state) => {
     dashboardDataReady.current = true;
@@ -175,6 +238,30 @@ export default function DashboardPage() {
         />
       </section>
 
+
+      {!aggregateRepairProgress.done && (
+        <Card className="mb-3 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-ink">صيانة الملخصات المالية القديمة</p>
+              <p className="mt-1 text-xs leading-5 text-muted">تعيد حساب إجمالي المبيعات والعمولات والدفعات من السجلات المخزنة، ثم تحفظ الملخصات في Firestore لتستخدمها الشاشات سريعًا. لا تعدّل سجل البيع نفسه.</p>
+              <p className="mt-1 text-xs leading-5 text-amber-700">قد تستهلك آلاف القراءات. انتظر تجدد الحصة اليومية قبل تشغيلها؛ كل شبكة محدودة حاليًا بـ 2000 سجل في كل مجموعة.</p>
+              {aggregateRepairProgress.cursor && (
+                <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. يمكنك استئناف الإصلاح من آخر نقطة محفوظة.</p>
+              )}
+            </div>
+            <Button variant="secondary" size="sm" icon={RefreshCw} loading={rebuildingAggregates} disabled={rebuildingAggregates} onClick={repairFinancialAggregates}>
+              {rebuildingAggregates ? `جارٍ الإصلاح (${formatNumber(aggregateRepairProgress.processed)} شبكة)` : aggregateRepairProgress.cursor ? 'استئناف الإصلاح' : 'إصلاح الملخصات'}
+            </Button>
+          </div>
+        </Card>
+      )}
+      {aggregateRepairProgress.done && (
+        <Card className="mb-3 p-4">
+          <p className="text-sm font-extrabold text-emerald-700">اكتملت إعادة بناء المجاميع المالية ({formatNumber(aggregateRepairProgress.processed)} شبكة).</p>
+          <p className="mt-1 text-xs text-muted">تم حفظ النتيجة لهذا المتصفح. لا تعِد تشغيل الإجراء إلا إذا كنت تحتاج إلى إعادة بناء جديدة.</p>
+        </Card>
+      )}
 
       {maintenance && (
         <div className="dash-alert" role="status" aria-live="polite">

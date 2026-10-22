@@ -363,9 +363,20 @@ function monthKey(value) {
   const date = dateFrom(value);
   return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : null;
 }
+function saleFaceValue(sale) {
+  const major = sale?.faceValue ?? sale?.amount ?? sale?.amountRiyal;
+  if (major !== null && major !== undefined) {
+    const value = numeric(major);
+    return value > 0 ? value : 0;
+  }
+  const minor = numeric(sale?.amountMinor);
+  const value = Number(sale?.moneyPolicyVersion) === 2 ? minor / 100 : minor;
+  return value > 0 ? value : 0;
+}
 function saleContribution(sale) {
-  if (!sale || sale.status !== 'COMPLETED') return { face: 0, count: 0, commission: 0, month: null };
-  const face = numeric(sale.faceValue);
+  // Older Android records can be completed without an explicit status field.
+  if (!sale || (sale.status && sale.status !== 'COMPLETED')) return { face: 0, count: 0, commission: 0, month: null };
+  const face = saleFaceValue(sale);
   // العمولة الخادمية (لقطة وقت البيع) تُجمَّع أيضاً (قرار ي3).
   const commission = numeric(sale.commissionRiyal ?? sale.commissionMinor ?? sale.commission ?? sale.commissionAmount);
   return { face, count: 1, commission, month: monthKey(sale.createdAt) };
@@ -497,6 +508,7 @@ exports.updatePaymentAggregate = onDocumentWritten('networks/{networkId}/payment
 // Test seam: production handlers above continue to use the initialized db.
 exports.__test = {
   applySaleDelta,
+  saleContribution,
   claimDispatchRequest,
   chunksOf,
   hasSameSaleAggregateContribution,
