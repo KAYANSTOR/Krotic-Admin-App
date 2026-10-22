@@ -1,13 +1,14 @@
 # تسليم إلى الوكيل التالي — لوحة إدارة كروتك برو
 
 > **الغرض:** استلام الحالة من حيث توقّف الوكيل السابق دون إعادة عمل ولا كسر
-> قرارات المالك. اقرأ هذا الملف بالكامل، ثم `docs/CI_TRIAGE_AR.md` و
-> `docs/ADMIN_LOCAL_FIRST_ARCHITECTURE_AR.md` و`docs/PERF_BASELINE_AR.md`.
+> قرارات المالك. اقرأ هذا الملف، ثم `docs/DEPLOY_STEPS_AR.md` (ما يجب نشره)
+> و`docs/CI_TRIAGE_AR.md` و`docs/ADMIN_LOCAL_FIRST_ARCHITECTURE_AR.md`
+> و`docs/PERF_BASELINE_AR.md`.
 
 **المستودع:** `KAYANSTOR/Krotic-Admin-App` (خاص).
-**الفرع العامل:** `cline/tp5e5bzb` — مبني على `feat/local-first-admin` (`ebc5263f`).
-**HEAD عند التسليم:** رأس `origin/cline/tp5e5bzb` (`39614e2` قبل commit التوثيق الذي يثبت هذا السطر — تحقّق بـ`git log -1`).
-**قاعدة الدمج:** `origin/main` = `f3a4546` (لم يُلمس، ولا PR، ولا دمج).
+**الفرع العامل:** `main` **فقط** — كل الفروع الأخرى دُمجت أو أُرشفت وحُذفت (2026-10-22).
+**HEAD عند التسليم:** رأس `origin/main` (تحقّق بـ`git log -1`).
+**الدمج:** دُمج `feat/local-first-admin` (وما فوقه) إلى `main` بدمج fast-forward، ثم حُذفت كل الفروع. بقيت وسوم `archive/*` فقط كنسخة أمان.
 **المرجع الحي (قراءة فقط، ممنوع التعديل):** `KAYANSTOR/Krotak-Pro`.
 **تاريخ التسليم:** 2026-10-22.
 
@@ -39,11 +40,11 @@
 
 | البند | القيمة |
 |---|---|
-| الفرع العامل | `cline/tp5e5bzb` |
+| الفرع العامل | `main` (وحيد) |
 | HEAD | `8e2cb84` (مطابق لـ`origin/cline/tp5e5bzb`) |
-| `origin/main` | `f3a4546` |
+| `origin/main` | رأس `main` الحالي (كان `f3a4546` قبل الدمج) |
 | working tree | نظيف |
-| PR | لم يُفتح، ولم يُدمج شيء |
+| PR | لا PR؛ الدمج مُباشر بموافقة المالك |
 
 سلسلة commits فوق `ebc5263f`: انظر `git log --oneline ebc5263f..HEAD`.
 
