@@ -1,5 +1,5 @@
 // src/pages/SettingsPage.jsx
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   doc, setDoc, collection, getDocs, writeBatch, Timestamp,
 } from 'firebase/firestore';
@@ -33,7 +33,9 @@ import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
 import { updateSettings, batchExpiry, adminApiError } from '../lib/adminApi';
-import { invalidateAdminDataCache, invalidateAdminGlobalConfigData, fetchGlobalConfig, getAdminDataCacheState, subscribeAdminDataCache } from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalConfig } from '../lib/localDb/localData';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const DEFAULTS = {
@@ -63,13 +65,9 @@ function SettingsSkeleton() {
 
 export default function SettingsPage() {
   const [config, setConfig] = useState(DEFAULTS);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [cacheState, setCacheState] = useState(null);
 
   // إعدادات وتفضيلات إشعارات الهاتف الحية
   const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
@@ -131,43 +129,33 @@ export default function SettingsPage() {
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const savedAppStatus = useRef(DEFAULTS.is_app_active);
 
-  const fetchConfig = useCallback(async ({ force = false } = {}) => {
-    if (force) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const loaded = await fetchGlobalConfig({ force });
-      setConfig((prev) => ({
-        ...prev,
-        ...loaded,
-        default_commission_rate: loaded?.default_commission_rate ?? 5,
-      }));
-      savedAppStatus.current = loaded?.is_app_active ?? DEFAULTS.is_app_active;
-      setCacheState(getAdminDataCacheState('global-config'));
-      setUpdatedAt(Date.now());
-    } catch (error) {
-      console.error('Error fetching config:', error);
-      toast.error('خطأ في تحميل الإعدادات');
-    }
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const configQuery = useLocalQuery((localDb) => loadLocalConfig(localDb), []);
 
-  const handleRefresh = () => fetchConfig({ force: true });
-
+  // الإعدادات تُقرأ من القاعدة المحلية، ويُحفظ تعديل النموذج في state مستقل.
   useEffect(() => {
-    fetchConfig();
-  }, [fetchConfig]);
+    const loaded = configQuery.data;
+    if (!loaded) return;
+    setConfig((prev) => ({
+      ...prev,
+      ...loaded,
+      default_commission_rate: loaded?.default_commission_rate ?? 5,
+    }));
+    savedAppStatus.current = loaded?.is_app_active ?? savedAppStatus.current;
+  }, [configQuery.data]);
 
-  // يعكس تحديثات الكاش (بما فيها الجلب الخلفي) في الصفحة.
-  useEffect(() => subscribeAdminDataCache('global-config', (data) => {
-    if (!data) return;
-    setConfig((prev) => ({ ...prev, ...data, default_commission_rate: data.default_commission_rate ?? 5 }));
-    savedAppStatus.current = data.is_app_active ?? savedAppStatus.current;
-    setCacheState(getAdminDataCacheState('global-config'));
-  }), []);
+  const loading = configQuery.loading && !configQuery.data;
+  const refreshing = syncing;
 
-  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
-  useAppRefresh(() => fetchConfig({ force: true }));
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    configQuery.refresh();
+  };
+
+  const handleRefresh = refresh;
+
+  // السحب للأسفل على الجوال يزامن التغييرات فقط.
+  useAppRefresh(refresh);
 
   const handleSave = async () => {
     if (saving) return;
@@ -193,7 +181,7 @@ export default function SettingsPage() {
         return false;
       }
 
-      invalidateAdminGlobalConfigData();
+      await refresh();
       const previousAppStatus = savedAppStatus.current;
       savedAppStatus.current = patch.is_app_active;
       if (previousAppStatus !== patch.is_app_active) {
@@ -261,7 +249,7 @@ export default function SettingsPage() {
       setShowBatchConfirm(false);
       const updated = Number(result.data?.updated) || 0;
       if (updated > 0) {
-        invalidateAdminDataCache(['all-users', 'users-with-billing', 'dashboard-stats']);
+        await refresh();
         await logAdminAction({
           action: AUDIT_ACTIONS.SUBSCRIPTION_BATCH,
           targetType: 'settings',
@@ -298,10 +286,9 @@ export default function SettingsPage() {
         actions={
           <>
             <DataFreshness
-              updatedAt={updatedAt}
+              lastSyncedAt={lastSyncAt}
               refreshing={loading || refreshing}
               onRefresh={handleRefresh}
-              fromCache={cacheState?.fromCache ?? null}
             />
             <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
               إدارة المدراء

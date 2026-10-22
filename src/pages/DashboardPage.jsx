@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -17,7 +17,9 @@ import toast from 'react-hot-toast';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { formatDate, formatNumber, toDate } from '../lib/format';
 import { summarizeCompletedSales } from '../lib/commission';
-import { fetchDashboardStats, getAdminDataCacheState, invalidateAdminDataCache, subscribeAdminDataCache } from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalDashboard, loadLocalNetworkSales } from '../lib/localDb/localData';
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 const AGGREGATE_REPAIR_PROGRESS_KEY = 'krotak:aggregate-repair-progress:v1';
@@ -76,19 +78,7 @@ function recentOperationsFromNetworks(networks) {
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [appStatus, setAppStatus] = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [cacheState, setCacheState] = useState(null);
-  const [alerts, setAlerts] = useState(null);
-  const [monthlySales, setMonthlySales] = useState([]);
-  const [recentOperations, setRecentOperations] = useState([]);
-  const [monthlyDataWarning, setMonthlyDataWarning] = useState(false);
-  const [realtimeDataWarning, setRealtimeDataWarning] = useState(false);
-  const [salesSnapshotsReady, setSalesSnapshotsReady] = useState(false);
-  const [partialErrors, setPartialErrors] = useState([]);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
   const [rebuildingAggregates, setRebuildingAggregates] = useState(false);
   const [aggregateRepairProgress, setAggregateRepairProgress] = useState(() => {
     try {
@@ -100,45 +90,39 @@ export default function DashboardPage() {
       return { processed: 0, cursor: null, done: false };
     }
   });
-  const latestRequestId = useRef(0);
-  const realtimeSummary = useRef(null);
-  const dashboardDataReady = useRef(false);
-  const salesRealtimeReady = useRef(false);
 
-  const load = useCallback(async ({ force = false } = {}) => {
-    const requestId = ++latestRequestId.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const {
-        appStatus: status,
-        stats: nextStats,
-        alerts: nextAlerts,
-        monthlySales: nextMonthlySales,
-        monthlyDataWarning: nextMonthlyDataWarning,
-        errors: nextErrors,
-      } = await fetchDashboardStats({ force });
-      if (requestId !== latestRequestId.current) return;
-      setAppStatus(status);
-      setStats({ ...nextStats, ...(realtimeSummary.current?.stats || {}) });
-      setAlerts(nextAlerts);
-      setMonthlySales(realtimeSummary.current?.monthlySales || nextMonthlySales || []);
-      setMonthlyDataWarning(Boolean(nextMonthlyDataWarning));
-      setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
-      setUpdatedAt(Date.now());
-      setCacheState(getAdminDataCacheState('dashboard-stats'));
-      dashboardDataReady.current = true;
-    } catch (err) {
-      if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching dashboard data:', err);
-      setError('تعذر تحميل بيانات لوحة التحكم. تحقق من الاتصال ثم أعد المحاولة.');
-      dashboardDataReady.current = true;
-    } finally {
-      if (requestId === latestRequestId.current && dashboardDataReady.current && salesRealtimeReady.current) setLoading(false);
-    }
-  }, []);
+  // التقرير كامل من القاعدة المحلية: لا قراءة Firestore عند فتح الشاشة أو التنقل.
+  const dashboardQuery = useLocalQuery((localDb) => loadLocalDashboard(localDb), []);
+  const salesQuery = useLocalQuery((localDb) => loadLocalNetworkSales(localDb), []);
 
-  const repairFinancialAggregates = useCallback(async () => {
+  const report = dashboardQuery.data;
+  const stats = report?.stats || null;
+  const appStatus = report?.appStatus || null;
+  const alerts = report?.alerts || null;
+  const monthlySales = report?.monthlySales || [];
+  const monthlyDataWarning = Boolean(report?.monthlyDataWarning);
+  const recentOperations = useMemo(
+    () => recentOperationsFromNetworks(salesQuery.data || []),
+    [salesQuery.data],
+  );
+  const loading = dashboardQuery.loading && !report;
+  const error = dashboardQuery.error
+    ? 'تعذر قراءة بيانات لوحة التحكم من القاعدة المحلية. أعد المحاولة.'
+    : null;
+  const partialErrors = [];
+  const salesSnapshotsReady = !dashboardQuery.loading;
+  const realtimeDataWarning = Boolean(salesQuery.error);
+
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    dashboardQuery.refresh();
+    salesQuery.refresh();
+  };
+
+  // السحب للأسفل على الجوال يزامن التغييرات فقط (لا قراءة كاملة).
+  useAppRefresh(refresh);
+
+  const repairFinancialAggregates = async () => {
     if (rebuildingAggregates || aggregateRepairProgress.done) return;
     const resume = Boolean(aggregateRepairProgress.cursor);
     const accepted = window.confirm(
@@ -164,11 +148,7 @@ export default function DashboardPage() {
       try {
         window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
       } catch { /* progress persistence is best-effort */ }
-      invalidateAdminDataCache([
-        'all-users', 'users-with-billing', 'dashboard-stats', 'network-sales', 'network-sales-full',
-        'aggregate:*', 'sales:*', 'network-meta:*', 'billing-history:*',
-      ]);
-      await load({ force: true });
+      await refresh();
       if (done) {
         toast.success(`اكتملت إعادة بناء مجاميع ${formatNumber(processed)} شبكة. حدّث شاشة المستخدمين إذا كانت مفتوحة.`);
       } else {
@@ -184,34 +164,7 @@ export default function DashboardPage() {
     } finally {
       setRebuildingAggregates(false);
     }
-  }, [aggregateRepairProgress, rebuildingAggregates, load]);
-
-  useEffect(() => subscribeAdminDataCache('dashboard-stats', (data, state) => {
-    dashboardDataReady.current = true;
-    setAppStatus(data.appStatus);
-    setStats({ ...data.stats, ...(realtimeSummary.current?.stats || {}) });
-    setAlerts(data.alerts);
-    setMonthlySales(realtimeSummary.current?.monthlySales || data.monthlySales || []);
-    setMonthlyDataWarning(Boolean(data.monthlyDataWarning));
-    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
-    setUpdatedAt(Date.now());
-    setCacheState(state);
-    setError(null);
-  }), []);
-
-  useEffect(() => {
-    load();
-    return () => { latestRequestId.current += 1; };
-  }, [load]);
-
-  useEffect(() => {
-    salesRealtimeReady.current = true;
-    setSalesSnapshotsReady(true);
-    if (dashboardDataReady.current) setLoading(false);
-  }, []);
-
-  // السحب للأسفل على الجوال يعيد جلب بيانات اللوحة (force).
-  useAppRefresh(() => load({ force: true }));
+  };
 
   if (loading && !stats) return <PageSkeleton />;
 
@@ -229,11 +182,9 @@ export default function DashboardPage() {
           <span className="text-[11px] font-bold text-muted hidden sm:inline">• الإدارة</span>
         </div>
         <DataFreshness
-          updatedAt={updatedAt}
-          lastSyncedAt={cacheState?.lastSyncedAt}
-          refreshing={loading}
-          fromCache={cacheState?.fromCache}
-          onRefresh={() => load({ force: true })}
+          lastSyncedAt={lastSyncAt}
+          refreshing={loading || syncing}
+          onRefresh={refresh}
         />
       </section>
 

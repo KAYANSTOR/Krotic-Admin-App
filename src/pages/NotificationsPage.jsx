@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   collection, addDoc, doc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
@@ -20,7 +20,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { loadTemplates, saveTemplate, deleteTemplate } from '../lib/notificationTemplates';
-import { fetchUsersForSelect, fetchNotificationHistory, getAdminDataCacheState, subscribeAdminDataCache, invalidateNotificationHistory } from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalUserOptions, loadLocalNotifications } from '../lib/localDb/localData';
 import useAppRefresh from '../lib/useAppRefresh';
 import { triggerScheduledDispatch } from '../lib/adminApi';
 
@@ -85,79 +87,39 @@ export default function NotificationsPage() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [recentNotifications, setRecentNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const [cacheState, setCacheState] = useState(null);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const usersQuery = useLocalQuery((localDb) => loadLocalUserOptions(localDb), []);
+  const users = useMemo(() => usersQuery.data || [], [usersQuery.data]);
+  const historyQuery = useLocalQuery((localDb) => loadLocalNotifications(localDb), []);
+  const recentNotifications = useMemo(() => (historyQuery.data || []).map((data) => ({
+    ...data,
+    type: data.audienceType || (String(data.target || '').startsWith('user:') ? 'user' : 'global'),
+    displayTimestamp: notificationMillis(data),
+  })), [historyQuery.data]);
+  const loading = usersQuery.loading || historyQuery.loading;
+  const refreshing = syncing;
+  const loadError = Boolean(usersQuery.error || historyQuery.error);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
   const [templates, setTemplates] = useState(() => loadTemplates());
   const [templateId, setTemplateId] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [activeTab, setActiveTab] = useState('compose'); // 'compose' | 'history' | 'templates'
   const [historySearch, setHistorySearch] = useState('');
   const [phoneModalOpen, setPhoneModalOpen] = useState(false);
-  const latestRequestId = useRef(0);
 
-  useEffect(() => {
-    fetchData();
-    return () => { latestRequestId.current += 1; };
-  }, []);
+  // السجل والحسابات من القاعدة المحلية؛ التحديث يزامن التغييرات فقط.
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    usersQuery.refresh();
+    historyQuery.refresh();
+  };
 
-  useEffect(() => subscribeAdminDataCache('notification-history', (history) => {
-    if (!Array.isArray(history)) return;
-    setRecentNotifications(history.map((data) => ({
-      ...data,
-      type: data.audienceType || (String(data.target || '').startsWith('user:') ? 'user' : 'global'),
-      displayTimestamp: notificationMillis(data),
-    })));
-    setCacheState(getAdminDataCacheState('notification-history'));
-  }), []);
-
-  useAppRefresh(() => fetchData({ force: true }));
+  useAppRefresh(refresh);
 
   useEffect(() => {
     triggerScheduledDispatch();
   }, []);
-
-  const fetchData = async ({ force = false } = {}) => {
-    const requestId = ++latestRequestId.current;
-    setLoadError(false);
-    if (force) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    try {
-      const [usersData, notificationHistory] = await Promise.all([
-        fetchUsersForSelect({ force }),
-        fetchNotificationHistory({ force }),
-      ]);
-      if (requestId !== latestRequestId.current) return;
-      setUsers(usersData);
-      const notifs = notificationHistory.map((data) => ({
-        ...data,
-        type: data.audienceType || (String(data.target || '').startsWith('user:') ? 'user' : 'global'),
-        displayTimestamp: notificationMillis(data),
-      }));
-      setRecentNotifications(notifs);
-      setCacheState(getAdminDataCacheState('notification-history'));
-      setUpdatedAt(Date.now());
-    } catch (error) {
-      if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching data:', error);
-      setLoadError(true);
-      toast.error(force ? 'تعذر تحديث سجل الإشعارات' : 'خطأ في تحميل البيانات');
-    } finally {
-      if (requestId === latestRequestId.current) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  };
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -253,8 +215,6 @@ export default function NotificationsPage() {
         return;
       }
 
-      invalidateNotificationHistory();
-
       logAdminAction({
         action: AUDIT_ACTIONS.NOTIFICATION_SEND,
         targetType: type === 'user' ? 'user' : 'broadcast',
@@ -272,7 +232,7 @@ export default function NotificationsPage() {
 
       setTitle('');
       setMessage('');
-      fetchData({ force: true });
+      await refresh();
       setActiveTab('history');
     } catch (error) {
       console.error('Error sending notification:', error);
@@ -333,8 +293,7 @@ export default function NotificationsPage() {
 
       await deleteDoc(doc(db, 'notification_deliveries', deleteTarget.id)).catch(() => null);
 
-      invalidateNotificationHistory();
-      setRecentNotifications((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      historyQuery.refresh();
       void logAdminAction({
         action: AUDIT_ACTIONS.NOTIFICATION_DELETE,
         targetType: 'notification',
@@ -416,10 +375,9 @@ export default function NotificationsPage() {
               إشعارات هاتفي الحية
             </Button>
             <DataFreshness
-              updatedAt={updatedAt}
+              lastSyncedAt={lastSyncAt}
               refreshing={loading || refreshing}
-              onRefresh={() => fetchData({ force: true })}
-              fromCache={cacheState?.fromCache ?? null}
+              onRefresh={refresh}
             />
           </div>
         }
@@ -432,7 +390,7 @@ export default function NotificationsPage() {
             <p className="notif-error__title">تعذّر تحديث السجل</p>
             <p className="notif-error__msg">تحقق من الاتصال بالإنترنت ثم أعد المحاولة.</p>
           </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => fetchData({ force: true })}>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh}>
             إعادة المحاولة
           </Button>
         </div>
