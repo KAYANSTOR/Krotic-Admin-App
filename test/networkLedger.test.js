@@ -79,3 +79,36 @@ test('a monthly payment above the selected month balance is rejected without wri
   assert.equal(result.requestedAmount, 101);
   assert.deepEqual(writes, []);
 });
+
+test('settlement marks every changed sale and network with the same update cursor', async () => {
+  const networkRef = {};
+  const salesQuery = {};
+  const now = 1_800_000_000_123;
+  const writes = [];
+  const docs = [{
+    id: 'sale-1',
+    ref: { id: 'sale-1' },
+    data: () => ({ commissionMinor: 2500, paidMinor: 0, commissionRiyal: 25, paidRiyal: 0 }),
+  }];
+  const transaction = {
+    async get(ref) {
+      if (ref === networkRef) return { exists: true, data: () => ({ totalCommissionDue: 25, totalPaidAmount: 0 }) };
+      return { docs };
+    },
+    update(...args) { writes.push(['update', ...args]); },
+    set(...args) { writes.push(['set', ...args]); },
+  };
+
+  const result = await settleNetworkPayment(transaction, {
+    networkRef,
+    salesQuery,
+    amountMinor: 20,
+    settlementId: 'payment-1',
+    month: '2026-10',
+    now,
+  });
+
+  assert.equal(result.allocatedMinor, 20);
+  assert.equal(writes[0][2].updatedAtMs, now);
+  assert.equal(writes[1][2].updatedAtMs, now);
+});

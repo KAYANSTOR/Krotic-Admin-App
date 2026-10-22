@@ -5,6 +5,7 @@ import app, { auth, db, secondaryAuth, firestoreDatabaseId } from '../firebase';
 import { signOut as secondarySignOut } from 'firebase/auth';
 import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
+import { trackRead } from '../lib/localDb/readMeter';
 
 const AuthContext = createContext();
 
@@ -33,21 +34,21 @@ export function AuthProvider({ children }) {
     // 1. Try canonical Admins collection, then fallback admins collection using getDoc
     for (const col of ['Admins', 'admins']) {
       try {
-        const adminDoc = await getDoc(doc(targetDb, col, uid));
+        const adminDoc = await trackRead(`auth:admin:${col}`, () => getDoc(doc(targetDb, col, uid)));
         if (adminDoc.exists()) {
           const verified = toVerifiedAdmin(adminDoc);
           if (verified) return { admin: verified, fromCache: false };
         }
       } catch (error) {
         try {
-          const sDoc = await getDocFromServer(doc(targetDb, col, uid));
+          const sDoc = await trackRead(`auth:admin-server:${col}`, () => getDocFromServer(doc(targetDb, col, uid)));
           if (sDoc.exists()) {
             const verified = toVerifiedAdmin(sDoc);
             if (verified) return { admin: verified, fromCache: false };
           }
         } catch {}
         try {
-          const cachedDoc = await getDocFromCache(doc(targetDb, col, uid));
+          const cachedDoc = await trackRead(`auth:admin-cache:${col}`, () => getDocFromCache(doc(targetDb, col, uid)));
           if (cachedDoc.exists()) {
             const verified = toVerifiedAdmin(cachedDoc);
             if (verified) return { admin: verified, fromCache: true };

@@ -15,6 +15,8 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
+import { subscribeNetworkSalesRealtime } from '../lib/adminData';
+import { trackSnapshot } from '../lib/localDb/readMeter';
 import { formatNumber } from '../lib/format';
 import {
   getNotificationPreferences,
@@ -67,6 +69,7 @@ export default function Layout({ children }) {
     let timer = null;
     const newestUsers = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(newestUsers, (snapshot) => {
+      trackSnapshot('layout:users-realtime', snapshot, { initial: initialSnapshot });
       if (initialSnapshot) {
         initialSnapshot = false;
         return;

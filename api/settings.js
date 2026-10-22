@@ -89,7 +89,7 @@ export async function applySettings({ db, callerUid, value, now = Date.now() }) 
   const ref = db.collection('app_settings').doc('global_config');
   const auditRef = db.collection('admin_audit_logs').doc();
   await db.runTransaction(async (transaction) => {
-    transaction.set(ref, { ...value, updatedAt: FieldValue.serverTimestamp(), updatedBy: callerUid }, { merge: true });
+    transaction.set(ref, { ...value, updatedAt: FieldValue.serverTimestamp(), updatedAtMs: now, updatedBy: callerUid }, { merge: true });
     transaction.set(auditRef, {
       action: 'SETTINGS_SAVE',
       actorUid: callerUid,
@@ -98,6 +98,7 @@ export async function applySettings({ db, callerUid, value, now = Date.now() }) 
       details: value,
       createdAt: FieldValue.serverTimestamp(),
       createdAtMs: now,
+      updatedAtMs: now,
     }, { merge: false });
   });
   return { updated: Object.keys(value) };

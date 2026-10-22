@@ -69,6 +69,7 @@ function auditRecord({ action, actorUid, targetId, details = {} }) {
     details,
     createdAt: FieldValue.serverTimestamp(),
     createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
   };
 }
 

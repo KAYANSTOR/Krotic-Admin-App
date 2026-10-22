@@ -8,6 +8,7 @@ import { createAdminDataCache, withAdminDataCacheMetadata } from './adminDataCac
 import { normalizeUserAccess } from './accessStatus';
 import { summarizeCompletedSales, isCompletedSale, saleFaceValue } from './commission';
 import { mergeSalesByIdentity, saleIdentityKeys, salesNetworkIds } from './salesReadCompat';
+import { trackRead, trackSnapshot } from './localDb/readMeter';
 
 const adminDataCache = createAdminDataCache({ getUid: () => auth.currentUser?.uid || null });
 const FAN_OUT_CONCURRENCY = 5;
@@ -87,7 +88,7 @@ function partialResult(value, errors) {
 export async function fetchGlobalConfig(options) {
   return readCached('global-config', async ({ force = false } = {}) => {
     const configRef = doc(db, 'app_settings', 'global_config');
-    const snap = force ? await getDocFromServer(configRef) : await getDoc(configRef);
+    const snap = await trackRead('config:global', () => (force ? getDocFromServer(configRef) : getDoc(configRef)));
     return snap.exists() ? snap.data() : { default_commission_rate: 5, is_app_active: true };
   }, options);
 }
@@ -105,7 +106,7 @@ function resolveCommissionRate(user, defaultRate) {
 export async function fetchAdmins(options) {
   return readCached('admins', async ({ force = false } = {}) => {
     const adminsRef = collection(db, 'Admins');
-    const snap = force ? await getDocsFromServer(adminsRef) : await getDocs(adminsRef);
+    const snap = await trackRead('admins:list', () => (force ? getDocsFromServer(adminsRef) : getDocs(adminsRef)));
     const admins = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     admins.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     return admins;
@@ -120,7 +121,7 @@ export async function fetchAuditLogs(options) {
       orderBy('createdAtMs', 'desc'),
       limit(30),
     );
-    const snap = force ? await getDocsFromServer(auditQuery) : await getDocs(auditQuery);
+    const snap = await trackRead('audit:initial-page', () => (force ? getDocsFromServer(auditQuery) : getDocs(auditQuery)));
     const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     // دمج تعارضات مبيعات الأجهزة الموثقة في sale_ingest_registry ضمن التدقيق
@@ -129,7 +130,7 @@ export async function fetchAuditLogs(options) {
         collection(db, 'sale_ingest_registry'),
         limit(20)
       );
-      const conflictSnap = force ? await getDocsFromServer(conflictQuery) : await getDocs(conflictQuery);
+      const conflictSnap = await trackRead('audit:sale-conflicts', () => (force ? getDocsFromServer(conflictQuery) : getDocs(conflictQuery)));
       conflictSnap.docs.forEach((doc) => {
         const data = doc.data() || {};
         const recordedMs = data.recordedAt?.toMillis?.() || Date.now();
@@ -173,7 +174,7 @@ export async function fetchNotificationHistory(options) {
         orderBy('createdAt', 'desc'),
         limit(50),
       );
-      const snap = force ? await getDocsFromServer(delivQuery) : await getDocs(delivQuery);
+      const snap = await trackRead('notifications:deliveries', () => (force ? getDocsFromServer(delivQuery) : getDocs(delivQuery)));
       snap.docs.forEach((d) => {
         const data = d.data() || {};
         const title = data.title || '';
@@ -222,12 +223,12 @@ async function fetchNetworkMeta(uid, options) {
   return readCached(`network-meta:${uid}`, async ({ force = false } = {}) => {
     try {
       const userRef = doc(db, 'users', uid);
-      const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+      const userSnapshot = await trackRead(`network-meta:user:${uid}`, () => (force ? getDocFromServer(userRef) : getDoc(userRef)));
       const userData = userSnapshot.exists() ? userSnapshot.data() : {};
       const networkId = networkDocumentId({ uid, ...userData });
       const fallbackName = userData.network_name || userData.networkName || userData.name || '';
       const fallbackPhone = userData.phone || userData.phoneNumber || '';
-      const snap = await getDoc(doc(db, 'networks', networkId, '_metadata', 'info'));
+      const snap = await trackRead(`network-meta:details:${uid}`, () => getDoc(doc(db, 'networks', networkId, '_metadata', 'info')));
       if (snap.exists()) {
         const data = snap.data();
         return {
@@ -270,9 +271,12 @@ async function hasLegacyNetworkSales(uid, networkId, force) {
 async function fetchSalesForUser(uid, recentOnly = false, options) {
   return readCached(`sales:${uid}:${recentOnly ? 'recent' : 'all'}`, async ({ force = false } = {}) => {
     const userRef = doc(db, 'users', uid);
-    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+    const userSnapshot = await trackRead(`sales:user:${uid}`, () => (force ? getDocFromServer(userRef) : getDoc(userRef)));
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
-    const readQuery = (salesQuery) => (force ? getDocsFromServer(salesQuery) : getDocs(salesQuery));
+    const readQuery = (salesQuery) => trackRead(
+      `sales:network:${uid}`,
+      () => (force ? getDocsFromServer(salesQuery) : getDocs(salesQuery)),
+    );
     const sales = await readSalesAcrossNetworkPaths(
       uid,
       networkId,
@@ -302,7 +306,7 @@ function latestTimestampCursor(records, field) {
 export async function fetchUserBillingHistory(uid, options) {
   return readCached(`billing-history:${uid}`, async ({ cachedValue, force } = {}) => {
     const userRef = doc(db, 'users', uid);
-    const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+    const userSnapshot = await trackRead(`billing:user:${uid}`, () => (force ? getDocFromServer(userRef) : getDoc(userRef)));
     const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
     const paymentsRef = collection(db, 'networks', networkId, 'payments');
     const paymentsCursor = Number(cachedValue?.paymentsCursor?.millis);
@@ -312,9 +316,9 @@ export async function fetchUserBillingHistory(uid, options) {
     const incrementalPayments = !force && Array.isArray(cachedValue?.payments) && Number.isFinite(paymentsCursor);
     const paymentConstraints = [orderBy('timestamp', 'asc')];
     if (incrementalPayments) paymentConstraints.push(startAt(Timestamp.fromMillis(paymentsCursor)));
-    const readQuery = (firestoreQuery) => (force
+    const readQuery = (label, firestoreQuery) => trackRead(label, () => (force
       ? getDocsFromServer(firestoreQuery)
-      : getDocs(firestoreQuery));
+      : getDocs(firestoreQuery)));
     const [salesSnapshot, paymentsSnapshot] = await Promise.all([
       readSalesAcrossNetworkPaths(uid, networkId, (salesRef) => salesRef, readQuery),
       readQuery(query(paymentsRef, ...paymentConstraints)),
@@ -343,7 +347,7 @@ export async function fetchAllUsers(options) {
     // 1. Load users from canonical 'users' collection
     try {
       const usersRef = collection(db, 'users');
-      const snap = force ? await getDocsFromServer(usersRef) : await getDocs(usersRef);
+      const snap = await trackRead('users:canonical', () => (force ? getDocsFromServer(usersRef) : getDocs(usersRef)));
       snap.docs.forEach((userDoc) => {
         const data = userDoc.data() || {};
         const netName =
@@ -373,7 +377,7 @@ export async function fetchAllUsers(options) {
     // 2. Discover and merge all network records from 'networks' collection
     try {
       const networksRef = collection(db, 'networks');
-      const netSnap = force ? await getDocsFromServer(networksRef) : await getDocs(networksRef);
+      const netSnap = await trackRead('networks:list', () => (force ? getDocsFromServer(networksRef) : getDocs(networksRef)));
       netSnap.docs.forEach((netDoc) => {
         const netData = netDoc.data() || {};
         const ownerUid = String(netData.owner_uid || netData.ownerUid || netData.uid || netData.userId || netDoc.id).trim();
@@ -420,7 +424,7 @@ export async function fetchAllUsers(options) {
     // 3. Fallback discovery from capitalized 'Users' collection if any client created documents there
     try {
       const usersCapRef = collection(db, 'Users');
-      const capSnap = force ? await getDocsFromServer(usersCapRef) : await getDocs(usersCapRef);
+      const capSnap = await trackRead('users:legacy-capitalized', () => (force ? getDocsFromServer(usersCapRef) : getDocs(usersCapRef)));
       capSnap.docs.forEach((userDoc) => {
         if (!usersMap.has(userDoc.id)) {
           const data = userDoc.data() || {};
@@ -511,7 +515,7 @@ function sixMonthsAgo() {
 }
 async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
   const userRef = doc(db, 'users', uid);
-  const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+  const userSnapshot = await trackRead(`aggregate:user:${uid}`, () => (force ? getDocFromServer(userRef) : getDoc(userRef)));
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
   const paymentsRef = collection(db, 'networks', networkId, 'payments');
   const readQuery = (firestoreQuery) => (force ? getDocsFromServer(firestoreQuery) : getDocs(firestoreQuery));
@@ -544,7 +548,7 @@ async function fetchAggregateFromFirestore(uid, { force = false } = {}) {
 }
 async function fetchMonthlyBucketsFromFirestore(uid, { force = false } = {}) {
   const userRef = doc(db, 'users', uid);
-  const userSnapshot = force ? await getDocFromServer(userRef) : await getDoc(userRef);
+  const userSnapshot = await trackRead(`aggregate:monthly-user:${uid}`, () => (force ? getDocFromServer(userRef) : getDoc(userRef)));
   const networkId = networkDocumentId(userSnapshot.exists() ? { uid, ...userSnapshot.data() } : { uid });
   // Equality-only query uses Firestore's single-field index; avoid depending on
   // the composite status+createdAt index just to recover a missing summary.
@@ -565,7 +569,7 @@ async function fetchMonthlyBucketsFromFirestore(uid, { force = false } = {}) {
 async function fetchAggregate(uid, options) {
   return readCached(`aggregate:${uid}`, async ({ force = false } = {}) => {
     const aggregateRef = doc(db, 'admin_aggregates', uid);
-    const snap = force ? await getDocFromServer(aggregateRef) : await getDoc(aggregateRef);
+    const snap = await trackRead(`aggregate:summary:${uid}`, () => (force ? getDocFromServer(aggregateRef) : getDoc(aggregateRef)));
     let aggregate;
     if (!snap.exists()) {
       aggregate = await fetchAggregateFromFirestore(uid, { force });
@@ -867,6 +871,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       salesQuery,
       { includeMetadataChanges: true },
       (snapshot) => {
+        trackSnapshot(`realtime:sales:${uid}`, snapshot, { initial: !initialSalesSnapshots.has(uid) });
         if (!active || !usersByUid.has(uid)) return;
         const wasReady = initialSalesSnapshots.has(uid);
         const previousSales = salesByUid.get(uid) || [];
@@ -909,6 +914,7 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
       doc(db, 'networks', networkId),
       { includeMetadataChanges: true },
       (snapshot) => {
+        trackSnapshot(`realtime:ledger:${uid}`, snapshot, { initial: !initialLedgerSnapshots.has(uid) });
         if (!active || !usersByUid.has(uid)) return;
         const data = snapshot.exists() ? (snapshot.data() || {}) : {};
         paymentTotalsByUid.set(uid, Math.max(0, Number(data.totalPaidAmount ?? data.totalPaid) || 0));
@@ -926,7 +932,10 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
   };
 
   const usersSource = targetNetworkId ? doc(db, 'users', targetNetworkId) : collection(db, 'users');
+  let initialUsersSnapshot = true;
   usersUnsubscribe = onSnapshot(usersSource, (snapshot) => {
+    trackSnapshot('realtime:users', snapshot, { initial: initialUsersSnapshot });
+    initialUsersSnapshot = false;
     if (!active) return;
     const userDocs = targetNetworkId ? (snapshot.exists() ? [snapshot] : []) : snapshot.docs;
     const currentUids = new Set(userDocs.map((userDoc) => userDoc.id));
@@ -976,7 +985,10 @@ export function subscribeNetworkSalesRealtime(onUpdate, onError, onReady, { incl
     }
   });
 
+  let initialConfigSnapshot = true;
   configUnsubscribe = onSnapshot(doc(db, 'app_settings', 'global_config'), (snapshot) => {
+    trackSnapshot('realtime:config', snapshot, { initial: initialConfigSnapshot });
+    initialConfigSnapshot = false;
     if (!active) return;
     defaultCommissionRate = snapshot.exists()
       ? Number(snapshot.data().default_commission_rate ?? 5)

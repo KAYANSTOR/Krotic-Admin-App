@@ -13,3 +13,7 @@ service-account*.json
 # Generated cache
 scripts/app_icon_cache.png
 .openhands/
+
+# Firestore exports contain real user data - never commit
+backups/
+*-backup.json

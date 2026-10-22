@@ -80,6 +80,7 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
           ...legacyAccessFields('LOCKED_EXPIRED'),
           lockedAt: Timestamp.fromMillis(now),
           updatedAt: FieldValue.serverTimestamp(),
+          updatedAtMs: now,
         };
         transaction.set(entry.userRef, patch, { merge: true });
         currentLocked += 1;
@@ -110,6 +111,7 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
       details: { locked, networksUpdated, scanned: candidatesByUid.size },
       createdAt: FieldValue.serverTimestamp(),
       createdAtMs: now,
+      updatedAtMs: now,
     });
   }
 

@@ -11,6 +11,7 @@ import {
   PRIMARY_ADMIN_UID,
   syncDatabaseInstancesIfNeeded,
 } from '../server/_lib/firebaseAdmin.js';
+import { decideAdminBootstrap } from '../server/_lib/adminBootstrap.js';
 
 function extractPhoneFromEmail(email) {
   if (!email) return '';
@@ -57,41 +58,46 @@ export default async function handler(req, res) {
   // 1. BOOTSTRAP / SELF-HEAL ADMIN ACCOUNT
   if (action === 'bootstrap') {
     try {
-      await syncDatabaseInstancesIfNeeded();
+      // كتابة مستندات المالك الأساسي لا تُشغَّل إلا من حسابه، لا من أي مستدعٍ مسجّل.
+      if (callerUid === PRIMARY_ADMIN_UID) await syncDatabaseInstancesIfNeeded();
 
-      // Check if caller already has an admin record
       const adminSnap = await db.collection('Admins').doc(callerUid).get().catch(() => null);
       const existingData = adminSnap?.exists ? adminSnap.data() : null;
 
-      if (existingData && (existingData.uid === callerUid || !existingData.uid)) {
+      const decision = decideAdminBootstrap({
+        callerUid,
+        callerEmail,
+        emailVerified: decoded.email_verified === true,
+        existingAdminData: existingData,
+        primaryUid: PRIMARY_ADMIN_UID,
+        primaryEmail: PRIMARY_ADMIN_EMAIL,
+      });
+
+      if (!decision.allow) {
+        // لا يُمنح أي حساب غير المالك صلاحية مدير تلقائيًا. المدراء يُنشأون عبر /api/admins فقط.
+        const isClientEmail = callerEmail.endsWith('@krotak.app');
+        const userSnap = await db.collection('users').doc(callerUid).get().catch(() => null);
+        if (isClientEmail || userSnap?.exists) {
+          return res.status(403).json({
+            success: false,
+            error: 'client_account',
+            message: 'هذا الحساب مسجل كصاحب شبكة/عميل في التطبيق وليس كمدير للنظام. للدخول إلى لوحة التحكم، يرجى استخدام حساب المدير.',
+          });
+        }
+        return res.status(403).json({ success: false, error: 'not_admin' });
+      }
+
+      if (!decision.create) {
         return res.status(200).json({
           success: true,
           admin: {
             uid: callerUid,
             email: callerEmail,
-            name: existingData.name || 'مدير النظام',
+            name: existingData?.name || 'مدير النظام',
             role: 'admin',
           },
         });
       }
-
-      // Check if this is the primary admin account
-      const isPrimary = callerEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || callerUid === PRIMARY_ADMIN_UID;
-      
-      // Check if this account belongs to an app network client rather than an admin
-      const isClientEmail = callerEmail.endsWith('@krotak.app');
-      const userSnap = await db.collection('users').doc(callerUid).get().catch(() => null);
-      const isExistingClient = Boolean(userSnap?.exists);
-
-      if (!isPrimary && (isClientEmail || isExistingClient)) {
-        return res.status(403).json({
-          success: false,
-          error: 'client_account',
-          message: 'هذا الحساب مسجل كصاحب شبكة/عميل في التطبيق وليس كمدير للنظام. للدخول إلى لوحة التحكم، يرجى استخدام حساب المدير.',
-        });
-      }
-
-      // If primary admin or designated admin, create the doc
       const adminRecord = {
         uid: callerUid,
         email: callerEmail,
@@ -106,10 +112,7 @@ export default async function handler(req, res) {
         db.collection('admins').doc(callerUid).set(adminRecord, { merge: true }),
       ]);
 
-      return res.status(200).json({
-        success: true,
-        admin: adminRecord,
-      });
+      return res.status(200).json({ success: true, admin: adminRecord });
     } catch (err) {
       console.error('admin bootstrap failed:', err);
       return res.status(500).json({ success: false, error: 'bootstrap_failed' });
@@ -119,17 +122,17 @@ export default async function handler(req, res) {
   // 2. SYNC AND LIST ALL DATABASE USERS (FROM FIRESTORE + FIREBASE AUTH)
   if (action === 'sync-auth-users') {
     try {
-      // Caller must be an admin
-      const isPrimary = callerEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || callerUid === PRIMARY_ADMIN_UID;
-      let isAdmin = isPrimary;
-      if (!isAdmin) {
-        try {
-          const adminSnap = await db.collection('Admins').doc(callerUid).get();
-          isAdmin = Boolean(adminSnap?.exists);
-        } catch (adminErr) {
-          console.warn('Admin check failed in sync-auth-users:', adminErr?.message);
-        }
+      // Caller must be an admin: مستند Admins بمعرّف مطابق، أو المالك الأساسي بالـ UID فقط (لا بالبريد).
+      let adminSnap = null;
+      try {
+        adminSnap = await db.collection('Admins').doc(callerUid).get();
+      } catch (adminErr) {
+        console.warn('Admin check failed in sync-auth-users:', adminErr?.message);
       }
+      const isAdmin = Boolean(
+        callerUid === PRIMARY_ADMIN_UID ||
+        (adminSnap?.exists && adminSnap.data()?.uid === callerUid)
+      );
 
       if (!isAdmin) {
         return res.status(403).json({ success: false, error: 'not_admin' });
@@ -146,6 +149,10 @@ export default async function handler(req, res) {
 
       const syncedUsers = [];
       const now = Date.now();
+      // لا يُعامَل أي مدير كمشترك: تُستثنى كل حسابات Admins لا المالك الأساسي فقط.
+      const adminUidSet = new Set(
+        (await db.collection('Admins').get().catch(() => ({ docs: [] }))).docs.map((d) => d.id),
+      );
 
       // Read existing Firestore users and networks in bulk (2 total requests instead of N*2)
       const existingUserDocs = new Map();
@@ -178,7 +185,7 @@ export default async function handler(req, res) {
       for (const authUser of (authList?.users || [])) {
         const uEmail = (authUser.email || '').toLowerCase();
         // Skip admins
-        if (uEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || authUser.uid === PRIMARY_ADMIN_UID) {
+        if (uEmail === PRIMARY_ADMIN_EMAIL.toLowerCase() || authUser.uid === PRIMARY_ADMIN_UID || adminUidSet.has(authUser.uid)) {
           continue;
         }
 

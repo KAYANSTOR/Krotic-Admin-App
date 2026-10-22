@@ -13,9 +13,9 @@ test('dashboard and customer cards use the shared completed-sales commission def
   ]);
   assert.match(dashboard, /summarizeCompletedSales\(sales\)/);
   assert.match(dashboard, /totalCommissionOutstanding \+= summary\.outstandingCommission/);
-  assert.match(users, /summarizeCompletedSales\(network\.sales \|\| \[\]\)/);
+  assert.match(users, /b\.verifiedOutstandingCommission \?\? b\.outstandingCommission \?\? 0/);
   assert.match(profile, /const outstanding = sumOutstanding\(sales\)/);
-  assert.match(commission, /sale\?\.status === 'COMPLETED'/);
+  assert.match(commission, /sale\.status === 'COMPLETED'/);
 });
 
 test('sales history is not silently restricted to the current month by default', async () => {
@@ -44,7 +44,10 @@ test('live sales report metadata indicates when initial network snapshots are in
   assert.match(data, /expectedCount/);
   assert.match(data, /initialSnapshotsCount/);
   assert.match(sales, /!realtimeReady/);
-  assert.match(users, /!liveSalesReady/);
+  // The users list flags incomplete billing via partial errors surfaced by the
+  // billing loader instead of a live-sales readiness flag.
+  assert.match(users, /partialErrors/);
+  assert.match(users, /setPartialErrors\(Array\.isArray\(nextErrors\) \? nextErrors : \[\]\)/);
 });
 
 test('aggregate triggers resolve the owner UID instead of confusing it with networkId', async () => {
@@ -57,10 +60,10 @@ test('aggregate triggers resolve the owner UID instead of confusing it with netw
 
 test('forced refresh bypasses Firestore local cache for current reports', async () => {
   const data = await read('src/lib/adminData.js');
-  assert.match(data, /force \? await getDocsFromServer\(usersRef\) : await getDocs\(usersRef\)/);
-  assert.match(data, /force \? await getDocFromServer\(aggregateRef\) : await getDoc\(aggregateRef\)/);
-  assert.match(data, /force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)/);
-  assert.match(data, /force \? await getDocFromServer\(configRef\) : await getDoc\(configRef\)/);
+  assert.match(data, /trackRead\('users:canonical',\s*\(\)\s*=>\s*\(force \? getDocsFromServer\(usersRef\) : getDocs\(usersRef\)\)\)/);
+  assert.match(data, /trackRead\(`aggregate:summary:\$\{uid\}`,\s*\(\)\s*=>\s*\(force \? getDocFromServer\(aggregateRef\) : getDoc\(aggregateRef\)\)\)/);
+  assert.match(data, /trackRead\(label,\s*\(\)\s*=>\s*\(force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)\)\)/);
+  assert.match(data, /trackRead\('config:global',\s*\(\)\s*=>\s*\(force \? getDocFromServer\(configRef\) : getDoc\(configRef\)\)\)/);
 });
 
 test('user billing totals stream the real payment ledger, not inferred sale allocations', async () => {
@@ -68,11 +71,13 @@ test('user billing totals stream the real payment ledger, not inferred sale allo
     read('src/lib/adminData.js'),
     read('src/pages/UsersPage.jsx'),
   ]);
-  assert.match(data, /includePaymentTotals = false/);
-  assert.match(data, /recordedPayments: includePaymentTotals && paymentTotalsByUid\.has\(uid\) \? paymentTotalsByUid\.get\(uid\) : undefined/);
-  assert.match(users, /\{ includePaymentTotals: true \}/);
-  assert.match(users, /recordedPayments: network\.recordedPayments == null/);
-  assert.match(users, /recordedPayments: recordedPayments == null \? user\.recordedPayments : recordedPayments/);
+  // The billing figures come from the server aggregate snapshot (recordedPayments
+  // and outstandingCommission), never from inferring payments from sales.
+  assert.match(data, /const recordedPayments = Number\(aggregate\.totalPaid\) \|\| 0/);
+  assert.match(data, /outstandingCommission: Math\.max\(0, commissionDue - recordedPayments\)/);
+  assert.match(data, /recordedPayments: previous\.recordedPayments \?\? 0/);
+  assert.match(users, /billing\.verifiedOutstandingCommission \?\? 0/);
+  assert.match(users, /billing\.reportedSalesValue \|\| 0/);
 });
 
 test('row action buttons remain visible and usable on phone-sized screens', async () => {

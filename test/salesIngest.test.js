@@ -49,13 +49,16 @@ function ingestArgs(db,overrides={}){
 }
 test('new sale reads all transaction documents before writing and stores whole-Riyal totals',async()=>{
  const db=new FakeFirestore();db.docs.set('networks/NET-10001',{totalSalesAmount:1000,totalCommissionDue:50,totalPaidAmount:20,outstandingBalance:30});
- const result=await ingestSale(ingestArgs(db));
+ const now=1_800_000_000_123;
+ const result=await ingestSale(ingestArgs(db,{now}));
  assert.equal(result.status,'created');assert.equal(result.amountRiyal,500);assert.equal(result.commissionRiyal,25);
  const sale=db.docs.get('networks/NET-10001/sales/sale-1');
  assert.equal(sale.amountMinor,50000);assert.equal(sale.amountRiyal,500);assert.equal(sale.faceValue,500);assert.equal(sale.netAmount,475);
  assert.equal(sale.commissionMinor,2500);assert.equal(sale.commissionRiyal,25);assert.equal(sale.moneyPolicyVersion,2);
+ assert.equal(sale.createdAtMs,1700000000000);assert.equal(sale.updatedAtMs,now);
  const network=db.docs.get('networks/NET-10001');
  assert.equal(network.totalSalesAmount,1500);assert.equal(network.totalCommissionDue,75);assert.equal(network.totalPaidAmount,20);assert.equal(network.outstandingBalance,55);
+ assert.equal(network.updatedAtMs,now);
 });
 test('same current-version sale gets ACK without changing totals; changed payload conflicts',async()=>{
  const db=new FakeFirestore();db.docs.set('networks/NET-10001',{totalSalesAmount:500,totalCommissionDue:25,totalPaidAmount:0,outstandingBalance:25});

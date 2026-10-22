@@ -1,4 +1,5 @@
 import { auth } from '../firebase';
+import { trackRead } from './localDb/readMeter';
 
 /**
  * رسائل عربية موحّدة لأخطاء دوال الإدارة على الخادم.
@@ -164,7 +165,7 @@ export async function updateNetworkAccess(payload) {
       const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
       const { db, auth } = await import('../firebase');
       const userRef = doc(db, 'users', payload.uid);
-      const patch = { updatedAt: serverTimestamp() };
+      const patch = { updatedAt: serverTimestamp(), updatedAtMs: Date.now() };
 
       if (payload.phone_verified !== undefined) {
         patch.phone_verified = Boolean(payload.phone_verified);
@@ -239,7 +240,7 @@ export async function deleteNetworkAccount(uid, fallbackData = {}) {
     const { db } = await import('../firebase');
 
     const userRef = doc(db, 'users', uid);
-    const userSnap = await getDoc(userRef).catch(() => null);
+    const userSnap = await trackRead('delete-network:user', () => getDoc(userRef)).catch(() => null);
     const userData = userSnap?.exists?.() ? userSnap.data() : null;
     const phone = userData?.phone || userData?.phoneNumber || fallbackData?.phone || fallbackData?.phoneNumber || null;
 
@@ -252,17 +253,17 @@ export async function deleteNetworkAccount(uid, fallbackData = {}) {
     // Also look up any networks document where owner_uid or ownerUid matches
     try {
       const q1 = query(collection(db, 'networks'), where('owner_uid', '==', uid));
-      const snap1 = await getDocs(q1).catch(() => null);
+      const snap1 = await trackRead('delete-network:owner_uid', () => getDocs(q1)).catch(() => null);
       snap1?.docs?.forEach((d) => networkIds.add(d.id));
 
       const q2 = query(collection(db, 'networks'), where('ownerUid', '==', uid));
-      const snap2 = await getDocs(q2).catch(() => null);
+      const snap2 = await trackRead('delete-network:ownerUid', () => getDocs(q2)).catch(() => null);
       snap2?.docs?.forEach((d) => networkIds.add(d.id));
     } catch {}
 
     const purgeSubcollection = async (colRef) => {
       try {
-        const snap = await getDocs(colRef).catch(() => null);
+        const snap = await trackRead('delete-network:subcollection', () => getDocs(colRef)).catch(() => null);
         if (snap && snap.docs.length > 0) {
           await Promise.all(snap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
         }

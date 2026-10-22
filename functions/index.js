@@ -422,12 +422,13 @@ function hashEventId(eventId) {
  * Sale and payment markers intentionally live in different collections: an event
  * id collision across trigger types must not suppress the other trigger.
  */
-async function updateAggregateForEvent({ firestore = db, fieldValue = FieldValue, uid, eventType, eventId, updater }) {
+async function updateAggregateForEvent({ firestore = db, fieldValue = FieldValue, uid, eventType, eventId, updater, now = Date.now() }) {
   if (!eventId) throw new Error(`Missing event id for ${eventType} aggregate update`);
   const processedCollection = PROCESSED_AGGREGATE_EVENT_COLLECTIONS[eventType];
   if (!processedCollection) throw new Error(`Unknown aggregate event type: ${eventType}`);
   const aggregateRef = firestore.collection('admin_aggregates').doc(uid);
   const processedRef = firestore.collection(processedCollection).doc(hashEventId(eventId));
+  const updatedAtMs = now;
 
   return firestore.runTransaction(async (transaction) => {
     const processedSnap = await transaction.get(processedRef);
@@ -438,6 +439,7 @@ async function updateAggregateForEvent({ firestore = db, fieldValue = FieldValue
     transaction.set(aggregateRef, {
       ...nextSummary,
       updatedAt: fieldValue.serverTimestamp(),
+      updatedAtMs,
     }, { merge: true });
     transaction.set(processedRef, {
       eventId: String(eventId),

@@ -9,6 +9,7 @@ import {
 import {
   Timestamp,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -84,6 +85,11 @@ if (!emulatorAddress) {
       });
       await setDoc(doc(db, 'networks/NET-10001/settlements/settlement-1'), {
         amountMinor: 100,
+      });
+      await setDoc(doc(db, 'networks/NET-10001/sales/sale-1'), { saleId: 'sale-1', status: 'COMPLETED' });
+      await setDoc(doc(db, 'networks/NET-10001/payments/payment-1'), { amount: 100 });
+      await setDoc(doc(db, 'sync_tombstones/tombstone-1'), {
+        collection: 'sales', networkId: 'NET-10001', id: 'old-sale', updatedAtMs: 1,
       });
     });
   }
@@ -165,6 +171,29 @@ if (!emulatorAddress) {
 
     const userDb = testEnv.authenticatedContext('user-1').firestore();
     await assertFails(getDoc(doc(userDb, 'admin_aggregates/user-1')));
+  });
+
+  test('only admins can read sales and payments collection groups', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const userDb = testEnv.authenticatedContext('user-1').firestore();
+
+    const sales = await assertSucceeds(getDocs(collectionGroup(adminDb, 'sales')));
+    assert.equal(sales.size, 1);
+    const payments = await assertSucceeds(getDocs(collectionGroup(adminDb, 'payments')));
+    assert.equal(payments.size, 1);
+    await assertFails(getDocs(collectionGroup(userDb, 'sales')));
+    await assertFails(getDocs(collectionGroup(userDb, 'payments')));
+  });
+
+  test('sync tombstones are admin-readable and server-write-only', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const userDb = testEnv.authenticatedContext('user-1').firestore();
+    const adminTombstone = doc(adminDb, 'sync_tombstones/tombstone-1');
+
+    await assertSucceeds(getDoc(adminTombstone));
+    await assertFails(setDoc(doc(adminDb, 'sync_tombstones/client-write'), { collection: 'sales' }));
+    await assertFails(getDoc(doc(userDb, 'sync_tombstones/tombstone-1')));
+    await assertFails(setDoc(doc(userDb, 'sync_tombstones/client-write'), { collection: 'sales' }));
   });
 
   test('payment and settlement records are server-write-only for every client', async () => {

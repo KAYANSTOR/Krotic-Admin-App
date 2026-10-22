@@ -96,6 +96,7 @@ async function audit(db, { action, actorUid, uid, details, now }) {
     details: details || null,
     createdAt: FieldValue.serverTimestamp(),
     createdAtMs: now,
+    updatedAtMs: now,
   });
 }
 
@@ -146,6 +147,8 @@ export default async function handler(req, res) {
         email,
         phone,
         createdAt: now,
+        createdAtMs: now,
+        updatedAtMs: now,
         createdBy: caller.callerUid,
       }, { merge: false });
       await audit(db, { action: 'ADMIN_CREATE', actorUid: caller.callerUid, uid: record.uid, details: { email, name }, now });
@@ -161,6 +164,7 @@ export default async function handler(req, res) {
       const patch = {};
       if (parsed.value.name !== undefined) patch.name = parsed.value.name;
       if (parsed.value.phone !== undefined) patch.phone = parsed.value.phone;
+      patch.updatedAtMs = now;
       await db.collection('Admins').doc(uid).set(patch, { merge: true });
       await audit(db, { action: 'ADMIN_UPDATE', actorUid: caller.callerUid, uid, details: patch, now });
       return res.status(200).json({ success: true, uid });
