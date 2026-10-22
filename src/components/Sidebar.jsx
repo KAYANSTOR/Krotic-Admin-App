@@ -84,6 +84,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     end={item.path === '/'}
                     onClick={onClose}
                     onPointerEnter={() => preloadRoute(item.path)}
+                    onPointerDown={() => preloadRoute(item.path)}
                     onFocus={() => preloadRoute(item.path)}
                     className={`sidebar__link ${isActive ? 'is-active' : ''}`}
                     aria-current={isActive ? 'page' : undefined}

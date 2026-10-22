@@ -3,7 +3,6 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWith
 import { doc, getDoc, getDocFromCache, getDocFromServer, getFirestore, setDoc } from 'firebase/firestore';
 import app, { auth, db, secondaryAuth, firestoreDatabaseId } from '../firebase';
 import { signOut as secondarySignOut } from 'firebase/auth';
-import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { trackRead } from '../lib/localDb/readMeter';
 import { deleteAdminDb } from '../lib/localDb/db';
@@ -129,7 +128,6 @@ export function AuthProvider({ children }) {
     sessionVersion.current += 1;
     const previousUid = currentUid.current;
     currentUid.current = null;
-    clearAdminDataCache();
     setAdminData(null);
     setCurrentUser(null);
     setOfflineSession(false);
@@ -142,7 +140,6 @@ export function AuthProvider({ children }) {
     // قرار و3: إنشاء المدراء عبر المسار الخادمي فقط (لا كتابة عميل على Admins).
     const result = await callAdminApi('/api/admins', { action: 'create', email, password, name, phone });
     if (!result.ok) throw new Error(adminApiError(result.error, 'تعذر إنشاء حساب المدير'));
-    invalidateAdminListData();
     return result.data?.uid;
   }
 
@@ -151,16 +148,12 @@ export function AuthProvider({ children }) {
       const eventVersion = ++sessionVersion.current;
       const uid = user?.uid || null;
       if (currentUid.current !== uid) {
-        const hadPreviousUid = Boolean(currentUid.current);
         currentUid.current = uid;
         // Unmount protected routes before verifying a different account; never
         // leave the prior admin's identity or page state visible during the await.
         setLoading(true);
         setCurrentUser(null);
         setAdminData(null);
-        // On a fresh app start keep only the restored UID's snapshot; an actual
-        // account transition/logout clears every custom snapshot.
-        clearAdminDataCache(hadPreviousUid ? undefined : { preserveUid: uid });
         setOfflineSession(false);
       }
       try {

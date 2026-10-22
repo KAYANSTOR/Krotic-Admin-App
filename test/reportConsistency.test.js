@@ -33,21 +33,21 @@ test('customer history refresh cannot miss late offline sales with older created
   assert.match(data, /const sales = incomingSales/);
 });
 
-test('live sales report metadata indicates when initial network snapshots are incomplete', async () => {
-  const [data, sales, users] = await Promise.all([
-    read('src/lib/adminData.js'),
+test('live sales report metadata indicates when the local snapshot is still loading', async () => {
+  const [sales, users, sync] = await Promise.all([
     read('src/pages/SalesPage.jsx'),
     read('src/pages/UsersPage.jsx'),
+    read('src/lib/localDb/syncEngine.js'),
   ]);
-  assert.match(data, /initialSnapshotsCount/);
-  assert.match(data, /ready/);
-  assert.match(data, /expectedCount/);
-  assert.match(data, /initialSnapshotsCount/);
+  // بعد الترحيل: الجاهزية تأتي من القاعدة المحلية لا من مستمعات Firestore.
+  assert.match(sales, /const realtimeReady = !salesQuery\.loading/);
   assert.match(sales, /!realtimeReady/);
-  // The users list flags incomplete billing via partial errors surfaced by the
-  // billing loader instead of a live-sales readiness flag.
+  // القائمة تُعلن فشل القراءة المحلية بدل أخطاء تحميل المجاميع الحيّة.
   assert.match(users, /partialErrors/);
-  assert.match(users, /setPartialErrors\(Array\.isArray\(nextErrors\) \? nextErrors : \[\]\)/);
+  assert.match(users, /usersQuery\.error/);
+  // المزامنة تنزّل كل التغييرات على صفحات (لا لقطات كاملة غير محدودة).
+  assert.match(sync, /const PAGE_SIZE = \d+/);
+  assert.match(sync, /where\('updatedAtMs', '>=', cursorMs\)/);
 });
 
 test('aggregate triggers resolve the owner UID instead of confusing it with networkId', async () => {
@@ -97,15 +97,16 @@ test('row action buttons remain visible and usable on phone-sized screens', asyn
 });
 
 
-test('phone reports stay visible during refresh and show the user list before aggregate fan-out completes', async () => {
+test('phone reports stay visible during refresh while the local snapshot loads', async () => {
   const [dashboard, sales, users] = await Promise.all([
     read('src/pages/DashboardPage.jsx'),
     read('src/pages/SalesPage.jsx'),
     read('src/pages/UsersPage.jsx'),
   ]);
   assert.match(dashboard, /if \(loading && !stats\)/);
-  assert.match(sales, /if \(loading && networkSales\.length === 0 && !hasRealtimeSnapshot\.current\)/);
-  assert.match(users, /fetchAllUsers\(\{ force \}\)/);
-  assert.match(users, /setLoading\(false\);\s*setBillingRefreshing\(true\)/);
+  assert.match(sales, /if \(loading && networkSales\.length === 0\)/);
+  // القائمة تُعرض من القاعدة المحلية مباشرة، فلا تنتظر أي fan-out على الشبكة.
+  assert.match(users, /loadLocalUsersWithBilling\(localDb\)/);
+  assert.match(users, /const loading = usersQuery\.loading && !hasLoadedUsers\.current/);
   assert.match(users, /if \(loading && users\.length === 0\)/);
 });

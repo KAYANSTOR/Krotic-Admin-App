@@ -69,7 +69,7 @@ export function SkeletonTable({ rows = 5 }) {
 
 export function PageSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fallback">
       <SkeletonLine className="w-1/3 h-8" />
       <SkeletonStatGrid />
       <div className="card"><SkeletonTable rows={4} /></div>

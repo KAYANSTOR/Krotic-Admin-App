@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -7,7 +7,7 @@ import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
-import { loadRoute } from './lib/routeLoaders';
+import { loadRoute, preloadAllRoutes } from './lib/routeLoaders';
 import ReadMeterPanel from './components/ReadMeterPanel';
 import { LocalDbProvider } from './lib/localDb/LocalDbContext';
 
@@ -35,6 +35,15 @@ function AdminShell() {
 
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
+
+  // بعد تسجيل الدخول: تحميل بقية الصفحات في وقت الخمول (بلا سبينر كامل لاحقاً).
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1200));
+    const cancel = window.cancelIdleCallback || window.clearTimeout;
+    const handle = idle(() => { preloadAllRoutes().catch(() => undefined); });
+    return () => cancel(handle);
+  }, [currentUser]);
 
   if (loading) {
     return (

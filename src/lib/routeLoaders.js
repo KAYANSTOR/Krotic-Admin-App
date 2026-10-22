@@ -45,4 +45,13 @@ export function preloadRoute(path) {
   return loadRoute(path);
 }
 
+/**
+ * تحميل كل الصفحات في وقت الخمول بعد تسجيل الدخول، حتى لا يظهر سبينر
+ * كامل الشاشة عند أول تنقل إلى أي صفحة.
+ */
+export function preloadAllRoutes() {
+  if (!canPreloadRoute()) return Promise.resolve();
+  return Promise.all(Object.keys(routeLoaders).map((path) => loadRoute(path)));
+}
+
 export default routeLoaders;

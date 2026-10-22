@@ -102,7 +102,7 @@ export default function BottomNav() {
       <nav className="bottom-nav" aria-label="التنقل الرئيسي">
         <div className="bottom-nav-row">
           {primaryItems.slice(0, 2).map(({ path, label, icon: Icon }) => (
-            <NavLink key={path} to={path} end={path === '/'} onPointerEnter={() => preloadRoute(path)} className={({ isActive }) => `bottom-nav-item ${isActive ? 'is-active' : ''}`} title={label}>
+            <NavLink key={path} to={path} end={path === '/'} onPointerEnter={() => preloadRoute(path)} onPointerDown={() => preloadRoute(path)} onFocus={() => preloadRoute(path)} className={({ isActive }) => `bottom-nav-item ${isActive ? 'is-active' : ''}`} title={label}>
               <Icon className="bottom-nav-icon" aria-hidden="true" />
               <span className="bottom-nav-label">{label}</span>
             </NavLink>
@@ -112,7 +112,7 @@ export default function BottomNav() {
             <span className="bottom-nav-label">الإجراءات</span>
           </button>
           {primaryItems.slice(2).map(({ path, label, icon: Icon }) => (
-            <NavLink key={path} to={path} end={path === '/'} onPointerEnter={() => preloadRoute(path)} className={({ isActive }) => `bottom-nav-item ${isActive ? 'is-active' : ''}`} title={label}>
+            <NavLink key={path} to={path} end={path === '/'} onPointerEnter={() => preloadRoute(path)} onPointerDown={() => preloadRoute(path)} onFocus={() => preloadRoute(path)} className={({ isActive }) => `bottom-nav-item ${isActive ? 'is-active' : ''}`} title={label}>
               <Icon className="bottom-nav-icon" aria-hidden="true" />
               <span className="bottom-nav-label">{label}</span>
             </NavLink>

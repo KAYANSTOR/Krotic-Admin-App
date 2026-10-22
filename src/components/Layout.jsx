@@ -15,7 +15,6 @@ import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestor
 import { db } from '../firebase';
 import useOnlineStatus from '../lib/useOnlineStatus';
 import { emitAppRefresh } from '../lib/useAppRefresh';
-import { subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { trackSnapshot } from '../lib/localDb/readMeter';
 import { formatNumber } from '../lib/format';
 import { PageSkeleton } from './ui/Skeleton';
