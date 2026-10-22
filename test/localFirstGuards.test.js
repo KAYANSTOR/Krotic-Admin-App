@@ -95,6 +95,17 @@ test('no data cache is kept in localStorage anymore', async () => {
   assert.deepEqual(offenders, []);
 });
 
+test('administrative access changes and account deletion happen on the server only', async () => {
+  const api = await read(new URL('lib/adminApi.js', SRC));
+  // لا fallback من المتصفح: لا updateDoc ولا deleteDoc على مستخدم/شبكة.
+  assert.doesNotMatch(api, /updateDoc\(/);
+  assert.doesNotMatch(api, /deleteDoc\(/);
+  assert.doesNotMatch(api, /firebase\/firestore/);
+  // المسارات الخادمية المطلوبة موجودة.
+  assert.match(api, /action: 'update-access'/);
+  assert.match(api, /action: 'delete'/);
+});
+
 test('collection-group sync queries have the indexes they need', async () => {
   const raw = await read(new URL('../firestore.indexes.json', import.meta.url));
   const indexes = JSON.parse(raw);

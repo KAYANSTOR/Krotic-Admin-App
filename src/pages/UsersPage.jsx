@@ -362,7 +362,7 @@ export default function UsersPage() {
       message: `هل أنت متأكد من حذف الحساب «${targetName}»؟ سيتم حذف جميع بيانات المشترك والشبكة وسجلاتها نهائياً ولا يمكن التراجع عن هذا الإجراء.`,
       variant: 'danger',
       action: async () => {
-        const result = await deleteNetworkAccount(user.uid, user);
+        const result = await deleteNetworkAccount(user.uid);
         if (!result.ok) {
           toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
           return false;
