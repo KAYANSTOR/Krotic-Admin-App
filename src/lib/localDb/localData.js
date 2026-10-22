@@ -32,6 +32,23 @@ export async function loadLocalConfig(localDb) {
   return readGlobalConfig(localDb);
 }
 
+/** قائمة مبسّطة لاختيار حساب (اسم/هاتف/شبكة) من القاعدة المحلية. */
+export async function loadLocalUserOptions(localDb) {
+  const users = await loadLocalUsers(localDb);
+  return users.map((user) => {
+    const name = user.networkName || user.network_name || user.name
+      || `مشترك (${String(user.uid).slice(0, 8)})`;
+    const phone = user.phoneNumber || user.phone || '';
+    return {
+      uid: user.uid,
+      name,
+      phone,
+      networkName: name,
+      phoneNumber: phone,
+    };
+  });
+}
+
 /** يحمّل تقرير لوحة التحكم. */
 export async function loadLocalDashboard(localDb) {
   const [users, aggregates, config] = await Promise.all([

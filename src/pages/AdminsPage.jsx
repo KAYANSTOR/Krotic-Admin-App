@@ -1,6 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { doc, deleteDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   ShieldCheck, UserPlus, Trash2, Eye, EyeOff,
@@ -19,9 +17,9 @@ import ChangeAdminPasswordModal from '../components/ChangeAdminPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import DataFreshness from '../components/ui/DataFreshness';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
-import {
-  fetchAdmins as loadAdmins, getAdminDataCacheState, subscribeAdminDataCache, invalidateAdminListData,
-} from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalAdmins } from '../lib/localDb/localData';
 import { deleteAdminAccount, adminApiError } from '../lib/adminApi';
 import useAppRefresh from '../lib/useAppRefresh';
 
@@ -39,8 +37,6 @@ function AdminsSkeleton() {
 }
 
 export default function AdminsPage() {
-  const [admins, setAdmins] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -52,41 +48,21 @@ export default function AdminsPage() {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showMyPasswordModal, setShowMyPasswordModal] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [cacheState, setCacheState] = useState(null);
   const { createAdmin, currentUser } = useAuth();
-  const latestRequestId = useRef(0);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  const fetchAdmins = useCallback(async ({ force = false } = {}) => {
-    const requestId = ++latestRequestId.current;
-    setLoading(true);
-    try {
-      const data = await loadAdmins({ force });
-      if (requestId !== latestRequestId.current) return;
-      setAdmins(data);
-      setCacheState(getAdminDataCacheState('admins'));
-      setUpdatedAt(Date.now());
-    } catch (error) {
-      if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching admins:', error);
-      toast.error('خطأ في تحميل بيانات المدراء');
-    } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
-    }
-  }, []);
+  // القراءة من القاعدة المحلية: صفر قراءات عند التنقل، وقراءة تزايدية عند التحديث.
+  const adminsQuery = useLocalQuery((localDb) => loadLocalAdmins(localDb), []);
+  const admins = adminsQuery.data || [];
+  const loading = adminsQuery.loading;
 
-  useEffect(() => {
-    fetchAdmins();
-    return () => { latestRequestId.current += 1; };
-  }, [fetchAdmins]);
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    adminsQuery.refresh();
+  };
 
-  // يعرض التحديثات من طبقة الكاش (بما فيها التحديث الخلفي والتنبيه عند التغيير).
-  useEffect(() => subscribeAdminDataCache('admins', (data) => {
-    if (Array.isArray(data)) setAdmins(data);
-  }), []);
-
-  // السحب للأسفل على الجوال يعيد الجلب قسرياً.
-  useAppRefresh(() => fetchAdmins({ force: true }));
+  // السحب للأسفل على الجوال يزامن التغييرات فقط.
+  useAppRefresh(refresh);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -106,7 +82,7 @@ export default function AdminsPage() {
       toast.success('تم إنشاء حساب المدير بنجاح');
       setFormData({ name: '', email: '', phone: '', password: '' });
       setShowForm(false);
-      fetchAdmins();
+      await refresh();
     } catch (error) {
       console.error(error);
       toast.error(error.message || 'تعذر إنشاء حساب المدير');
@@ -122,7 +98,6 @@ export default function AdminsPage() {
         toast.error(adminApiError(result.error, 'تعذر حذف المدير'));
         return false;
       }
-      invalidateAdminListData();
       void logAdminAction({
         action: AUDIT_ACTIONS.ADMIN_DELETE,
         targetType: 'admin',
@@ -131,7 +106,7 @@ export default function AdminsPage() {
       }).catch((error) => console.warn('Admin deletion audit failed:', error));
       toast.success('تم حذف المدير من القائمة');
       setDeleteTarget(null);
-      fetchAdmins();
+      await refresh();
       return true;
     } catch (error) {
       console.error('Admin deletion failed:', error);
@@ -160,7 +135,7 @@ export default function AdminsPage() {
         meta={`${admins.length} مدير مسجل`}
         actions={
           <>
-            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => fetchAdmins({ force: true })} fromCache={cacheState?.fromCache ?? null} />
+            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={loading || syncing} onRefresh={refresh} />
             <Button
               variant="secondary"
               icon={KeyRound}

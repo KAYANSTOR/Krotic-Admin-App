@@ -11,7 +11,9 @@ import Switch from '../components/ui/Switch';
 import { Field, Select } from '../components/ui/Field';
 import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
-import { fetchUsersForSelect } from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalUserOptions } from '../lib/localDb/localData';
 import { fetchPaidFeatureEntitlements, updatePaidFeatureEntitlements, adminApiError } from '../lib/adminApi';
 import useAppRefresh from '../lib/useAppRefresh';
 
@@ -41,30 +43,22 @@ function PaidFeaturesSkeleton() {
 }
 
 export default function PaidFeaturesPage() {
-  const [users, setUsers] = useState([]);
+  const { runSync, syncing } = useLocalDb();
+  const usersQuery = useLocalQuery((localDb) => loadLocalUserOptions(localDb), []);
+  const users = usersQuery.data || [];
+  const loadingUsers = usersQuery.loading;
   const [uid, setUid] = useState('');
   const [entitlements, setEntitlements] = useState(EMPTY_MAP);
-  const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingEntitlements, setLoadingEntitlements] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [error, setError] = useState(null);
   const latestRequestId = useRef(0);
 
-  const loadUsers = useCallback(async () => {
-    setLoadingUsers(true);
-    try {
-      const list = await fetchUsersForSelect({});
-      setUsers(Array.isArray(list) ? list : []);
-    } catch (loadError) {
-      console.error('Error fetching users for paid features:', loadError);
-      toast.error('تعذر تحميل قائمة الحسابات');
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, []);
-
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  // قائمة الحسابات تُقرأ من القاعدة المحلية (صفر قراءات عند التنقل).
+  useEffect(() => {
+    if (usersQuery.error) toast.error('تعذر تحميل قائمة الحسابات');
+  }, [usersQuery.error]);
 
   const loadEntitlements = useCallback(async (targetUid) => {
     if (!targetUid) return;
@@ -91,7 +85,10 @@ export default function PaidFeaturesPage() {
     else { setEntitlements(EMPTY_MAP); setError(null); }
   }, [uid, loadEntitlements]);
 
-  useAppRefresh(() => loadEntitlements(uid));
+  useAppRefresh(async () => {
+    await runSync({ reason: 'manual' });
+    loadEntitlements(uid);
+  });
 
   const toggle = (key, value) => setEntitlements((current) => ({ ...current, [key]: value }));
 
@@ -129,7 +126,7 @@ export default function PaidFeaturesPage() {
         actions={(
           <DataFreshness
             updatedAt={updatedAt}
-            refreshing={loadingEntitlements}
+            refreshing={loadingEntitlements || syncing}
             onRefresh={() => loadEntitlements(uid)}
           />
         )}

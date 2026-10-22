@@ -1,6 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { collection, getDocs, query, orderBy, limit, startAfter } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ScrollText, Search, Download, Inbox, ShieldCheck, KeyRound,
   UserCheck, DollarSign, Bell, Settings, ShieldAlert,
@@ -16,14 +14,15 @@ import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonPageHeader, SkeletonCard } from '../components/ui/Skeleton';
 import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { trackRead } from '../lib/localDb/readMeter';
 import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
-import {
-  fetchAuditLogs as loadAuditLogs, getAdminDataCacheState, subscribeAdminDataCache,
-} from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalAuditLogs } from '../lib/localDb/localData';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 30;
+/** سقف السجلات المحفوظة محلياً للعرض (يأتي من مزامنة admin_audit_logs). */
+const AUDIT_LOCAL_LIMIT = 200;
 const FILTER_STORAGE_KEY = 'krotak:audit-filter';
 
 const DETAIL_LABELS = {
@@ -109,36 +108,6 @@ function loadSavedFilter() {
   }
 }
 
-export function mapAuditDocs(docs) {
-  return docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-}
-
-/** أحدث طابع زمني في مجموعة سجلات — يُستخدم كمؤشر ترقيم عددي لقيمة createdAtMs. */
-export function latestCreatedAtMs(entries) {
-  let max = -Infinity;
-  (entries || []).forEach((entry) => {
-    const value = Number(entry?.createdAtMs);
-    if (Number.isFinite(value) && value > max) max = value;
-  });
-  return Number.isFinite(max) ? max : null;
-}
-
-// Merge by id while preserving the server's orderBy order, including timestamp ties.
-export function mergeAuditLogs(existing, incoming) {
-  const merged = [...existing];
-  const indexById = new Map(merged.map((entry, index) => [entry.id, index]));
-  incoming.forEach((entry) => {
-    const existingIndex = indexById.get(entry.id);
-    if (existingIndex === undefined) {
-      indexById.set(entry.id, merged.length);
-      merged.push(entry);
-    } else {
-      merged[existingIndex] = entry;
-    }
-  });
-  return merged;
-}
-
 const CATEGORY_CHIPS = [
   { key: 'all', label: 'كل العمليات' },
   { key: 'users', label: 'المستخدمين والاشتراكات', actions: ['USER_ACTIVATE', 'USER_BLOCK', 'USER_MAKE_OFFICIAL', 'USER_RENEW', 'USER_EDIT', 'USER_DELETE', 'NETWORK_ACCESS_UPDATE', 'NETWORK_RENEW', 'NETWORK_DELETE', 'NETWORK_REGISTER'] },
@@ -149,82 +118,32 @@ const CATEGORY_CHIPS = [
 ];
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [cacheState, setCacheState] = useState(null);
   const [actionFilter, setActionFilter] = useState(loadSavedFilter);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [cursorMs, setCursorMs] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
-  const requestInFlight = useRef(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  const load = useCallback(async ({ force = false } = {}) => {
-    if (requestInFlight.current) return;
-    requestInFlight.current = true;
-    setLoading(true);
-    setError(null);
-    try {
-      const { logs: page, hasMore: more } = await loadAuditLogs({ force });
-      const merged = mergeAuditLogs([], page || []);
-      setLogs(merged);
-      setHasMore(Boolean(more) && (page?.length || 0) === PAGE_SIZE);
-      setCursorMs(latestCreatedAtMs(merged));
-      setCacheState(getAdminDataCacheState('audit-logs'));
-      setUpdatedAt(Date.now());
-    } catch (err) {
-      console.error('Error fetching audit log:', err);
-      setError('تعذر تحميل سجل العمليات. تحقق من قواعد Firestore ثم أعد المحاولة.');
-      setHasMore(false);
-    } finally {
-      requestInFlight.current = false;
-      setLoading(false);
-    }
-  }, []);
+  // السجل يُقرأ من القاعدة المحلية (آخر 200 سجل)؛ لا استعلام Firestore في الشاشة.
+  const logsQuery = useLocalQuery((localDb) => loadLocalAuditLogs(localDb, AUDIT_LOCAL_LIMIT), []);
+  const allLogs = useMemo(() => logsQuery.data || [], [logsQuery.data]);
+  const logs = useMemo(() => allLogs.slice(0, visibleCount), [allLogs, visibleCount]);
+  const loading = logsQuery.loading;
+  const error = logsQuery.error
+    ? 'تعذر قراءة سجل العمليات من القاعدة المحلية. أعد المحاولة.'
+    : null;
+  const hasMore = allLogs.length > visibleCount;
+  const loadingMore = false;
 
-  const loadMore = useCallback(async () => {
-    if (requestInFlight.current || !hasMore || !Number.isFinite(cursorMs)) return;
-    requestInFlight.current = true;
-    setLoadingMore(true);
-    setError(null);
-    try {
-      const snapshot = await trackRead('audit:next-page', () => getDocs(
-        query(
-          collection(db, 'admin_audit_logs'),
-          orderBy('createdAtMs', 'desc'),
-          startAfter(cursorMs),
-          limit(PAGE_SIZE)
-        )
-      ));
-      const page = mapAuditDocs(snapshot.docs);
-      setLogs((current) => mergeAuditLogs(current, page));
-      setHasMore(snapshot.docs.length === PAGE_SIZE);
-      setCursorMs(latestCreatedAtMs(page) ?? cursorMs);
-    } catch (err) {
-      console.error('Error fetching next audit page:', err);
-      setError('تعذر تحميل الصفحة التالية من السجل. أعد المحاولة.');
-    } finally {
-      requestInFlight.current = false;
-      setLoadingMore(false);
-    }
-  }, [hasMore, cursorMs]);
+  const loadMore = () => setVisibleCount((count) => count + PAGE_SIZE);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    logsQuery.refresh();
+  };
 
-  useEffect(() => subscribeAdminDataCache('audit-logs', (data) => {
-    const page = data?.logs;
-    if (!Array.isArray(page)) return;
-    setLogs((current) => mergeAuditLogs(current, page));
-    setCacheState(getAdminDataCacheState('audit-logs'));
-  }), []);
-
-  useAppRefresh(() => load({ force: true }));
+  useAppRefresh(refresh);
 
   useEffect(() => {
     try {
@@ -297,7 +216,7 @@ export default function AuditPage() {
         meta={`${filteredLogs.length} من ${logs.length} عملية مسجلة`}
         actions={
           <div className="flex items-center gap-2">
-            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={load} fromCache={cacheState?.fromCache ?? null} />
+            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={loading || syncing} onRefresh={refresh} />
             <Button variant="secondary" size="sm" icon={Download} onClick={handleExport} className="font-bold">
               تصدير CSV
             </Button>
@@ -471,7 +390,7 @@ export default function AuditPage() {
             <Button
               variant="secondary"
               loading={loadingMore}
-              disabled={loadingMore || !hasMore || !Number.isFinite(cursorMs)}
+              disabled={loadingMore || !hasMore}
               onClick={loadMore}
               className="font-bold min-w-[160px]"
             >
