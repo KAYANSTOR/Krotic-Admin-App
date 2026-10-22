@@ -142,44 +142,43 @@ export default function DashboardPage() {
     if (rebuildingAggregates || aggregateRepairProgress.done) return;
     const resume = Boolean(aggregateRepairProgress.cursor);
     const accepted = window.confirm(
-      (resume ? 'استئناف' : 'بدء') + ' إعادة بناء المجاميع المالية من سجلات المبيعات والمدفوعات؟ هذه العملية قد تستهلك آلاف قراءات Firestore؛ بما أن الحصة المجانية قد تكون مستنفدة، شغّلها بعد تجدد الحصة اليومية. تتم المعالجة على دفعات قابلة للاستئناف، وبحد أقصى 2000 سجل لكل مجموعة في الشبكة.'
+      (resume ? 'متابعة' : 'بدء') + ' إعادة بناء المجاميع المالية لشبكة واحدة من سجلات المبيعات والمدفوعات؟ قد تستهلك آلاف قراءات Firestore للشبكة الواحدة. بما أن الحصة المجانية قد تكون مستنفدة، شغّلها بعد تجدد الحصة اليومية. لن تُعالج شبكة أخرى حتى تضغط المتابعة مرة أخرى.'
     );
     if (!accepted) return;
     setRebuildingAggregates(true);
     let cursor = aggregateRepairProgress.cursor || null;
     let processed = Number(aggregateRepairProgress.processed) || 0;
     try {
-      do {
-        const response = await callAdminApi('/api/migrate', {
-          action: 'rebuild-all',
-          limit: 5,
-          ...(cursor ? { cursor } : {}),
-        });
-        if (!response.ok) throw new Error(adminApiError(response.error, 'تعذر إعادة بناء المجاميع المالية'));
-        const result = response.data || {};
-        processed += Number(result.processed) || 0;
-        cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null;
-        const nextProgress = { processed, cursor, done: false };
-        setAggregateRepairProgress(nextProgress);
-        try {
-          if (cursor) window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
-          else window.localStorage.removeItem(AGGREGATE_REPAIR_PROGRESS_KEY);
-        } catch { /* progress persistence is best-effort */ }
-        if (result.done === true || !cursor) break;
-      } while (cursor);
+      const response = await callAdminApi('/api/migrate', {
+        action: 'rebuild-all',
+        limit: 1,
+        ...(cursor ? { cursor } : {}),
+      });
+      if (!response.ok) throw new Error(adminApiError(response.error, 'تعذر إعادة بناء المجاميع المالية'));
+      const result = response.data || {};
+      processed += Number(result.processed) || 0;
+      cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null;
+      const done = result.done === true || !cursor;
+      const nextProgress = { processed, cursor: done ? null : cursor, done };
+      setAggregateRepairProgress(nextProgress);
+      try {
+        window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
+      } catch { /* progress persistence is best-effort */ }
       invalidateAdminDataCache([
         'all-users', 'users-with-billing', 'dashboard-stats', 'network-sales', 'network-sales-full',
         'aggregate:*', 'sales:*', 'network-meta:*', 'billing-history:*',
       ]);
-      setAggregateRepairProgress({ processed, cursor: null, done: true });
       await load({ force: true });
-      toast.success(`اكتملت إعادة بناء مجاميع ${formatNumber(processed)} شبكة. حدّث شاشة المستخدمين إذا كانت مفتوحة.`);
+      if (done) {
+        toast.success(`اكتملت إعادة بناء مجاميع ${formatNumber(processed)} شبكة. حدّث شاشة المستخدمين إذا كانت مفتوحة.`);
+      } else {
+        toast.success(`أُصلحت شبكة واحدة. الإجمالي ${formatNumber(processed)} شبكة؛ اضغط «متابعة الإصلاح» عند استعدادك للدفعة التالية.`);
+      }
     } catch (repairError) {
       const nextProgress = { processed, cursor, done: false };
       setAggregateRepairProgress(nextProgress);
       try {
-        if (cursor) window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
-        else window.localStorage.removeItem(AGGREGATE_REPAIR_PROGRESS_KEY);
+        window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
       } catch { /* progress persistence is best-effort */ }
       toast.error(repairError instanceof Error ? repairError.message : 'توقفت إعادة بناء المجاميع. يمكنك الاستئناف بعد تجدد حصة Firestore.');
     } finally {
@@ -246,12 +245,12 @@ export default function DashboardPage() {
               <p className="text-sm font-extrabold text-ink">صيانة الملخصات المالية القديمة</p>
               <p className="mt-1 text-xs leading-5 text-muted">تعيد حساب إجمالي المبيعات والعمولات والدفعات من السجلات المخزنة، ثم تحفظ الملخصات في Firestore لتستخدمها الشاشات سريعًا. لا تعدّل سجل البيع نفسه.</p>
               <p className="mt-1 text-xs leading-5 text-amber-700">قد تستهلك آلاف القراءات. انتظر تجدد الحصة اليومية قبل تشغيلها؛ كل شبكة محدودة حاليًا بـ 2000 سجل في كل مجموعة.</p>
-              {aggregateRepairProgress.cursor && (
-                <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. يمكنك استئناف الإصلاح من آخر نقطة محفوظة.</p>
+              {(aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0) && (
+                <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. {aggregateRepairProgress.done ? 'الإصلاح مكتمل.' : 'التقدم محفوظ محليًا؛ اضغط المتابعة لمعالجة شبكة واحدة أخرى.'}</p>
               )}
             </div>
             <Button variant="secondary" size="sm" icon={RefreshCw} loading={rebuildingAggregates} disabled={rebuildingAggregates} onClick={repairFinancialAggregates}>
-              {rebuildingAggregates ? `جارٍ الإصلاح (${formatNumber(aggregateRepairProgress.processed)} شبكة)` : aggregateRepairProgress.cursor ? 'استئناف الإصلاح' : 'إصلاح الملخصات'}
+              {rebuildingAggregates ? 'جارٍ إصلاح شبكة واحدة…' : aggregateRepairProgress.cursor ? 'متابعة الإصلاح (شبكة واحدة)' : 'إصلاح الملخصات (شبكة واحدة)'}
             </Button>
           </div>
         </Card>
