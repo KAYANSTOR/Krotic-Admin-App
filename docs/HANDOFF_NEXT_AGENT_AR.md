@@ -6,7 +6,7 @@
 
 **المستودع:** `KAYANSTOR/Krotic-Admin-App` (خاص).
 **الفرع العامل:** `cline/tp5e5bzb` — مبني على `feat/local-first-admin` (`ebc5263f`).
-**HEAD عند التسليم:** `053b89a` (مدفوع إلى origin).
+**HEAD عند التسليم:** رأس `origin/cline/tp5e5bzb` (`39614e2` قبل commit التوثيق الذي يثبت هذا السطر — تحقّق بـ`git log -1`).
 **قاعدة الدمج:** `origin/main` = `f3a4546` (لم يُلمس، ولا PR، ولا دمج).
 **المرجع الحي (قراءة فقط، ممنوع التعديل):** `KAYANSTOR/Krotak-Pro`.
 **تاريخ التسليم:** 2026-10-22.
