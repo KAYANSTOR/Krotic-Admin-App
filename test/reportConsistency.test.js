@@ -27,10 +27,16 @@ test('sales history is not silently restricted to the current month by default',
 });
 
 test('customer history refresh cannot miss late offline sales with older createdAt', async () => {
-  const data = await read('src/lib/adminData.js');
-  assert.match(data, /Offline sales may arrive after a newer sale while carrying an older/);
-  assert.doesNotMatch(data, /incrementalSales/);
-  assert.match(data, /const sales = incomingSales/);
+  const [data, queries] = await Promise.all([
+    read('src/lib/localDb/localData.js'),
+    read('src/lib/localDb/localQueries.js'),
+  ]);
+  // لم يبقَ دمج تزايدي بمؤشر زمني: السجل المالي يُعاد حسابه من كل الصفوف المحلية،
+  // لذلك لا تُفقد عملية بيع متأخرة تحمل createdAt أقدم من آخر قراءة.
+  assert.match(data, /export async function loadLocalBillingHistory/);
+  assert.match(data, /sortSalesByCreatedDesc\(salesForNetwork\(salesRows, networkId\)\)/);
+  assert.match(queries, /return \(salesRows \|\| \[\]\)\.filter\(\(sale\) => sale\.networkId === networkId\)/);
+  assert.doesNotMatch(data, /incrementa|sinceMs|cursor/i);
 });
 
 test('live sales report metadata indicates when the local snapshot is still loading', async () => {
@@ -58,24 +64,30 @@ test('aggregate triggers resolve the owner UID instead of confusing it with netw
   assert.match(source, /uid: ownerUid/);
 });
 
-test('forced refresh bypasses Firestore local cache for current reports', async () => {
-  const data = await read('src/lib/adminData.js');
-  assert.match(data, /trackRead\('users:canonical',\s*\(\)\s*=>\s*\(force \? getDocsFromServer\(usersRef\) : getDocs\(usersRef\)\)\)/);
-  assert.match(data, /trackRead\(`aggregate:summary:\$\{uid\}`,\s*\(\)\s*=>\s*\(force \? getDocFromServer\(aggregateRef\) : getDoc\(aggregateRef\)\)\)/);
-  assert.match(data, /trackRead\(label,\s*\(\)\s*=>\s*\(force\s*\?\s*getDocsFromServer\(firestoreQuery\)\s*:\s*getDocs\(firestoreQuery\)\)\)/);
-  assert.match(data, /trackRead\('config:global',\s*\(\)\s*=>\s*\(force \? getDocFromServer\(configRef\) : getDoc\(configRef\)\)\)/);
+test('no force reads remain outside the incremental sync engine', async () => {
+  const [sync, core, data] = await Promise.all([
+    read('src/lib/localDb/syncEngine.js'),
+    read('src/lib/localDb/syncCore.js'),
+    read('src/lib/localDb/localData.js'),
+  ]);
+  // القراءة الكاملة صارت مزامنة تزايدية بمؤشر updatedAtMs داخل syncEngine فقط.
+  assert.match(sync, /where\('updatedAtMs', '>=', cursorMs\)/);
+  assert.match(core, /await localDb\.sync_state\.put\(\{ key: src\.key, cursorMs: nextCursor/);
+  assert.match(sync, /export async function resetSyncCursors/);
+  // طبقة القراءة المحلية لا تتحدث إلى Firestore إطلاقاً.
+  assert.doesNotMatch(data, /firebase\/firestore|getDocsFromServer|getDocFromServer/);
+  // الملف القديم الذي كان يفرض قراءات قسرية أُزيل بالكامل.
+  await assert.rejects(() => read('src/lib/adminData.js'));
 });
 
 test('user billing totals stream the real payment ledger, not inferred sale allocations', async () => {
-  const [data, users] = await Promise.all([
-    read('src/lib/adminData.js'),
+  const [queries, users] = await Promise.all([
+    read('src/lib/localDb/localQueries.js'),
     read('src/pages/UsersPage.jsx'),
   ]);
-  // The billing figures come from the server aggregate snapshot (recordedPayments
-  // and outstandingCommission), never from inferring payments from sales.
-  assert.match(data, /const recordedPayments = Number\(aggregate\.totalPaid\) \|\| 0/);
-  assert.match(data, /outstandingCommission: Math\.max\(0, commissionDue - recordedPayments\)/);
-  assert.match(data, /recordedPayments: previous\.recordedPayments \?\? 0/);
+  // المبالغ تأتي من ملخص الخادم (admin_aggregates) لا من استنتاج دفعات من المبيعات.
+  assert.match(queries, /const recordedPayments = Number\(aggregateData\.totalPaid\)/);
+  assert.match(queries, /outstandingCommission: Math\.max\(0, due - recordedPayments\)/);
   assert.match(users, /billing\.verifiedOutstandingCommission \?\? 0/);
   assert.match(users, /billing\.reportedSalesValue \|\| 0/);
 });

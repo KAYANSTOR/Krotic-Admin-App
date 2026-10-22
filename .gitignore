@@ -17,3 +17,10 @@ scripts/app_icon_cache.png
 # Firestore exports contain real user data - never commit
 backups/
 *-backup.json
+# Local tooling artifacts (not part of the app)
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/package-lock.json
+.jdk/
+firebase.local-ci.json

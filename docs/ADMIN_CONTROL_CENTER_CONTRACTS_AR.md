@@ -84,6 +84,37 @@
 `Unknown` حتى يُنفَّذ الإرسال في مستودع Android — وهو ممنوع في هذه المهمة. هذا
 العمل يُجهّز المستقبل ويُوثّق العقد وينتظر قرار المالك بإنفاذ الإرسال في Android.
 
+### 4.2 حالة التحقق 2026-10-22 (ما أُثبت وما بقي `Unknown`)
+
+هذا القسم سجل أدلة، لا تغيير في العقد. `ackVersion` يبقى **1**.
+
+**أُثبت:**
+- المستقبل الخادمي موجود ومختبر: `server/_lib/templateCenterAck.js` +
+  `handleAck` + `test/templateCenterAck.test.js` و`test/templateAckContract.test.js`.
+- المخططات `contracts/schemas/android-ack.schema.json` و
+  `android-application-state.schema.json` مطابقة لـfixtures ومغطاة بـ
+  `test/contracts.test.js`.
+
+**`Unknown` (لم أستطع إثباته من هذه البيئة):**
+- وجود/غياب مستهلك المزايا المدفوعة في Android (`PaidFeature`/`PaidFeatureGate`).
+  تحقق الوكيل السابق (2026-10-21) قال: **غير موجود** في `Krotak-Pro@main`.
+  محاولتي اليوم لإعادة التحقق فشلت: `gh api repos/KAYANSTOR/Krotak-Pro/...`
+  أعاد **404** لهذا التكامل، و`search/code` أعاد 0 نتيجة مع
+  `incomplete_results=true`. لذلك **لا أعيد تأكيد النتيجة ولا أنفيها**، وأعتمد
+  على سجل 2026-10-21 الموسوم صراحةً بأنه من وكيل آخر.
+- أثر أي حفظ مزايا مدفوعة على جهاز فعلي: **`Unknown` ولا يُدّعى**.
+
+**فجوة عقد يجب حسمها (لا أختارها من عندي):**
+- العقد الحالي يوثّق **نتيجة parser** (`parserRefreshed`) لكنه **لا يحمل حقلًا
+  لنتيجة renderer** (إعادة بناء عرض القوالب/الرسائل). المطلوب من مالك العقد أو
+  وكيل Android قرار: هل تُضاف `rendererRefreshed` (nullable) في `ackVersion=1`
+  كحقل اختياري، أم تُؤجَّل إلى `ackVersion=2`؟ حتى ذلك الحين أي ادعاء عن حالة
+  renderer على الجهاز = `Unknown`.
+- `appliedAt` ساعة الجهاز: تشخيصي فقط. لا يُستخدم لقياس زمني أو إثبات ترتيب.
+
+**قاعدة عرض ثابتة:** لا يُعرض «مطبق على الجهاز» إلا بـ`evidence=ack` و
+`outcome=applied` وسجل `verified=true`. `Fetched`/`Cached` لا تعني تطبيقًا.
+
 ## 4.1 كتالوج الزرع الافتراضي (مطابقة معرّفات Android)
 
 المرجع التنفيذي: `src/lib/androidSeedCatalog.js` (مصدر واحد)، وتُبنى منه

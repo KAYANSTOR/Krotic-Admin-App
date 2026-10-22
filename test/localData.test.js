@@ -13,9 +13,11 @@ import {
 } from '../src/lib/localDb/localQueries.js';
 import {
   loadLocalAuditLogs,
+  loadLocalBillingHistory,
   loadLocalDashboard,
   loadLocalNotifications,
   loadLocalUsersWithBilling,
+  loadLocalUserOptions,
 } from '../src/lib/localDb/localData.js';
 import { createMemoryDb } from './helpers/memoryDb.js';
 
@@ -184,4 +186,33 @@ test('the local notification history reads from the local table', async () => {
   const list = await loadLocalNotifications(db);
   assert.equal(list.length, 2);
   assert.equal(list[0].id, 'n2');
+});
+
+test('user options for selectors come from the local users table only', async () => {
+  const db = seedDb();
+  await db.users.put({ uid: 'u1', network_name: 'شبكة النور', phone: '700000000', updatedAtMs: 1 });
+  await db.users.put({ uid: 'u2', updatedAtMs: 1 });
+
+  const options = await loadLocalUserOptions(db);
+  assert.equal(options.length, 2);
+  const first = options.find((option) => option.uid === 'u1');
+  assert.equal(first.name, 'شبكة النور');
+  assert.equal(first.phone, '700000000');
+  assert.equal(first.networkName, first.name);
+  // بلا اسم: يبقى معرّف مختصر بدل قيمة فارغة.
+  const second = options.find((option) => option.uid === 'u2');
+  assert.match(second.name, /^مشترك \(/);
+});
+
+test('billing history for one network never touches rows of another network', async () => {
+  const db = seedDb();
+  await db.users.put({ uid: 'u1', networkId: 'NET-1', updatedAtMs: 1 });
+  await db.sales.put({ networkId: 'NET-1', id: 's1', status: 'COMPLETED', faceValue: 100, createdAtMs: 10 });
+  await db.sales.put({ networkId: 'NET-2', id: 's2', status: 'COMPLETED', faceValue: 999, createdAtMs: 20 });
+  await db.payments.put({ networkId: 'NET-1', id: 'p1', amount: 5, updatedAtMs: 1 });
+  await db.payments.put({ networkId: 'NET-2', id: 'p2', amount: 77, updatedAtMs: 1 });
+
+  const history = await loadLocalBillingHistory(db, 'u1');
+  assert.deepEqual(history.sales.map((sale) => sale.id), ['s1']);
+  assert.deepEqual(history.payments.map((payment) => payment.id), ['p1']);
 });
