@@ -130,14 +130,63 @@ export function mergeUsersWithNetworks(userRows, networkRows) {
   return [...usersMap.values()];
 }
 
-/** مبيعات الشبكة (بفهرس networkId). */
-export function salesForNetwork(salesRows, networkId) {
-  return (salesRows || []).filter((sale) => sale.networkId === networkId);
+function saleIdentityKeys(sale) {
+  return [
+    ['saleUuid', sale?.saleUuid],
+    ['saleId', sale?.saleId],
+    ['documentId', sale?.id],
+  ].flatMap(([prefix, raw]) => {
+    const value = typeof raw === 'string' ? raw.trim() : '';
+    return value ? [`${prefix}:${value}`] : [];
+  });
 }
 
-/** مدفوعات الشبكة (بفهرس networkId). */
-export function paymentsForNetwork(paymentRows, networkId) {
-  return (paymentRows || []).filter((payment) => payment.networkId === networkId);
+function mergeCanonicalFirst(currentRows, legacyRows, identityKeys) {
+  const merged = [];
+  const identityToIndex = new Map();
+  for (const row of [...currentRows, ...legacyRows]) {
+    const keys = identityKeys(row);
+    const existingIndex = keys.map((key) => identityToIndex.get(key)).find((index) => index !== undefined);
+    if (existingIndex !== undefined) {
+      keys.forEach((key) => identityToIndex.set(key, existingIndex));
+      continue;
+    }
+    const index = merged.length;
+    merged.push(row);
+    keys.forEach((key) => identityToIndex.set(key, index));
+  }
+  return merged;
+}
+
+/**
+ * مبيعات الشبكة canonical مع دعم المسار القديم networks/{uid}/sales.
+ * عند وجود النسختين، تُفضَّل نسخة networkId الحالية ويُزال التكرار على
+ * saleUuid ثم saleId ثم معرّف الوثيقة مثل مسار ترحيل الخادم.
+ */
+export function salesForNetwork(salesRows, networkId, legacyNetworkId = null) {
+  const rows = salesRows || [];
+  const currentRows = rows.filter((sale) => sale.networkId === networkId);
+  const legacyRows = legacyNetworkId && legacyNetworkId !== networkId
+    ? rows
+      .filter((sale) => sale.networkId === legacyNetworkId)
+      .map((sale) => ({ ...sale, networkId }))
+    : [];
+  return mergeCanonicalFirst(currentRows, legacyRows, saleIdentityKeys);
+}
+
+/** مدفوعات الشبكة canonical مع دعم المسار القديم وإزالة التكرار بمعرّف الوثيقة. */
+export function paymentsForNetwork(paymentRows, networkId, legacyNetworkId = null) {
+  const rows = paymentRows || [];
+  const currentRows = rows.filter((payment) => payment.networkId === networkId);
+  const legacyRows = legacyNetworkId && legacyNetworkId !== networkId
+    ? rows
+      .filter((payment) => payment.networkId === legacyNetworkId)
+      .map((payment) => ({ ...payment, networkId }))
+    : [];
+  return mergeCanonicalFirst(currentRows, legacyRows, (payment) => {
+    const id = typeof payment?.id === 'string' ? payment.id.trim() : '';
+    return id ? [`documentId:${id}`] : [];
+  });
 }
 
 /** إجماليات الإعدادات من جدول aggregates المحلي (المحدَّث خادمياً). */

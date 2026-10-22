@@ -31,11 +31,13 @@ test('customer history refresh cannot miss late offline sales with older created
     read('src/lib/localDb/localData.js'),
     read('src/lib/localDb/localQueries.js'),
   ]);
-  // لم يبقَ دمج تزايدي بمؤشر زمني: السجل المالي يُعاد حسابه من كل الصفوف المحلية،
-  // لذلك لا تُفقد عملية بيع متأخرة تحمل createdAt أقدم من آخر قراءة.
+  // يُعاد حساب السجل من الصفوف المحلية كاملة، مع ضم مسار UID القديم للشبكة
+  // canonical حتى لا تُفقد المبيعات القديمة بعد ترحيل networkId.
   assert.match(data, /export async function loadLocalBillingHistory/);
-  assert.match(data, /sortSalesByCreatedDesc\(salesForNetwork\(salesRows, networkId\)\)/);
-  assert.match(queries, /return \(salesRows \|\| \[\]\)\.filter\(\(sale\) => sale\.networkId === networkId\)/);
+  assert.match(data, /sortSalesByCreatedDesc\(salesForNetwork\(salesRows, networkId, uid\)\)/);
+  assert.match(data, /salesForNetwork\(salesRows, networkId, user\.uid\)/);
+  assert.match(queries, /export function salesForNetwork\(salesRows, networkId, legacyNetworkId = null\)/);
+  assert.match(queries, /mergeCanonicalFirst\(currentRows, legacyRows, saleIdentityKeys\)/);
   assert.doesNotMatch(data, /incrementa|sinceMs|cursor/i);
 });
 

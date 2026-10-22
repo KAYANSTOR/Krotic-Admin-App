@@ -15,6 +15,7 @@ import {
   loadLocalAuditLogs,
   loadLocalBillingHistory,
   loadLocalDashboard,
+  loadLocalNetworkSales,
   loadLocalNotifications,
   loadLocalUsersWithBilling,
   loadLocalUserOptions,
@@ -215,4 +216,27 @@ test('billing history for one network never touches rows of another network', as
   const history = await loadLocalBillingHistory(db, 'u1');
   assert.deepEqual(history.sales.map((sale) => sale.id), ['s1']);
   assert.deepEqual(history.payments.map((payment) => payment.id), ['p1']);
+});
+
+test('legacy UID-path sales and payments appear under the canonical network without duplicates', async () => {
+  const db = seedDb();
+  await db.users.put({ uid: 'u1', networkId: 'NET-1', updatedAtMs: 1 });
+  await db.networks.put({ networkId: 'NET-1', owner_uid: 'u1', networkName: 'شبكة قديمة', updatedAtMs: 1 });
+  await db.sales.put({ networkId: 'u1', id: 'sale-old-only', saleUuid: 'uuid-old', status: 'COMPLETED', faceValue: 70, createdAtMs: 20 });
+  await db.sales.put({ networkId: 'u1', id: 'sale-duplicate', saleUuid: 'uuid-duplicate', status: 'COMPLETED', faceValue: 90, createdAtMs: 10 });
+  await db.sales.put({ networkId: 'NET-1', id: 'sale-current', saleUuid: 'uuid-duplicate', status: 'COMPLETED', faceValue: 90, createdAtMs: 11 });
+  await db.sales.put({ networkId: 'NET-2', id: 'sale-other-network', status: 'COMPLETED', faceValue: 999, createdAtMs: 30 });
+  await db.payments.put({ networkId: 'u1', id: 'payment-old-only', amount: 7, updatedAtMs: 1 });
+  await db.payments.put({ networkId: 'u1', id: 'payment-duplicate', amount: 9, updatedAtMs: 1 });
+  await db.payments.put({ networkId: 'NET-1', id: 'payment-duplicate', amount: 10, updatedAtMs: 2 });
+
+  const history = await loadLocalBillingHistory(db, 'u1');
+  assert.deepEqual(history.sales.map((sale) => sale.id).sort(), ['sale-current', 'sale-old-only']);
+  assert.equal(history.sales.find((sale) => sale.id === 'sale-current').networkId, 'NET-1');
+  assert.deepEqual(history.payments.map((payment) => payment.id).sort(), ['payment-duplicate', 'payment-old-only']);
+  assert.equal(history.payments.find((payment) => payment.id === 'payment-duplicate').amount, 10);
+
+  const networkSales = await loadLocalNetworkSales(db);
+  assert.equal(networkSales.length, 1);
+  assert.deepEqual(networkSales[0].sales.map((sale) => sale.id).sort(), ['sale-current', 'sale-old-only']);
 });

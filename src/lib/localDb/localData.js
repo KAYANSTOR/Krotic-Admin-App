@@ -74,8 +74,8 @@ export async function loadLocalUsersWithBilling(localDb) {
     const networkId = user.networkId || user.uid;
     return buildNetworkReport({
       user,
-      sales: salesForNetwork(salesRows, networkId),
-      payments: paymentsForNetwork(paymentRows, networkId),
+      sales: salesForNetwork(salesRows, networkId, user.uid),
+      payments: paymentsForNetwork(paymentRows, networkId, user.uid),
       aggregate: aggregateMap.get(user.uid),
       defaultCommissionRate,
     });
@@ -92,7 +92,7 @@ export async function loadLocalNetworkSales(localDb) {
   const networks = users
     .map((user) => {
       const networkId = user.networkId || user.uid;
-      const sales = sortSalesByCreatedDesc(salesForNetwork(salesRows, networkId));
+      const sales = sortSalesByCreatedDesc(salesForNetwork(salesRows, networkId, user.uid));
       if (!sales.length) return null;
       return {
         uid: user.uid,
@@ -136,7 +136,7 @@ export async function loadLocalBillingHistory(localDb, uid) {
   const user = users.find((row) => row.uid === uid);
   const networkId = user?.networkId || uid;
   return {
-    sales: sortSalesByCreatedDesc(salesForNetwork(salesRows, networkId)),
-    payments: paymentsForNetwork(paymentRows, networkId),
+    sales: sortSalesByCreatedDesc(salesForNetwork(salesRows, networkId, uid)),
+    payments: paymentsForNetwork(paymentRows, networkId, uid),
   };
 }
