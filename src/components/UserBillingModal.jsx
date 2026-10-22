@@ -13,10 +13,9 @@ import LoadingSpinner from './LoadingSpinner';
 import { formatNumber, toDate } from '../lib/format';
 import { monthKeyFromDate, getCurrentMonthKey } from '../lib/billingHelpers';
 import { sumOutstanding, saleCommission, isServerVerifiedSale, sumVerifiedOutstanding } from '../lib/commission';
-import {
-  fetchUserBillingHistory,
-  subscribeAdminDataCache,
-} from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalBillingHistory } from '../lib/localDb/localData';
 import { recordPayment, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
@@ -69,18 +68,23 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
   const [customNotificationMessage, setCustomNotificationMessage] = useState('');
   const [isEditingTemplate, setIsEditingTemplate] = useState(false);
 
+  const { runSync } = useLocalDb();
+
+  // سجل الفوترة يُقرأ من القاعدة المحلية (مبيعات + دفعات الشبكة).
+  const historyQuery = useLocalQuery(
+    (localDb) => loadLocalBillingHistory(localDb, userUid),
+    [userUid],
+    { enabled: Boolean(isOpen && userUid) },
+  );
+
   useEffect(() => {
-    if (!isOpen || !userUid) {
-      refreshRequestId.current += 1;
-      return undefined;
-    }
-    return subscribeAdminDataCache(`billing-history:${userUid}`, (history) => {
-      setSales(history.sales);
-      setPayments(history.payments);
-      setLoadedForUid(userUid);
-      setLoading(false);
-    });
-  }, [isOpen, userUid]);
+    const history = historyQuery.data;
+    if (!history) return;
+    setSales(history.sales || []);
+    setPayments(history.payments || []);
+    setLoadedForUid(userUid);
+    setLoading(false);
+  }, [historyQuery.data, userUid]);
 
   useEffect(() => {
     if (!isOpen || !userUid) return undefined;
@@ -98,25 +102,7 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
     setCustomNotificationMessage('');
     setIsEditingTemplate(false);
 
-    fetchUserBillingHistory(userUid)
-      .then((history) => {
-        if (!active) return;
-        setSales(history.sales);
-        setPayments(history.payments);
-        setLoadedForUid(userUid);
-      })
-      .catch((error) => {
-        if (!active) return;
-        console.error('Error fetching financials:', error);
-        setSales([]);
-        setPayments([]);
-        setHistoryError('تعذر تحميل سجل المبيعات والدفعات لهذا الحساب. تحقق من الاتصال والصلاحيات ثم أعد المحاولة.');
-        setLoadedForUid(userUid);
-        toast.error('حدث خطأ أثناء جلب البيانات المالية');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    historyQuery.refresh();
     return () => {
       active = false;
       refreshRequestId.current += 1;
@@ -336,12 +322,11 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
     const requestedUid = userUid;
     setRefreshingHistory(true);
     try {
-      const history = await fetchUserBillingHistory(requestedUid, { force: true });
+      await runSync({ reason: 'manual' });
       if (requestId !== refreshRequestId.current) return;
-      setSales(history.sales);
-      setPayments(history.payments);
+      historyQuery.refresh();
       setLoadedForUid(requestedUid);
-      toast.success('تم تحميل أحدث سجل كامل من خادم Firestore');
+      toast.success('تمت مزامنة أحدث تغييرات السجل من الخادم');
     } catch (error) {
       if (requestId !== refreshRequestId.current) return;
       console.error('Error refreshing financial history from server:', error);

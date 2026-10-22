@@ -46,9 +46,9 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { formatNumber, formatDate, isExpired } from '../lib/format';
 import { saleCommission, saleOutstanding, sumOutstanding, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
-import {
-  fetchUsersWithBilling, fetchUserBillingHistory, invalidateAdminUserData,
-} from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalBillingHistory, loadLocalUsersWithBilling } from '../lib/localDb/localData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
@@ -82,37 +82,46 @@ export default function UserProfilePage() {
   const [selectedMonthForBilling, setSelectedMonthForBilling] = useState(null);
   const [expandedMonths, setExpandedMonths] = useState(() => new Set([getCurrentMonthKey()]));
   const [loading, setLoading] = useState(true);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [editing, setEditing] = useState(false);
-  const [billing, setBilling] = useState(false);
-  const [authModal, setAuthModal] = useState(false);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const [liveSalesError, setLiveSalesError] = useState('');
-  const liveSalesSnapshotVersion = useRef(0);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  const load = useCallback(async ({ force = false } = {}) => {
-    const salesVersionAtStart = liveSalesSnapshotVersion.current;
-    setLoading(true);
-    try {
-      const { users = [], globalConfig: config } = await fetchUsersWithBilling({ force });
-      setGlobalConfig(config || null);
-      setUser(users.find((item) => item.uid === uid) || null);
-      const billingHistory = await fetchUserBillingHistory(uid, { force });
-      setHistory((previous) => ({
-        sales: liveSalesSnapshotVersion.current !== salesVersionAtStart
-          ? previous.sales
-          : (billingHistory.sales || []),
-        payments: billingHistory.payments || [],
-      }));
-      setUpdatedAt(Date.now());
-    } catch (error) {
-      console.error('profile load failed', error);
-      toast.error('تعذر تحميل ملف العميل');
+  // الملف والتاريخ المالي من القاعدة المحلية فقط.
+  const usersQuery = useLocalQuery((localDb) => loadLocalUsersWithBilling(localDb), [], { enabled: Boolean(uid) });
+  const historyQuery = useLocalQuery((localDb) => loadLocalBillingHistory(localDb, uid), [uid], { enabled: Boolean(uid) });
+
+  useEffect(() => {
+    const data = usersQuery.data;
+    if (!data) return;
+    setGlobalConfig(data.globalConfig || null);
+    const found = (data.users || []).find((item) => item.uid === uid) || null;
+    if (found) setUser(found);
+  }, [usersQuery.data, uid]);
+
+  useEffect(() => {
+    if (!historyQuery.data) return;
+    setHistory({
+      sales: historyQuery.data.sales || [],
+      payments: historyQuery.data.payments || [],
+    });
+  }, [historyQuery.data]);
+
+  useEffect(() => {
+    const ready = usersQuery.data || historyQuery.data;
+    if (ready) setLoading(false);
+  }, [usersQuery.data, historyQuery.data]);
+
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    usersQuery.refresh();
+    historyQuery.refresh();
+  };
+
+  const load = refresh;
+
+  useEffect(() => {
+    if (usersQuery.error || historyQuery.error) {
+      toast.error('تعذر تحميل ملف العميل من القاعدة المحلية');
     }
-    setLoading(false);
-  }, [uid]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [usersQuery.error, historyQuery.error]);
 
   const allSales = history.sales || [];
   const allPayments = history.payments || [];
@@ -265,7 +274,6 @@ export default function UserProfilePage() {
       action: async () => {
         const result = await updateNetworkAccess({ uid, ...patch });
         if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر تنفيذ الإجراء')); return false; }
-        invalidateAdminUserData(uid);
         await logAdminAction({ action: auditAction, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid, details });
         toast.success(successMessage);
         load({ force: true });
@@ -281,7 +289,6 @@ export default function UserProfilePage() {
       action: async () => {
         const result = await renewNetwork(uid, 30);
         if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر التجديد')); return false; }
-        invalidateAdminUserData(uid);
         await logAdminAction({ action: AUDIT_ACTIONS.USER_RENEW, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid });
         toast.success('تم التجديد بنجاح');
         load({ force: true });
@@ -309,7 +316,6 @@ export default function UserProfilePage() {
           details: { networkId: user?.networkId || null },
         }).catch(() => {});
         toast.success(`تم حذف الحساب «${targetName}» بنجاح`);
-        invalidateAdminUserData(uid);
         navigate('/users');
         return true;
       },
@@ -335,7 +341,6 @@ export default function UserProfilePage() {
             toast.error(adminApiError(result.error, 'تعذر تفعيل التحقق من الهاتف'));
             return false;
           }
-          invalidateAdminUserData(uid);
           setUser((prev) => (prev ? {
             ...prev,
             phone_verified: true,
@@ -367,7 +372,6 @@ export default function UserProfilePage() {
             toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
             return false;
           }
-          invalidateAdminUserData(uid);
           setUser((prev) => (prev ? {
             ...prev,
             phone_verified: false,
@@ -422,15 +426,15 @@ export default function UserProfilePage() {
         meta={`${sales.length} عملية بيع • ${payments.length} دفعة • ${historyMonth === 'all' ? 'كل الأشهر' : historyMonth}`}
         actions={
           <>
-            <DataFreshness updatedAt={updatedAt} refreshing={loading} onRefresh={() => load({ force: true })} />
+            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={loading || syncing} onRefresh={refresh} />
             <Button variant="secondary" icon={ArrowRight} onClick={() => navigate('/users')}>رجوع</Button>
           </>
         }
       />
 
-      {liveSalesError && (
+      {(usersQuery.error || historyQuery.error) && (
         <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
-          تعذّر تحديث سجل المبيعات مباشرة؛ يُعرض آخر سجل متاح. حدّث الصفحة بعد التحقق من الاتصال.
+          تعذّر قراءة بيانات هذا الحساب من القاعدة المحلية؛ أعد المحاولة أو زامن التغييرات.
         </div>
       )}
 
@@ -849,7 +853,6 @@ export default function UserProfilePage() {
           onSave={async (targetUid, updates) => {
             const result = await updateNetworkAccess({ uid: targetUid, ...updates });
             if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر الحفظ')); return; }
-            invalidateAdminUserData(targetUid);
             toast.success('تم حفظ التعديلات');
             setEditing(false);
             load({ force: true });
