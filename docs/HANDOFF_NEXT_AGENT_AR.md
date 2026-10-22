@@ -6,7 +6,7 @@
 
 **المستودع:** `KAYANSTOR/Krotic-Admin-App` (خاص).
 **الفرع العامل:** `cline/tp5e5bzb` — مبني على `feat/local-first-admin` (`ebc5263f`).
-**HEAD عند التسليم:** `__HEAD__` (مدفوع إلى origin).
+**HEAD عند التسليم:** `8e2cb84` (مدفوع إلى origin).
 **قاعدة الدمج:** `origin/main` = `f3a4546` (لم يُلمس، ولا PR، ولا دمج).
 **المرجع الحي (قراءة فقط، ممنوع التعديل):** `KAYANSTOR/Krotak-Pro`.
 **تاريخ التسليم:** 2026-10-22.
@@ -40,7 +40,7 @@
 | البند | القيمة |
 |---|---|
 | الفرع العامل | `cline/tp5e5bzb` |
-| HEAD | `__HEAD__` (مطابق لـ`origin/cline/tp5e5bzb`) |
+| HEAD | `8e2cb84` (مطابق لـ`origin/cline/tp5e5bzb`) |
 | `origin/main` | `f3a4546` |
 | working tree | نظيف |
 | PR | لم يُفتح، ولم يُدمج شيء |
