@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import PullToRefresh from './PullToRefresh';
@@ -51,6 +52,7 @@ export default function Layout({ children }) {
   const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
   const [incomingUserAlert, setIncomingUserAlert] = useState(null);
   const { adminData, logout } = useAuth();
+  const { runSync } = useLocalDb();
   const navigate = useNavigate();
   const location = useLocation();
   const online = useOnlineStatus();
@@ -102,12 +104,15 @@ export default function Layout({ children }) {
     };
   }, []);
 
-  // أعلِن عند عودة الاتصال، وأعد النبض لكل صفحة عبر حدث التحديث العام.
+  // عودة الاتصال: مزامنة تزايدية + إعادة نبض للشاشات من القاعدة المحلية.
   useEffect(() => {
-    const handleOnline = () => emitAppRefresh();
+    const handleOnline = () => {
+      runSync({ reason: 'online' }).catch(() => undefined);
+      emitAppRefresh();
+    };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, []);
+  }, [runSync]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event) => {
@@ -245,7 +250,14 @@ export default function Layout({ children }) {
         )}
 
         <main className="app-main" id="main-content" tabIndex={-1}>
-          <PullToRefresh onRefresh={async () => { emitAppRefresh(); await new Promise((r) => setTimeout(r, 700)); }}>
+          <PullToRefresh
+            onRefresh={async () => {
+              // السحب للأسفل = مزامنة تزايدية (لا قراءة كاملة)، ثم إعادة قراءة محلية.
+              await runSync({ reason: 'manual' }).catch(() => undefined);
+              emitAppRefresh();
+              await new Promise((resolve) => setTimeout(resolve, 400));
+            }}
+          >
             <Suspense fallback={<PageSkeleton />}>
               {children}
             </Suspense>
