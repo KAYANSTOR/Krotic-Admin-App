@@ -15,8 +15,9 @@ import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
 import { formatNumber, formatDate, toDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { fetchNetworkSales, fetchSalesForNetwork, getAdminDataCacheState, subscribeAdminDataCache, subscribeNetworkSalesRealtime } from '../lib/adminData';
-import { invalidateAdminUserData } from '../lib/adminData';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalNetworkSales } from '../lib/localDb/localData';
 import { saleCommission, saleFaceValue, isCompletedSale, sumOutstanding, hasUnverifiedCommission, isServerVerifiedSale, sumVerifiedOutstanding, sumLegacyUnverifiedSales } from '../lib/commission';
 import { mergeSalesByIdentity } from '../lib/salesReadCompat';
 
@@ -76,8 +77,6 @@ function SaleVerificationBadge({ sale }) {
 }
 
 export default function SalesPage() {
-  const [networkSales, setNetworkSales] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const savedFilters = useMemo(loadSavedFilters, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
@@ -87,117 +86,73 @@ export default function SalesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('networks'); // 'networks' | 'live' | 'stats'
   const [showCustomDate, setShowCustomDate] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [cacheState, setCacheState] = useState(null);
-  const [partialErrors, setPartialErrors] = useState([]);
-  const [realtimeReady, setRealtimeReady] = useState(false);
   const [newSaleNotice, setNewSaleNotice] = useState(null);
   const [visibleNetworks, setVisibleNetworks] = useState(NETWORK_PAGE_SIZE);
   const [fullSales, setFullSales] = useState({});
-  const latestRequestId = useRef(0);
-  const hasRealtimeSnapshot = useRef(false);
   const saleNoticeTimer = useRef(null);
+  const lastSeenSaleMs = useRef(null);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  const load = useCallback(async ({ force = false, fullHistory = false } = {}) => {
-    const requestId = ++latestRequestId.current;
-    setLoading(true);
-    try {
-      const data = await fetchNetworkSales({ force, fullHistory });
-      if (requestId !== latestRequestId.current) return;
-      setNetworkSales(data);
-      setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
-      setUpdatedAt(Date.now());
-      setCacheState(getAdminDataCacheState(fullHistory ? 'network-sales-full' : 'network-sales'));
-    } catch (error) {
-      if (requestId !== latestRequestId.current) return;
-      console.error('Error fetching sales:', error);
-      toast.error('خطأ في تحميل بيانات المبيعات');
-    } finally {
-      if (requestId === latestRequestId.current) setLoading(false);
-    }
-  }, []);
+  // المبيعات تُقرأ من القاعدة المحلية (collectionGroup sales) — لا مستمعات Firestore.
+  const salesQuery = useLocalQuery((localDb) => loadLocalNetworkSales(localDb), []);
+  const networkSales = useMemo(
+    () => (salesQuery.data || []).map((network) => ({ ...network, fullHistoryLoaded: true })),
+    [salesQuery.data],
+  );
+  const loading = salesQuery.loading && !salesQuery.data;
+  const realtimeReady = !salesQuery.loading;
+  const partialErrors = salesQuery.error
+    ? ['تعذر قراءة سجل المبيعات من القاعدة المحلية. أعد المحاولة.']
+    : [];
 
-  useEffect(() => subscribeAdminDataCache('network-sales', (data, state) => {
-    if (hasRealtimeSnapshot.current) return;
-    setNetworkSales(data);
-    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
-    setUpdatedAt(Date.now());
-    setCacheState(state);
-    setLoading(false);
-  }), []);
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    salesQuery.refresh();
+  };
 
+  // يُستخدم من زر التحديث والتصدير: مزامنة تزايدية ثم إعادة قراءة محلية.
+  const load = refresh;
+
+  useAppRefresh(refresh);
+
+  // تنبيه «عملية بيع جديدة» يعتمد على فروق المزامنة المحلية بدل onSnapshot.
   useEffect(() => {
-    if (!expandedNetwork) {
-      setRealtimeReady(true);
+    const completed = [];
+    (salesQuery.data || []).forEach((network) => {
+      (network.sales || []).forEach((sale) => {
+        if (sale.status !== 'COMPLETED') return;
+        const ms = Number(sale.createdAtMs) || toDate(sale.createdAt)?.getTime() || 0;
+        completed.push({ sale, ms, networkName: network.networkName || network.uid });
+      });
+    });
+    if (!completed.length) return undefined;
+    const maxMs = completed.reduce((max, item) => Math.max(max, item.ms), 0);
+    if (lastSeenSaleMs.current === null) {
+      lastSeenSaleMs.current = maxMs;
       return undefined;
     }
-    let cancelled = false;
-    fetchSalesForNetwork(expandedNetwork).then((sales) => {
-      if (cancelled) return;
-      setNetworkSales((networks) => networks.map((network) => network.uid === expandedNetwork
-        ? { ...network, sales: mergeSalesByIdentity(network.sales || [], sales), fullHistoryLoaded: true }
-        : network));
-    }).catch((error) => {
-      if (!cancelled) {
-        console.error('Full network sales history failed:', error);
-        setPartialErrors((current) => current.includes(`تعذر تحميل السجل الكامل للشبكة ${expandedNetwork}`) ? current : [...current, `تعذر تحميل السجل الكامل للشبكة ${expandedNetwork}`]);
-      }
-    });
-    const unsubscribe = subscribeNetworkSalesRealtime(
-      (data, freshness, addedSales = []) => {
-        hasRealtimeSnapshot.current = true;
-        setNetworkSales((currentNetworks) => {
-          if (!currentNetworks.length) return data;
-          const updatedNetworkMap = new Map(data.map((net) => [net.uid, net]));
-          return currentNetworks.map((net) => {
-            const update = updatedNetworkMap.get(net.uid);
-            if (!update) return net;
-            return { ...net, ...update, sales: mergeSalesByIdentity(update.sales || [], net.sales || []) };
-          });
-        });
-        if (freshness?.ready || Number(freshness?.initialSnapshotsCount) > 0) setLoading(false);
-        if (freshness?.ready) setRealtimeReady(true);
-        setUpdatedAt(Date.now());
-        setCacheState((previous) => ({
-          ...previous,
-          fromCache: freshness?.fromCache ?? false,
-          lastSyncedAt: freshness?.fromCache ? previous?.lastSyncedAt : Date.now(),
-        }));
-        const completedAddedSales = addedSales.filter((sale) => sale.status === 'COMPLETED');
-        if (completedAddedSales.length) {
-          const totalFaceValue = completedAddedSales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-          const totalCommission = sumOutstanding(completedAddedSales);
-          const networkNames = [...new Set(completedAddedSales.map((sale) => sale.networkName || `شبكة ${sale.uid.slice(0, 8)}`))];
-          setNewSaleNotice({
-            id: Date.now(),
-            count: completedAddedSales.length,
-            totalFaceValue,
-            totalCommission,
-            networkName: networkNames.length === 1 ? networkNames[0] : 'عدة شبكات',
-          });
-          if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
-          saleNoticeTimer.current = window.setTimeout(() => setNewSaleNotice(null), 7000);
-        }
-      },
-      (error, uid) => {
-        console.error('Realtime sales listener error:', uid, error);
-        const message = uid
-          ? `تعذر استقبال تحديثات المبيعات للشبكة ${uid}: ${error.message || error}`
-          : `تعذر استقبال تحديثات المبيعات: ${error.message || error}`;
-        setPartialErrors((current) => current.includes(message) ? current : [...current, message]);
-      },
-      () => { setRealtimeReady(true); setLoading(false); },
-      { targetNetworkId: expandedNetwork },
-    );
-    return () => {
-      cancelled = true;
-      unsubscribe();
-      if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
-      latestRequestId.current += 1;
-    };
-  }, [expandedNetwork]);
+    if (maxMs <= lastSeenSaleMs.current) return undefined;
+    const added = completed.filter((item) => item.ms > lastSeenSaleMs.current);
+    lastSeenSaleMs.current = maxMs;
 
-  useAppRefresh(() => load({ force: true, fullHistory: statusFilter !== 'all' || verificationFilter !== 'all' || Boolean(dateFrom || dateTo) }));
+    const totalFaceValue = added.reduce((sum, item) => sum + (Number(item.sale.faceValue) || 0), 0);
+    const totalCommission = sumOutstanding(added.map((item) => item.sale));
+    const networkNames = [...new Set(added.map((item) => item.networkName))];
+    setNewSaleNotice({
+      id: Date.now(),
+      count: added.length,
+      totalFaceValue,
+      totalCommission,
+      networkName: networkNames.length === 1 ? networkNames[0] : 'عدة شبكات',
+    });
+    if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
+    saleNoticeTimer.current = window.setTimeout(() => setNewSaleNotice(null), 7000);
+    return undefined;
+  }, [salesQuery.data]);
+
+  useEffect(() => () => {
+    if (saleNoticeTimer.current) window.clearTimeout(saleNoticeTimer.current);
+  }, []);
 
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
@@ -357,18 +312,8 @@ export default function SalesPage() {
     SMS_PENDING: { text: 'بانتظار SMS', class: 'bg-sky-100 text-sky-800 border-sky-300' },
   };
 
-  const handleExportSales = useCallback(async () => {
-    let sourceNetworks = networkSales;
-    if (!sourceNetworks.every((network) => network.fullHistoryLoaded)) {
-      try {
-        sourceNetworks = await fetchNetworkSales({ fullHistory: true });
-        setNetworkSales(sourceNetworks);
-      } catch (error) {
-        console.error('Full sales export load failed:', error);
-        toast.error('تعذر تحميل سجل المبيعات الكامل للتصدير');
-        return;
-      }
-    }
+  const handleExportSales = useCallback(() => {
+    const sourceNetworks = networkSales;
     const rows = sourceNetworks.flatMap((network) => {
       const stats = calcNetworkStats(network);
       return stats.filteredSales.map((sale) => ({ network, sale }));
@@ -394,13 +339,6 @@ export default function SalesPage() {
   }, [networkSales, calcNetworkStats]);
 
   const hasActiveFilters = statusFilter !== 'all' || verificationFilter !== 'all' || dateFrom || dateTo || searchQuery;
-  const hasSalesFilters = statusFilter !== 'all' || verificationFilter !== 'all' || dateFrom || dateTo;
-
-  useEffect(() => {
-    if (!hasSalesFilters) return undefined;
-    const timer = window.setTimeout(() => load({ fullHistory: true }), 350);
-    return () => window.clearTimeout(timer);
-  }, [hasSalesFilters, load]);
 
   const resetFilters = () => {
     setStatusFilter('all');
@@ -410,7 +348,7 @@ export default function SalesPage() {
     setSearchQuery('');
   };
 
-  if (loading && networkSales.length === 0 && !hasRealtimeSnapshot.current) return <PageSkeleton />;
+  if (loading && networkSales.length === 0) return <PageSkeleton />;
 
   return (
     <div className="sales-page space-y-4 pb-20">
@@ -425,11 +363,9 @@ export default function SalesPage() {
               تصدير CSV
             </Button>
             <DataFreshness
-              updatedAt={updatedAt}
-              lastSyncedAt={cacheState?.lastSyncedAt}
-              refreshing={loading}
-              fromCache={cacheState?.fromCache}
-              onRefresh={() => load({ force: true })}
+              lastSyncedAt={lastSyncAt}
+              refreshing={loading || syncing}
+              onRefresh={refresh}
             />
           </div>
         }

@@ -1,16 +1,10 @@
 // src/pages/UsersPage.jsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import {
-  fetchAllUsers,
-  fetchGlobalConfig,
-  fetchUsersWithBilling,
-  getAdminDataCacheState,
-  invalidateAdminUserData,
-  subscribeAdminDataCache,
-} from '../lib/adminData';
+import { Timestamp } from 'firebase/firestore';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery';
+import { useLocalDb } from '../lib/localDb/LocalDbContext';
+import { loadLocalConfig, loadLocalUsersWithBilling } from '../lib/localDb/localData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download, ArrowUpLeft,
@@ -85,8 +79,6 @@ function resolveInitialFilter() {
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [globalConfig, setGlobalConfig] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState(resolveInitialFilter);
   const [versionSort, setVersionSort] = useState('none');
@@ -95,78 +87,43 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [cacheState, setCacheState] = useState(null);
-  const [partialErrors, setPartialErrors] = useState([]);
-  const [billingRefreshing, setBillingRefreshing] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [confirmAction, setConfirmAction] = useState(null);
   const [repairingAccess, setRepairingAccess] = useState(false);
-  const latestRequestId = useRef(0);
   const hasLoadedUsers = useRef(false);
   const navigate = useNavigate();
 
-  const fetchData = useCallback(async ({ force = false } = {}) => {
-    const requestId = ++latestRequestId.current;
-    setLoading(!hasLoadedUsers.current);
-    setError(null);
+  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-    try {
-      const [baseUsers, config] = await Promise.all([
-        fetchAllUsers({ force }),
-        fetchGlobalConfig({ force }),
-      ]);
-      if (requestId !== latestRequestId.current) return;
-      setUsers(baseUsers);
-      setGlobalConfig(config);
-      setUpdatedAt(Date.now());
-      setCacheState(getAdminDataCacheState('all-users'));
-      hasLoadedUsers.current = true;
-      setLoading(false);
-      setBillingRefreshing(true);
-
-      const { users: billedUsers, globalConfig: billedConfig, errors: nextErrors } = await fetchUsersWithBilling({ force });
-      if (requestId !== latestRequestId.current) return;
-      setUsers(billedUsers);
-      setGlobalConfig(billedConfig || config);
-      setPartialErrors(Array.isArray(nextErrors) ? nextErrors : []);
-      setUpdatedAt(Date.now());
-      setCacheState(getAdminDataCacheState('users-with-billing'));
-    } catch (err) {
-      if (requestId !== latestRequestId.current) return;
-      console.error('Error refreshing user reports:', err);
-      if (!hasLoadedUsers.current) {
-        setError('تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.');
-        toast.error('خطأ في تحميل بيانات المستخدمين');
-      } else {
-        setPartialErrors((current) => [...current, 'تعذر تحديث المجاميع المالية؛ ما زالت قائمة المستخدمين متاحة.']);
-        toast.error('تم تحميل المستخدمين لكن تعذر تحديث بعض المؤشرات المالية');
-      }
-    } finally {
-      if (requestId === latestRequestId.current) {
-        setLoading(false);
-        setBillingRefreshing(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => subscribeAdminDataCache('users-with-billing', (data, state) => {
-    setGlobalConfig(data.globalConfig);
-    setUsers(data.users);
-    setPartialErrors(Array.isArray(data.errors) ? data.errors : []);
-    setUpdatedAt(Date.now());
-    setCacheState(state);
-    setError(null);
-    hasLoadedUsers.current = true;
-    setLoading(false);
-  }), []);
+  // القائمة والتقارير المالية من القاعدة المحلية: صفر قراءات عند التنقل.
+  const usersQuery = useLocalQuery((localDb) => loadLocalUsersWithBilling(localDb), []);
+  const configQuery = useLocalQuery((localDb) => loadLocalConfig(localDb), []);
 
   useEffect(() => {
-    fetchData();
-    return () => { latestRequestId.current += 1; };
-  }, [fetchData]);
+    const data = usersQuery.data;
+    if (!data) return;
+    setUsers(data.users);
+    hasLoadedUsers.current = true;
+  }, [usersQuery.data]);
 
-  useAppRefresh(() => fetchData({ force: true }));
+  useEffect(() => {
+    if (configQuery.data) setGlobalConfig(configQuery.data);
+  }, [configQuery.data]);
+
+  const loading = usersQuery.loading && !hasLoadedUsers.current;
+  const error = usersQuery.error ? 'تعذر تحميل بيانات المستخدمين. حاول مرة أخرى.' : null;
+  const partialErrors = usersQuery.error
+    ? ['تعذر قراءة المجاميع المالية من القاعدة المحلية؛ ما زالت قائمة المستخدمين متاحة.']
+    : [];
+  const billingRefreshing = syncing;
+
+  const refresh = async () => {
+    await runSync({ reason: 'manual' });
+    usersQuery.refresh();
+    configQuery.refresh();
+  };
+
+  useAppRefresh(refresh);
 
   const handleToggleActive = (user) => {
     const newStatus = !user.is_active;
@@ -185,7 +142,6 @@ export default function UsersPage() {
           toast.error(adminApiError(result.error, 'تعذر تحديث حالة المستخدم'));
           return false;
         }
-        invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
           ? {
               ...u,
@@ -218,7 +174,6 @@ export default function UsersPage() {
           toast.error(adminApiError(result.error, 'تعذر تحويل المستخدم إلى رسمي'));
           return false;
         }
-        invalidateAdminUserData(user.uid);
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
           ? { ...u, accessStatus: 'ACTIVE_PAID', is_active: true, is_trial: false, accessNeedsRepair: hasExpiryCompatibilityGap(u) }
           : u)));
@@ -245,7 +200,6 @@ export default function UsersPage() {
           toast.error(adminApiError(result.error, 'تعذر التجديد'));
           return false;
         }
-        invalidateAdminUserData(user.uid);
         const endMs = Number(result.data?.subscriptionEndsAt) || null;
         const newEnd = endMs ? Timestamp.fromMillis(endMs) : null;
         setUsers((prev) => prev.map((u) => (u.uid === user.uid
@@ -278,7 +232,6 @@ export default function UsersPage() {
       toast.error(adminApiError(result.error, 'تعذر حفظ التعديلات'));
       return;
     }
-    invalidateAdminUserData(uid);
     setUsers((prev) => prev.map((u) => (u.uid === uid
       ? {
           ...u,
@@ -344,7 +297,6 @@ export default function UsersPage() {
             toast.error(adminApiError(result.error, 'تعذر تفعيل التحقق من الهاتف'));
             return false;
           }
-          invalidateAdminUserData(user.uid);
           setUsers((prev) => prev.map((u) => (u.uid === user.uid
             ? {
                 ...u,
@@ -381,7 +333,6 @@ export default function UsersPage() {
             toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
             return false;
           }
-          invalidateAdminUserData(user.uid);
           setUsers((prev) => prev.map((u) => (u.uid === user.uid
             ? {
                 ...u,
@@ -424,8 +375,7 @@ export default function UsersPage() {
           details: { networkId: user.networkId || null },
         }).catch(() => {});
         toast.success(`تم حذف الحساب «${targetName}» بنجاح`);
-        invalidateAdminUserData();
-        await fetchData({ force: true });
+        await refresh();
         return true;
       },
     });
@@ -611,11 +561,9 @@ export default function UsersPage() {
               تصدير CSV
             </Button>
             <DataFreshness
-              updatedAt={updatedAt}
-              lastSyncedAt={cacheState?.lastSyncedAt}
+              lastSyncedAt={lastSyncAt}
               refreshing={loading || billingRefreshing}
-              fromCache={cacheState?.fromCache}
-              onRefresh={() => fetchData({ force: true })}
+              onRefresh={refresh}
             />
           </div>
         }
@@ -628,7 +576,7 @@ export default function UsersPage() {
             <p className="users-error__title">تعذر تحميل البيانات</p>
             <p className="users-error__msg">{error}</p>
           </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchData}>
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh}>
             إعادة المحاولة
           </Button>
         </div>
@@ -1246,7 +1194,7 @@ export default function UsersPage() {
           user={billingUser}
           isOpen={!!billingUser}
           onClose={() => setBillingUser(null)}
-          onRefresh={() => fetchData({ force: true })}
+          onRefresh={refresh}
         />
       )}
 
