@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
@@ -18,6 +18,7 @@ import { emitAppRefresh } from '../lib/useAppRefresh';
 import { subscribeNetworkSalesRealtime } from '../lib/adminData';
 import { trackSnapshot } from '../lib/localDb/readMeter';
 import { formatNumber } from '../lib/format';
+import { PageSkeleton } from './ui/Skeleton';
 import {
   getNotificationPreferences,
   subscribeNotificationPreferences,
@@ -245,7 +246,9 @@ export default function Layout({ children }) {
 
         <main className="app-main" id="main-content" tabIndex={-1}>
           <PullToRefresh onRefresh={async () => { emitAppRefresh(); await new Promise((r) => setTimeout(r, 700)); }}>
-            {children}
+            <Suspense fallback={<PageSkeleton />}>
+              {children}
+            </Suspense>
           </PullToRefresh>
         </main>
         <BottomNav />

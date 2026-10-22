@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -9,6 +9,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute } from './lib/routeLoaders';
 import ReadMeterPanel from './components/ReadMeterPanel';
+import { LocalDbProvider } from './lib/localDb/LocalDbContext';
 
 const DashboardPage = lazy(() => loadRoute('/'));
 const SettingsPage = lazy(() => loadRoute('/settings'));
@@ -19,6 +20,17 @@ const NotificationsPage = lazy(() => loadRoute('/notifications'));
 const AdminsPage = lazy(() => loadRoute('/admins'));
 const AuditPage = lazy(() => loadRoute('/audit'));
 const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
+
+/** هيكل واحد لكل الصفحات: الشريط الجانبي يبقى ثابتاً أثناء تغيير الصفحة. */
+function AdminShell() {
+  return (
+    <ProtectedRoute>
+      <Layout>
+        <Outlet />
+      </Layout>
+    </ProtectedRoute>
+  );
+}
 
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
@@ -32,119 +44,32 @@ function AppRoutes() {
   }
 
   return (
-    <Suspense
-      fallback={
-        <div className="route-loading">
-          <LoadingSpinner size="lg" text="جارٍ تجهيز الصفحة..." />
-        </div>
-      }
-    >
-      <AppErrorBoundary>
-        <Routes>
-      <Route
-        path="/login"
-        element={currentUser ? <Navigate to="/" replace /> : <LoginPage />}
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <DashboardPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <SettingsPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/users"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <UsersPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/sales"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <SalesPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/notifications"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <NotificationsPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admins"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <AdminsPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/audit"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <AuditPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/template-center/*"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <TemplateCenterPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/users/:uid"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <UserProfilePage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AppErrorBoundary>
-    </Suspense>
+    <AppErrorBoundary>
+      <Routes>
+        <Route
+          path="/login"
+          element={currentUser ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        <Route element={<AdminShell />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/sales" element={<SalesPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/admins" element={<AdminsPage />} />
+          <Route path="/audit" element={<AuditPage />} />
+          <Route path="/template-center/*" element={<TemplateCenterPage />} />
+          <Route path="/users/:uid" element={<UserProfilePage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppErrorBoundary>
   );
 }
 
 export default function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true }}>
       <AuthProvider>
         <Toaster
           position="top-center"
@@ -157,7 +82,9 @@ export default function App() {
           }}
         />
         <ReadMeterPanel />
-        <AppRoutes />
+        <LocalDbProvider>
+          <AppRoutes />
+        </LocalDbProvider>
       </AuthProvider>
     </Router>
   );

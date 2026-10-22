@@ -6,6 +6,7 @@ import { signOut as secondarySignOut } from 'firebase/auth';
 import { clearAdminDataCache, invalidateAdminListData } from '../lib/adminData';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { trackRead } from '../lib/localDb/readMeter';
+import { deleteAdminDb } from '../lib/localDb/db';
 
 const AuthContext = createContext();
 
@@ -126,11 +127,14 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     sessionVersion.current += 1;
+    const previousUid = currentUid.current;
     currentUid.current = null;
     clearAdminDataCache();
     setAdminData(null);
     setCurrentUser(null);
     setOfflineSession(false);
+    // البيانات الإدارية لا تبقى على الجهاز بعد الخروج (قرار المالك: حذف تلقائي).
+    if (previousUid) await deleteAdminDb(previousUid).catch(() => undefined);
     return signOut(auth);
   }
 
