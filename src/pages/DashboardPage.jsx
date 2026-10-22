@@ -244,7 +244,7 @@ export default function DashboardPage() {
             <div className="min-w-0">
               <p className="text-sm font-extrabold text-ink">صيانة الملخصات المالية القديمة</p>
               <p className="mt-1 text-xs leading-5 text-muted">تعيد حساب إجمالي المبيعات والعمولات والدفعات من السجلات المخزنة، ثم تحفظ الملخصات في Firestore لتستخدمها الشاشات سريعًا. لا تعدّل سجل البيع نفسه.</p>
-              <p className="mt-1 text-xs leading-5 text-amber-700">قد تستهلك آلاف القراءات. انتظر تجدد الحصة اليومية قبل تشغيلها؛ كل شبكة محدودة حاليًا بـ 2000 سجل في كل مجموعة.</p>
+              <p className="mt-1 text-xs leading-5 text-amber-700">قد تستهلك آلاف القراءات حسب حجم الشبكة. انتظر تجدد الحصة اليومية قبل تشغيلها. تتم قراءة السجل التاريخي على صفحات حتى آخر عملية، دون إسقاط السجلات القديمة بصمت.</p>
               {(aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0) && (
                 <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. {aggregateRepairProgress.done ? 'الإصلاح مكتمل.' : 'التقدم محفوظ محليًا؛ اضغط المتابعة لمعالجة شبكة واحدة أخرى.'}</p>
               )}

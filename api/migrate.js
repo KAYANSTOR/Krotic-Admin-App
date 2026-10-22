@@ -20,7 +20,7 @@ import { legacyAccessFields } from '../server/_lib/accessStatus.js';
 export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all', 'migrate-legacy-sales'];
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
-const MAX_DOCS_PER_NETWORK = 2000;
+const READ_PAGE_SIZE = 300;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 function toMillis(value) {
@@ -66,18 +66,18 @@ export function validateMigrateInput(body) {
   return { ok: true, value: { action, cursor, limit } };
 }
 
-async function readAll(query, cap = MAX_DOCS_PER_NETWORK) {
+async function readAll(query) {
   const docs = [];
   let last = null;
-  while (docs.length < cap) {
-    let page = query.limit(300);
+  while (true) {
+    let page = query.limit(READ_PAGE_SIZE);
     if (last) page = page.startAfter(last);
     const snap = await page.get();
     snap.docs.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
-    if (snap.size < 300) break;
+    if (snap.size < READ_PAGE_SIZE) break;
     last = snap.docs[snap.docs.length - 1];
   }
-  return docs.slice(0, cap);
+  return docs;
 }
 
 function saleIdentityKeys(sale = {}) {
@@ -255,44 +255,36 @@ export async function migrateLegacySalesForUser(db, { uid, actorUid, now }) {
     };
   }
 
-  // Read sales from legacy path networks/{uid}/sales
-  const legacySnap = await db.collection('networks').doc(uid).collection('sales').limit(500).get();
-  if (legacySnap.empty) {
-    return {
-      status: 'no_legacy_sales',
-      uid,
-      networkId,
-      copiedCount: 0,
-    };
+  // Read every page: the former 500/1000 document limits could silently omit
+  // older sales and make the rebuilt totals look complete when they were not.
+  const legacySales = await readAll(db.collection('networks').doc(uid).collection('sales'));
+  if (legacySales.length === 0) {
+    return { status: 'no_legacy_sales', uid, networkId, copiedCount: 0 };
   }
 
-  // Read existing sales from canonical path networks/{networkId}/sales
-  const canonicalSnap = await db.collection('networks').doc(networkId).collection('sales').limit(1000).get();
+  const canonicalSales = await readAll(db.collection('networks').doc(networkId).collection('sales'));
   const canonicalKeys = new Set();
-  canonicalSnap.docs.forEach((doc) => {
-    const data = doc.data();
-    if (data.saleUuid) canonicalKeys.add(String(data.saleUuid));
-    if (data.saleId) canonicalKeys.add(String(data.saleId));
-    canonicalKeys.add(doc.id);
+  canonicalSales.forEach((sale) => {
+    if (sale.saleUuid) canonicalKeys.add(String(sale.saleUuid));
+    if (sale.saleId) canonicalKeys.add(String(sale.saleId));
+    canonicalKeys.add(sale.id);
   });
 
   const toCopy = [];
-  legacySnap.docs.forEach((doc) => {
-    const data = doc.data();
-    const uuidKey = data.saleUuid ? String(data.saleUuid) : null;
-    const idKey = data.saleId ? String(data.saleId) : null;
-    if ((uuidKey && canonicalKeys.has(uuidKey)) || (idKey && canonicalKeys.has(idKey)) || canonicalKeys.has(doc.id)) {
-      return;
-    }
-    toCopy.push({ id: doc.id, data });
+  legacySales.forEach((sale) => {
+    const uuidKey = sale.saleUuid ? String(sale.saleUuid) : null;
+    const idKey = sale.saleId ? String(sale.saleId) : null;
+    if ((uuidKey && canonicalKeys.has(uuidKey)) || (idKey && canonicalKeys.has(idKey)) || canonicalKeys.has(sale.id)) return;
+    toCopy.push(sale);
   });
 
-  if (toCopy.length > 0) {
+  // Keep every Firestore batch under the 500-write limit.
+  for (let offset = 0; offset < toCopy.length; offset += 450) {
     const batch = db.batch();
-    toCopy.slice(0, 450).forEach((item) => {
+    toCopy.slice(offset, offset + 450).forEach((item) => {
       const targetRef = db.collection('networks').doc(networkId).collection('sales').doc(item.id);
       batch.set(targetRef, {
-        ...item.data,
+        ...item,
         migratedFromLegacyPath: true,
         legacyPath: `networks/${uid}/sales/${item.id}`,
         migratedAt: FieldValue.serverTimestamp(),
@@ -309,7 +301,7 @@ export async function migrateLegacySalesForUser(db, { uid, actorUid, now }) {
     details: {
       uid,
       networkId,
-      legacyCount: legacySnap.size,
+      legacyCount: legacySales.length,
       copiedCount: toCopy.length,
     },
     createdAt: FieldValue.serverTimestamp(),
@@ -320,7 +312,7 @@ export async function migrateLegacySalesForUser(db, { uid, actorUid, now }) {
     status: 'migrated',
     uid,
     networkId,
-    legacyCount: legacySnap.size,
+    legacyCount: legacySales.length,
     copiedCount: toCopy.length,
   };
 }
