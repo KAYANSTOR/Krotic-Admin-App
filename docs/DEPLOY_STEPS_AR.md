@@ -66,6 +66,11 @@ firebase deploy --only firestore:indexes
 **التحقق:** `Console → Firestore → Indexes` يجب أن يُظهر
 `sales.updatedAtMs` و`payments.updatedAtMs` بحالة **Enabled**.
 
+> إن رفض CLI سطر `DESCENDING:COLLECTION_GROUP` (نادر)، احذفه من
+> `fieldOverrides` في الملف وأعد النشر؛ سطر `ASCENDING` وحده يكفي لاستعلام
+> المزامنة، ويكفي `DESCENDING:COLLECTION` لفحص «أحدث تغيير» المُنفَّذ على مستوى
+> المجموعة العادية.
+
 ---
 
 ## 3) Vercel (الواجهة + المسارات الخادمية)
