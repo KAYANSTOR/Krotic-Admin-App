@@ -872,10 +872,34 @@
   }
   @media (min-width: 1024px) {
     .dash-welcome { padding: 1rem 1.25rem; }
-    .dash-summary__hero { padding: 1.75rem 2rem; }
-    .dash-summary__value strong { font-size: clamp(2.5rem, 3.6vw, 3.25rem); }
-    .dash-summary__hint { font-size: .8125rem; }
-    .dash-quick { max-width: 560px; }
+    .dash-summary__hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      grid-template-areas:
+        'head quick'
+        'value quick'
+        'hint quick'
+        'meta quick';
+      align-items: start;
+      column-gap: 2rem;
+      padding: 1.75rem 2rem;
+    }
+    .dash-summary__head { grid-area: head; }
+    .dash-summary__value { grid-area: value; }
+    .dash-summary__hint { grid-area: hint; }
+    .dash-summary__meta { grid-area: meta; margin-top: .875rem; }
+    .dash-summary__value strong { font-size: clamp(2rem, 3vw, 2.75rem); }
+    .dash-quick {
+      grid-area: quick;
+      align-self: center;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 0;
+      max-width: none;
+    }
+  }
+  @media (min-width: 1280px) {
+    .dash-summary__hero { grid-template-columns: minmax(0, 1fr) 460px; }
+    .dash-quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
 
   /* الخدمات والأقسام: شبكة موحّدة داخل بطاقة واحدة */
@@ -925,11 +949,12 @@
   .dash-progress__title { margin-top: .15rem; font-size: 1rem; font-weight: 800; color: var(--ui-ink); }
   .dash-progress__percent { font-size: 1.25rem; font-weight: 800; color: var(--ui-brand-deep); font-variant-numeric: tabular-nums; }
   .dash-progress__track {
+    display: flex; align-items: stretch; justify-content: flex-start;
     height: 10px; margin-top: .875rem;
     border-radius: 999px; background: var(--ui-sunken); overflow: hidden;
   }
   .dash-progress__fill {
-    display: block; height: 100%; border-radius: inherit;
+    display: block; flex: 0 0 auto; height: 100%; border-radius: inherit;
     background: linear-gradient(90deg, var(--ui-brand), var(--ui-sage-green));
     transition: width var(--ui-motion-slow) var(--ui-ease-out);
   }

@@ -109,6 +109,7 @@ test('dashboard layout styles reuse tokens and mobile-first grids', async () => 
   assert.match(css, /\.dash-service__label \{[\s\S]*?overflow-wrap: anywhere/);
   assert.doesNotMatch(css, /\.dash-service__label[^}]*-webkit-line-clamp/, 'لا نقصّ تسميات الأقسام على الهاتف');
   assert.match(css, /\.recent-operation \{[\s\S]*?min-height: 68px/);
+  assert.match(css, /\.dash-progress__track \{[\s\S]*?justify-content: flex-start/);
   assert.match(css, /\.dash-welcome__freshness \{[\s\S]*?grid-column: 1 \/ -1/);
 
   // بقايا الهيكل السابق يجب ألا تبقى كأنماط منافسة.
