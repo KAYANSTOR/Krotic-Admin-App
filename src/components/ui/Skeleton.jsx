@@ -52,7 +52,7 @@ export function SkeletonCard({ lines = 3, className }) {
 
 export function SkeletonTable({ rows = 5 }) {
   return (
-    <div className="divide-y divide-[#F1ECE7]">
+    <div className="divide-y divide-line">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-center gap-4 px-6 py-4">
           <Skeleton className="w-10 h-10 rounded-full" />

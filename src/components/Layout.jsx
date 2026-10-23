@@ -166,7 +166,7 @@ export default function Layout({ children }) {
         </aside>
       )}
 
-      <div className="app-body lg:ms-72">
+      <div className="app-body lg:ms-[264px]">
         <header className="app-header">
           <div className="app-header__inner">
             <div className="app-header__lead">
