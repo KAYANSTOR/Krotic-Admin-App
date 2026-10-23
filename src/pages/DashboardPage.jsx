@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  AlertTriangle, Archive, ArrowDownToLine, Bell, ChevronDown, CreditCard,
+  AlertTriangle, Archive, ArrowDownToLine, Bell, ChevronDown, CreditCard, Eye, EyeOff,
   Layers3, ListChecks, RefreshCw, Send, Settings, TrendingUp, UserPlus, Users,
   Wallet, Wrench,
 } from 'lucide-react';
@@ -94,6 +94,7 @@ export default function DashboardPage() {
   const { adminData } = useAuth();
   const { runSync, syncing, lastSyncAt } = useLocalDb();
   const online = useOnlineStatus();
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [rebuildingAggregates, setRebuildingAggregates] = useState(false);
   const [aggregateRepairProgress, setAggregateRepairProgress] = useState(() => {
     try {
@@ -307,7 +308,19 @@ export default function DashboardPage() {
                 </span>
               </header>
               <p className="dash-summary__value">
-                <strong>{formatNumber(stats.totalSales)}</strong>
+                <strong>{balanceVisible ? formatNumber(stats.totalSales) : '••••••'}</strong>
+                <button
+                  type="button"
+                  className="dash-summary__visibility"
+                  onClick={() => setBalanceVisible((visible) => !visible)}
+                  aria-label={balanceVisible ? 'إخفاء إجمالي المبيعات' : 'إظهار إجمالي المبيعات'}
+                  aria-pressed={!balanceVisible}
+                  title={balanceVisible ? 'إخفاء المبلغ' : 'إظهار المبلغ'}
+                >
+                  {balanceVisible
+                    ? <Eye className="w-5 h-5" aria-hidden="true" />
+                    : <EyeOff className="w-5 h-5" aria-hidden="true" />}
+                </button>
                 <span>ريال يمني</span>
               </p>
               <p className="dash-summary__hint">
