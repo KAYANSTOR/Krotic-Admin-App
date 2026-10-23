@@ -56,7 +56,7 @@ grep -rn "getDocs(" src/                 # syncEngine + adminApi (حذف شبك�
 
 ## تحقق التطوير في هذه المهمة
 
-- `npm test`: **325/325 ناجح** (يشمل `test/localData.test.js` و`test/syncEngine.test.js`).
+- `npm test`: **327/327 ناجح** (يشمل `test/localData.test.js` و`test/syncEngine.test.js`).
 - `npm run build`: ناجح (تحذيرات حجم حزمة فقط).
 - `npm run test:rules:static`: ناجح.
 - `npm run test:rules` (محاكي + Java 21 محليًا): **20/20 ناجح** (سابقًا؛ لم يُعد تشغيله في جولة الإغلاق لعدم توفر Java).

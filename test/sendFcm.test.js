@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { sendTokensInBatches, buildDeliveryHistory } from '../api/send-fcm.js';
 
 function successfulResult(tokens) {
@@ -44,6 +45,14 @@ test('delivery history records carry the sync timestamp for local admin history'
   assert.equal(globalDelivery.audienceType, 'global');
   assert.equal(globalDelivery.targetUid, undefined);
   assert.equal('requestId' in globalDelivery, false);
+});
+
+test('all notification senders use the same Android channel', async () => {
+  const files = ['../api/send-fcm.js', '../api/dispatch-notifications.js', '../functions/index.js'];
+  for (const file of files) {
+    const source = await readFile(new URL(file, import.meta.url), 'utf8');
+    assert.match(source, /krotak_admin_v2/, `${file} must use the registered channel`);
+  }
 });
 
 test('sends all device tokens in FCM-safe batches of at most 500', async () => {

@@ -7,8 +7,11 @@ const crypto = require('crypto');
 initializeApp();
 const db = getFirestore();
 
-const DEFAULT_TOPIC = 'krotak_all_users';
-const ANDROID_CHANNEL_ID = 'krotak_admin';
+const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
+// Keep the same channel as the live Vercel senders (`api/send-fcm.js` and
+// `api/dispatch-notifications.js`); a different channel id silently drops the
+// notification on devices that only register the current channel.
+const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
 
 function stringifyData(data) {
   if (!data || typeof data !== 'object') return {};
