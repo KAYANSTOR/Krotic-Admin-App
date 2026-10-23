@@ -374,7 +374,7 @@
   .admin-chip__email { font-size:.75rem; color:var(--ui-muted); }
 
   /* ===== القائمة الجانبية ===== */
-  .sidebar-backdrop { position:fixed; inset:0; z-index:40; background:rgba(var(--ui-forest-rgb),.55); animation:ui-fade var(--ui-motion-base) var(--ui-ease-out); }
+  .sidebar-backdrop { position:fixed; inset:0; z-index:44; background:rgba(var(--ui-forest-rgb),.55); animation:ui-fade var(--ui-motion-base) var(--ui-ease-out); }
   .sidebar { position:fixed; top:0; inset-inline-start:0; z-index:50; height:100%; width:264px; display:flex; flex-direction:column; background:linear-gradient(180deg,var(--ui-forest-black) 0%,var(--ui-deep-forest) 100%); box-shadow:-12px 0 32px rgba(var(--ui-forest-rgb),.10); transform:translateX(100%); transition:transform var(--ui-motion-slow) var(--ui-ease-in-out); will-change:transform; }
   .sidebar--open { transform:translateX(0); }
   @media (min-width:1024px) { .sidebar { transform:translateX(0); } }

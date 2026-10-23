@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
+import useBodyScrollLock from '../lib/useBodyScrollLock';
 
 const primaryItems = [
   { path: '/', label: 'الرئيسية', icon: LayoutDashboard },
@@ -50,6 +51,8 @@ export default function BottomNav() {
   const navigate = useNavigate();
   const quickSheetRef = useRef(null);
   const quickTriggerRef = useRef(null);
+
+  useBodyScrollLock(quickOpen);
 
   useEffect(() => setQuickOpen(false), [location.pathname]);
 

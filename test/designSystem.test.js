@@ -136,3 +136,21 @@ test('semantic status colours stay distinct from the brand green', async () => {
   assert.match(tailwind, /danger:\s*\{/);
   assert.match(tailwind, /warning:\s*\{/);
 });
+
+test('mobile drawer and quick sheet lock background scrolling and close predictably', async () => {
+  const [layout, nav, css, lock] = await Promise.all([
+    read('src/components/Layout.jsx'),
+    read('src/components/BottomNav.jsx'),
+    read('src/index.css'),
+    read('src/lib/useBodyScrollLock.js'),
+  ]);
+  assert.match(layout, /useBodyScrollLock\(sidebarOpen\)/);
+  assert.match(layout, /event\.key === 'Escape'\) setSidebarOpen\(false\)/);
+  assert.match(layout, /setSidebarOpen\(false\);\s*\}, \[location\.pathname\]\)/);
+  assert.match(nav, /useBodyScrollLock\(quickOpen\)/);
+  assert.match(lock, /activeLocks/);
+  assert.match(lock, /body\.style\.overflow = 'hidden'/);
+
+  const backdrop = ruleBody(css, '.sidebar-backdrop');
+  assert.match(backdrop, /z-index:44/, 'الخلفية يجب أن تغطي شريط التنقل السفلي عند فتح الدرج');
+});

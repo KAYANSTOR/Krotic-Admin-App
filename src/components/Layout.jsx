@@ -19,6 +19,7 @@ import { emitAppRefresh } from '../lib/useAppRefresh';
 import { trackSnapshot } from '../lib/localDb/readMeter';
 import { formatNumber } from '../lib/format';
 import { PageSkeleton } from './ui/Skeleton';
+import useBodyScrollLock from '../lib/useBodyScrollLock';
 import {
   getNotificationPreferences,
   subscribeNotificationPreferences,
@@ -58,6 +59,22 @@ export default function Layout({ children }) {
   const online = useOnlineStatus();
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
+
+  // درج التنقل على الهاتف: قفل تمرير الخلفية، إغلاق بـ Escape، وإغلاق تلقائي عند تغيير الصفحة.
+  useBodyScrollLock(sidebarOpen);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [sidebarOpen]);
 
   // الاشتراك في تفضيلات إشعارات الهاتف لتحديث الأيقونة فوراً
   useEffect(() => {
