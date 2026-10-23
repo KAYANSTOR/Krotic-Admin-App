@@ -1,11 +1,7 @@
 // src/pages/SettingsPage.jsx
 import { useState, useEffect, useRef } from 'react';
-import {
-  doc, setDoc, collection, getDocs, writeBatch, Timestamp,
-} from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { db } from '../firebase';
 import {
   Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
   ShieldCheck, AlertTriangle, Users, KeyRound,
@@ -31,11 +27,11 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeAdminPasswordModal from '../components/ChangeAdminPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
-import { chunkArray, FIRESTORE_BATCH_LIMIT } from '../lib/billingHelpers';
 import { updateSettings, batchExpiry, adminApiError } from '../lib/adminApi';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { loadLocalConfig } from '../lib/localDb/localData';
+import { resetSyncCursors } from '../lib/localDb/syncEngine';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const DEFAULTS = {
@@ -127,9 +123,11 @@ export default function SettingsPage() {
   const [batchDate, setBatchDate] = useState('');
   const [updatingBatch, setUpdatingBatch] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [showFullSyncConfirm, setShowFullSyncConfirm] = useState(false);
+  const [fullSyncing, setFullSyncing] = useState(false);
   const savedAppStatus = useRef(DEFAULTS.is_app_active);
 
-  const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const { runSync, syncing, lastSyncAt, localDb } = useLocalDb();
   const configQuery = useLocalQuery((localDb) => loadLocalConfig(localDb), []);
 
   // الإعدادات تُقرأ من القاعدة المحلية، ويُحفظ تعديل النموذج في state مستقل.
@@ -269,6 +267,34 @@ export default function SettingsPage() {
       return false;
     } finally {
       setUpdatingBatch(false);
+    }
+  };
+
+  /**
+   * مزامنة كاملة يدوية: تُصفّر مؤشرات المزامنة ثم تعيد قراءة كل المصادر مرة
+   * واحدة. مطلوبة بعد ترحيل updatedAtMs للوثائق القديمة، أو إذا بدت القاعدة
+   * المحلية ناقصة. ليست بديلًا عن المزامنة التزايدية في الاستخدام اليومي.
+   */
+  const handleFullSync = async () => {
+    if (!localDb) {
+      toast.error('القاعدة المحلية غير متاحة في هذا المتصفح.');
+      return false;
+    }
+    if (fullSyncing) return false;
+    setFullSyncing(true);
+    try {
+      await resetSyncCursors(localDb);
+      await runSync({ reason: 'manual' });
+      configQuery.refresh();
+      setShowFullSyncConfirm(false);
+      toast.success('اكتملت المزامنة الكاملة من Firestore إلى القاعدة المحلية');
+      return true;
+    } catch (error) {
+      console.error('Full sync failed:', error);
+      toast.error('تعذرت المزامنة الكاملة. لم تتأكد سلامة البيانات المحلية.');
+      return false;
+    } finally {
+      setFullSyncing(false);
     }
   };
 
@@ -510,6 +536,32 @@ export default function SettingsPage() {
         </p>
       </Card>
 
+      {/* ===== إعادة المزامنة الكاملة ===== */}
+      <Card className="mt-3">
+        <CardHeader
+          icon={RefreshCw}
+          title="إعادة المزامنة الكاملة"
+          description="تعيد قراءة جميع مجموعات Firestore إلى القاعدة المحلية مرة واحدة. استخدمها بعد ترحيل updatedAtMs للوثائق القديمة، أو إذا ظهرت القوائم ناقصة."
+          action={<Badge tone="warning">تستهلك قراءات</Badge>}
+        />
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[11px] leading-5 text-muted">
+            المزامنة اليومية تزايدية وتقرأ التغييرات فقط. هذه العملية تمسح مؤشرات
+            المزامنة المحلية ثم تعيد قراءة كل المصادر؛ لا تُستخدم في كل مرة.
+          </p>
+          <Button
+            variant="secondary"
+            icon={RefreshCw}
+            loading={fullSyncing}
+            disabled={fullSyncing || !localDb}
+            onClick={() => setShowFullSyncConfirm(true)}
+            className="shrink-0 font-bold"
+          >
+            بدء مزامنة كاملة
+          </Button>
+        </div>
+      </Card>
+
       {/* ===== أمان حساب المدير ===== */}
       <Card>
         <CardHeader
@@ -676,6 +728,17 @@ export default function SettingsPage() {
         title="تحديث مجمع للتواريخ"
         message={`سيتم تغيير تاريخ الانتهاء لجميع الحسابات الرسمية ليصبح: ${batchDate}. هذا الإجراء واسع الأثر ولا يمكن التراجع عنه دفعة واحدة.`}
         confirmText="نعم، قم بالتحديث"
+        variant="primary"
+        requireText="تأكيد"
+      />
+
+      <ConfirmDialog
+        isOpen={showFullSyncConfirm}
+        onClose={() => setShowFullSyncConfirm(false)}
+        onConfirm={handleFullSync}
+        title="مزامنة كاملة من Firestore"
+        message="ستُمسح مؤشرات المزامنة المحلية وتُعاد قراءة جميع المجموعات مرة واحدة. قد تستهلك عددًا كبيرًا من قراءات Firestore، وقد يستغرق التحميل وقتًا على الشبكات البطيئة. هل تريد المتابعة؟"
+        confirmText="نعم، ابدأ المزامنة الكاملة"
         variant="primary"
         requireText="تأكيد"
       />

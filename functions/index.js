@@ -15,6 +15,40 @@ function stringifyData(data) {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)]));
 }
 
+/**
+ * Builds the notification_deliveries row. `updatedAtMs` is required by the
+ * admin dashboard's incremental sync; without it the delivery never reaches the
+ * local history view.
+ */
+function buildDeliveryRecord({
+  requestId,
+  title,
+  body,
+  target,
+  audienceType,
+  targetUid = null,
+  sent,
+  failed,
+  now = Date.now(),
+}) {
+  return {
+    requestId,
+    title,
+    body,
+    message: body,
+    target,
+    ...(targetUid ? { targetUid } : {}),
+    audienceType,
+    sent,
+    failed,
+    createdAt: FieldValue.serverTimestamp(),
+    createdAtMs: now,
+    updatedAtMs: now,
+    timestamp: now,
+    status: failed && !sent ? 'failed' : 'sent',
+  };
+}
+
 function chunksOf(items, size) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
@@ -278,17 +312,16 @@ async function dispatchRequest(snapshot) {
       sent = 1;
     }
 
-    const delivery = {
+    const delivery = buildDeliveryRecord({
       requestId,
       title,
       body,
       target: targetDescription,
       audienceType: request.audienceType === 'user' && request.targetUid ? 'user' : 'global',
-      ...(request.audienceType === 'user' && request.targetUid ? { targetUid: request.targetUid } : {}),
+      targetUid: request.audienceType === 'user' && request.targetUid ? request.targetUid : null,
       sent,
       failed,
-      createdAt: FieldValue.serverTimestamp(),
-    };
+    });
     const inbox = request.audienceType === 'user' && request.targetUid && sent > 0
       ? {
           uid: request.targetUid,
@@ -510,6 +543,7 @@ exports.updatePaymentAggregate = onDocumentWritten('networks/{networkId}/payment
 // Test seam: production handlers above continue to use the initialized db.
 exports.__test = {
   applySaleDelta,
+  buildDeliveryRecord,
   saleContribution,
   claimDispatchRequest,
   chunksOf,

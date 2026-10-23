@@ -25,6 +25,9 @@ const targets = [
   { name: 'payments', query: () => db.collectionGroup('payments') },
   { name: 'admin_aggregates', query: () => db.collection('admin_aggregates') },
   { name: 'app_settings', query: () => db.collection('app_settings') },
+  { name: 'admin_audit_logs', query: () => db.collection('admin_audit_logs') },
+  { name: 'notification_deliveries', query: () => db.collection('notification_deliveries') },
+  { name: 'Admins', query: () => db.collection('Admins') },
 ];
 
 function timestampMs(value) {

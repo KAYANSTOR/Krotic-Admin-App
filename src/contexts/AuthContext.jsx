@@ -1,8 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, getDocFromCache, getDocFromServer, getFirestore, setDoc } from 'firebase/firestore';
-import app, { auth, db, secondaryAuth, firestoreDatabaseId } from '../firebase';
-import { signOut as secondarySignOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, getDocFromCache, getDocFromServer, getFirestore } from 'firebase/firestore';
+import app, { auth, db, firestoreDatabaseId } from '../firebase';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { trackRead } from '../lib/localDb/readMeter';
 import { deleteAdminDb } from '../lib/localDb/db';

@@ -90,8 +90,10 @@ firebase deploy --only firestore:rules
 
 ## ملاحظات
 
-- Cloud Function القديمة في `functions/` لم تعد مستخدمة (تبقى كمرجع فقط).
-- لم تعد الصفحة تكتب في `notification_requests` — الإرسال مباشر الآن.
+- Cloud Function في `functions/` اختيارية (تحتاج Blaze). المسار الفعلي للإرسال
+  الفوري هو `/api/send-fcm`، والجدولة يستهلكها Cron أو الدالة.
+- الإرسال الفوري لا يكتب في `notification_requests`؛ **الجدولة وحدها** تُنشئ طلبًا
+  في `notification_requests` ليستهلكه `/api/dispatch-notifications`.
 - بعد الإرسال الناجح، تحفظ اللوحة سجلًا إداريًا خاصًا وتنسخ إشعارًا عامًا إلى صناديق
   الحسابات الموجودة؛ إنشاء حساب جديد لاحقًا لا ينشئ له نسخًا من الإشعارات السابقة.
 - لا تضع أي مفتاح Service Account داخل `src/` أو `.env` الخاص بالواجهة.

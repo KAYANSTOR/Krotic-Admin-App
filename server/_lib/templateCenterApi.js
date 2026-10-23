@@ -584,12 +584,14 @@ export function createTemplateCenterHandler(deps = {}) {
         }
         case 'device-acks': {
           const releaseId = typeof input.releaseId === 'string' ? input.releaseId.trim() : '';
-          let query = db.collection(DEVICE_ACKS);
+          // ACKs live in users/{uid}/template_acks/{deviceId}; the only valid
+          // cross-user query is a collection-group query mapped for the admin UI.
+          let query = db.collectionGroup(ACK_SUBCOLLECTION);
           if (releaseId) {
-            query = query.where('releaseId', '==', releaseId);
+            query = query.where('applied_version_id', '==', releaseId);
           }
           const acksSnapshot = await query.limit(200).get();
-          const acks = acksSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+          const acks = acksSnapshot.docs.map(ackAdminView);
           return res.status(200).json({ success: true, acks });
         }
         case 'import-default-catalog': {

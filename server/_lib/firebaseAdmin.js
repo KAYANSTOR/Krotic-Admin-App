@@ -153,6 +153,9 @@ export async function syncDatabaseInstancesIfNeeded() {
     name: 'مدير Krotak Pro',
     role: 'admin',
     createdAt: 1791156000000,
+    // حقل المزامنة: بدونه لا يظهر المالك الأساسي في قائمة المدراء المحلية.
+    createdAtMs: 1791156000000,
+    updatedAtMs: 1791156000000,
   };
 
   try {

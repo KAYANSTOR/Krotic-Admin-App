@@ -1,5 +1,10 @@
 # تسليم إلى الوكيل التالي — لوحة إدارة كروتك برو
 
+> **تحديث الإغلاق 2026-10-23:** التدقيق الكامل وحالة «ما تبقّى للإغلاق» صار في
+> `docs/ADMIN_PANEL_CLOSURE_AUDIT_AR.md`. أُصلحت فيه عيوب `device-acks`، و`updatedAtMs`
+> لسجل الإشعار العام وسجل التدقيق، ونطاق backfill، وحذف الإشعار الخادمي، وأُضيف زر
+> «مزامنة كاملة» في الإعدادات. النتيجة الحالية: `npm test` 325/325، والدوال 20/20.
+
 > **تحديث 2026-10-23:** الحالة المعتمدة الآن هي فرع `cline/f0d32hzt` في مستودع الإدارة، لا تعليمات `main` التاريخية أدناه. العقد الحالي موثّق في `docs/ACCOUNT_FEATURES_ACK_CONTRACT_AR.md`: `account_features` هو المصدر الوحيد، وACK latest-only تحت `users/{uid}/template_acks/{deviceId}`. لا تدفع إلى `main` ولا تنشر إنتاجاً ضمن هذا التغيير.
 
 > **الغرض:** استلام الحالة من حيث توقّف الوكيل السابق دون إعادة عمل ولا كسر
@@ -156,10 +161,10 @@
 git status --porcelain && git rev-parse HEAD origin/main
 
 npm install
-npm test                 # 315/315 ناجح
+npm test                 # 325/325 ناجح
 npm run test:rules:static # ناجح
 npm run build            # ناجح
-cd functions && npm install && npm test   # 18/18 ناجح
+cd functions && npm install && npm test   # 20/20 ناجح
 
 # اختبارات القواعد تحتاج Java 21 + منفذ 8080 حرًا
 npm run test:rules       # 20/20 ناجح (شغّلتها محليًا بـ Temurin 21)

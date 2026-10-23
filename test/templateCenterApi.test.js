@@ -217,6 +217,31 @@ test('admin list returns only latest server ACKs from nested user documents', as
   assert.equal(res.body.acks[0].releaseId, 'release-1');
 });
 
+test('admin device-acks queries the nested latest ACK collection and maps it', async () => {
+  const data = seed();
+  data[`users/user-1/template_acks/${deviceId}`] = {
+    writer: 'server', uid: 'user-1', device_id: deviceId, network_id: 'user-1',
+    applied_version_id: 'release-1', applied_version: '1.0.3', payload_hash_sha256: hash,
+    scope_key: 'global', outcome: 'applied', parser_refreshed: true,
+    inserted_count: 2, conflict_count: 0, app_version: '1.0.16', app_build: 16,
+    applied_at: new Date('2026-10-23T06:59:00.000Z'), synced_at: new Date('2026-10-23T07:00:00.000Z'),
+  };
+  const handler = makeHandler({
+    db: createFakeFirestore(data),
+    admin: { ok: true, callerUid: 'admin-1' },
+  });
+  const res = createRes();
+  await handler(post({ action: 'device-acks', releaseId: 'release-1' }), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.acks.length, 1);
+  assert.equal(res.body.acks[0].verified, true);
+  assert.equal(res.body.acks[0].uid, 'user-1');
+  assert.equal(res.body.acks[0].installationId, deviceId);
+  assert.equal(res.body.acks[0].releaseId, 'release-1');
+  assert.equal(res.body.acks[0].outcome, 'applied');
+});
+
 test('admin actions still require an authenticated admin', async () => {
   const handler = makeHandler();
   const res = createRes();

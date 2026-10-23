@@ -66,7 +66,8 @@ firebase deploy --only firestore:indexes
 قد يُحذف. لذلك الخطوة (1) إلزامية: أضف الناقص إلى الملف قبل النشر.
 
 **التحقق:** `Console → Firestore → Indexes` يجب أن يُظهر
-`sales.updatedAtMs` و`payments.updatedAtMs` بحالة **Enabled**.
+`sales.updatedAtMs` و`payments.updatedAtMs` بحالة **Enabled**، وكذلك فهارس
+`template_acks` على `synced_at` و`applied_version_id` بنطاق Collection Group.
 
 > إن رفض CLI سطر `DESCENDING:COLLECTION_GROUP` (نادر)، احذفه من
 > `fieldOverrides` في الملف وأعد النشر؛ سطر `ASCENDING` وحده يكفي لاستعلام
