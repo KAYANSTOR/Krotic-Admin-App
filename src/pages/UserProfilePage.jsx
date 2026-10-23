@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowRight, DollarSign, Clock3, Clock, AlertCircle, CalendarPlus, Edit, KeyRound, Ban,
-  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
+  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users, Package,
   Trash2, ChevronDown, ChevronUp, Calendar, Receipt, Send, Sparkles,
   ShieldCheck, ShieldAlert,
 } from 'lucide-react';
@@ -598,6 +598,29 @@ export default function UserProfilePage() {
         />
         <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
       </div>
+
+      <Section
+        eyebrow="المخزون المحلي"
+        title="الكروت لدى العميل"
+        description="المبيعات تُعرض من السجلات المالية المتزامنة؛ تفاصيل المخزون تبقى داخل SQLite في Android ولا تُرفع إلى Firestore."
+      >
+        <div className="grid-kpi">
+          <StatCard
+            title="الكروت المباعة (سجلات البيع)"
+            value={formatNumber(allSales.length)}
+            icon={Package}
+            tone="brand"
+            subtitle="عدد سجلات البيع المتاحة لكل الأشهر"
+          />
+          <StatCard
+            title="الكروت غير المباعة"
+            value="غير متاح"
+            icon={Package}
+            tone="neutral"
+            subtitle="المخزون محلي في Android؛ لا توجد بيانات سحابية لحسابه"
+          />
+        </div>
+      </Section>
 
       {/* تفصيل الشهور والعمولات مع التوسيع وعرض عمليات كل شهر (ميزة مطلوبة خصيصاً) */}
       <Section

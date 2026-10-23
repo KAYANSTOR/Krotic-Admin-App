@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import {
   authenticateAdmin,
@@ -13,16 +13,57 @@ import {
   simulateInboundTemplates,
   validateTemplatePayload,
 } from './templateCenter.js';
-import { validateTemplateAckPayload } from './templateAckContract.js';
+import {
+  ACK_SUBCOLLECTION,
+  ackIdempotencyKey,
+  mapAckForAdmin,
+  validateAckInput,
+  verifyAck,
+} from './templateCenterAck.js';
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const NETWORK_ID_PATTERN = /^[A-Za-z0-9_-]{5,128}$/;
 const DRAFTS = 'template_center_drafts';
 const RELEASES = 'template_center_releases';
 const POINTERS = 'template_center_pointers';
-const DEVICE_ACKS = 'template_center_device_acks';
 const MAX_DRAFTS = 100;
 const MAX_RELEASES = 100;
+const MAX_DEVICE_ACKS = 500;
 const SCHEMA_VERSION = 1;
+
+async function resolveAckNetworkId(db, uid, userData = {}) {
+  const candidate = typeof userData.networkId === 'string'
+    ? userData.networkId
+    : (typeof userData.network_id === 'string' ? userData.network_id : null);
+  if (candidate && SAFE_ID.test(candidate)) {
+    const networkSnapshot = await db.collection('networks').doc(candidate).get();
+    if (networkSnapshot.exists) {
+      const network = networkSnapshot.data() || {};
+      const ownerUid = network.owner_uid || network.ownerUid || network.uid || null;
+      if (ownerUid === uid || (!ownerUid && candidate === uid)) return network.networkId || candidate;
+    }
+  }
+
+  const owned = await db.collection('networks').where('owner_uid', '==', uid).limit(3).get().catch(() => null);
+  const matches = (owned?.docs || []).filter((entry) => {
+    const data = entry.data() || {};
+    return (data.owner_uid || data.ownerUid || data.uid) === uid;
+  });
+  if (matches.length === 1) {
+    const data = matches[0].data() || {};
+    return data.networkId || matches[0].id;
+  }
+  if (matches.length > 1) return null;
+  // Legacy accounts used the Firebase UID as their network ID.
+  return SAFE_ID.test(uid) ? uid : null;
+}
+
+function ackAdminView(snapshot) {
+  const path = snapshot.ref?.path || snapshot.path || '';
+  const pathParts = path.split('/');
+  const uid = pathParts.length >= 4 && pathParts[0] === 'users' ? pathParts[1] : null;
+  return mapAckForAdmin(snapshot.id, snapshot.data() || {}, uid);
+}
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -240,6 +281,9 @@ export function createTemplateCenterHandler(deps = {}) {
   const authUser = deps.authenticateUser || authenticateUser;
   const authAdmin = deps.authenticateAdmin || authenticateAdmin;
   const getDb = deps.getDb || getAppFirestore;
+  const nowValue = () => (typeof deps.now === 'function' ? deps.now() : (deps.now ?? Date.now()));
+  const serverTimestamp = deps.serverTimestamp || (() => FieldValue.serverTimestamp());
+  const timestampFromMillis = deps.timestampFromMillis || ((value) => Timestamp.fromMillis(value));
 
   return async function templateCenterHandler(req, res) {
     if (req.method !== 'POST') {
@@ -275,72 +319,102 @@ export function createTemplateCenterHandler(deps = {}) {
     if (input.action === 'ack') {
       const caller = await authUser(req);
       if (!caller.ok) return sendError(res, caller.status, caller.error);
-      const ackData = input.ack && typeof input.ack === 'object' ? input.ack : input;
-      if (ackData.uid && ackData.uid !== caller.uid) {
+      if (input.uid && input.uid !== caller.uid) {
         return sendError(res, 403, 'uid_mismatch');
       }
-      const releaseId = typeof ackData.releaseId === 'string' ? ackData.releaseId.trim() : '';
-      if (!releaseId) return sendError(res, 400, 'release_id_missing');
+      const now = nowValue();
+      const validation = validateAckInput(input, { now });
+      if (!validation.ok) return sendError(res, 400, validation.error);
+      const ack = validation.value;
+      const userRef = db.collection('users').doc(caller.uid);
+      const releaseRef = db.collection(RELEASES).doc(ack.releaseId);
+      const [userDoc, releaseDoc] = await Promise.all([userRef.get(), releaseRef.get()]);
+      if (!userDoc.exists) return sendError(res, 404, 'account_not_found');
+      if (!releaseDoc.exists) return sendError(res, 404, 'release_not_found');
+      const userData = userDoc.data() || {};
+      const boundInstallationId = userData.entitlementInstallationId || null;
+      if (!boundInstallationId) return sendError(res, 403, 'installation_not_bound');
+      const release = { ...releaseDoc.data(), id: releaseDoc.id };
+      const verification = verifyAck({ ack, uid: caller.uid, release, boundInstallationId });
+      if (!verification.ok) return sendError(res, verification.status, verification.error);
 
-      const userDoc = await db.collection('users').doc(caller.uid).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data() || {};
-        if (userData.entitlementInstallationId && ackData.installationId && userData.entitlementInstallationId !== ackData.installationId) {
-          return sendError(res, 403, 'installation_mismatch');
-        }
+      const networkId = await resolveAckNetworkId(db, caller.uid, userData);
+      if (!networkId || !NETWORK_ID_PATTERN.test(networkId)) return sendError(res, 409, 'network_id_unavailable');
+      if (ack.scopeKey.startsWith('network:') && ack.scopeKey.slice('network:'.length) !== networkId) {
+        return sendError(res, 403, 'network_scope_mismatch');
       }
 
-      const releaseDoc = await db.collection(RELEASES).doc(releaseId).get();
-      if (!releaseDoc.exists) {
-        return sendError(res, 404, 'release_not_found');
-      }
-      const release = releaseDoc.data();
-      const expectedHash = release.payloadHash || release.payloadHashSha256;
-      if (ackData.payloadHash && expectedHash && ackData.payloadHash.toLowerCase() !== expectedHash.toLowerCase()) {
-        return sendError(res, 409, 'payload_hash_mismatch');
-      }
-
-      const validation = validateTemplateAckPayload({ ...ackData, uid: caller.uid }, release);
-      if (!validation.ok) {
-        if (validation.error === 'payload_hash_mismatch') {
-          return sendError(res, 409, 'payload_hash_mismatch', validation.details);
-        }
-        return sendError(res, 400, validation.error, validation.details);
-      }
-
-      const ackDocId = `${caller.uid}_${validation.value.installationId}_${validation.value.releaseId}`;
-      const acksRef = db.collection('template_center_acks').doc(ackDocId);
-      const existing = await acksRef.get();
-      if (existing.exists) {
-        return res.status(200).json({
-          success: true,
-          duplicate: true,
-          ackId: ackDocId,
-          releaseId: validation.value.releaseId,
-          payloadHash: validation.value.payloadHash,
-          installationId: validation.value.installationId,
-          scopeKey: ackData.scopeKey || release.scopeKey || 'global',
+      const ackRef = userRef.collection(ACK_SUBCOLLECTION).doc(ack.installationId);
+      const ackId = ackIdempotencyKey({
+        uid: caller.uid,
+        installationId: ack.installationId,
+        releaseId: ack.releaseId,
+        payloadHash: ack.payloadHash,
+        outcome: ack.outcome,
+      });
+      const result = await db.runTransaction(async (transaction) => {
+        const currentUser = await transaction.get(userRef);
+        const currentRelease = await transaction.get(releaseRef);
+        const existing = await transaction.get(ackRef);
+        if (!currentUser.exists) return { error: 'account_not_found', status: 404 };
+        if (!currentRelease.exists) return { error: 'release_not_found', status: 404 };
+        const latestUserData = currentUser.data() || {};
+        if (!latestUserData.entitlementInstallationId) return { error: 'installation_not_bound', status: 403 };
+        if (latestUserData.entitlementInstallationId !== ack.installationId) return { error: 'installation_mismatch', status: 403 };
+        const latestVerification = verifyAck({
+          ack,
+          uid: caller.uid,
+          release: currentRelease.data(),
+          boundInstallationId: latestUserData.entitlementInstallationId,
         });
-      }
+        if (!latestVerification.ok) return { error: latestVerification.error, status: latestVerification.status };
+        if (existing.exists && existing.data()?.idempotency_key === `${ack.releaseId}:${ack.payloadHash}`
+            && existing.data()?.outcome === ack.outcome) {
+          return { duplicate: true };
+        }
 
-      const ackRecord = {
-        ...validation.value,
-        recordedAt: FieldValue.serverTimestamp(),
-        recordedAtMs: Date.now(),
-        scopeKey: ackData.scopeKey || release.scopeKey || 'global',
-      };
-      await Promise.all([
-        acksRef.set(ackRecord),
-        db.collection(DEVICE_ACKS).doc(ackDocId).set(ackRecord, { merge: true }),
-      ]);
-      return res.status(201).json({
+        const previous = existing.exists ? existing.data() || {} : {};
+        const version = typeof release.version === 'string' && /^\d+\.\d+\.\d+$/.test(release.version)
+          ? release.version
+          : `1.0.${Number.isInteger(release.versionCode) && release.versionCode >= 0 ? release.versionCode : 0}`;
+        transaction.set(ackRef, {
+          schema_version: 1,
+          ack_version: 1,
+          writer: 'server',
+          device_id: ack.installationId,
+          uid: caller.uid,
+          network_id: networkId,
+          applied_version_id: ack.releaseId,
+          applied_version: version,
+          applied_version_code: Number.isInteger(release.versionCode) && release.versionCode >= 1 ? release.versionCode : 1,
+          payload_hash_sha256: ack.payloadHash,
+          scope_key: ack.scopeKey,
+          outcome: ack.outcome,
+          parser_refreshed: ack.parserRefreshed,
+          inserted_count: ack.insertedCount,
+          conflict_count: ack.conflictCount,
+          app_version: ack.appVersion,
+          app_build: ack.appBuild,
+          applied_at: timestampFromMillis(ack.appliedAtMs),
+          synced_at: serverTimestamp(),
+          received_at: serverTimestamp(),
+          last_ack_id: ackId,
+          previous_version_id: previous.applied_version_id || null,
+          client_time_skew_ms: now - ack.appliedAtMs,
+          idempotency_key: `${ack.releaseId}:${ack.payloadHash}`,
+        });
+        return { duplicate: false };
+      });
+      if (result?.error) return sendError(res, result.status, result.error);
+      return res.status(result?.duplicate ? 200 : 201).json({
         success: true,
-        duplicate: false,
-        ackId: ackDocId,
-        releaseId: validation.value.releaseId,
-        payloadHash: validation.value.payloadHash,
-        installationId: validation.value.installationId,
-        scopeKey: ackData.scopeKey || release.scopeKey || 'global',
+        duplicate: Boolean(result?.duplicate),
+        ackId,
+        installationId: ack.installationId,
+        releaseId: ack.releaseId,
+        payloadHash: ack.payloadHash,
+        scopeKey: ack.scopeKey,
+        outcome: ack.outcome,
       });
     }
 
@@ -355,9 +429,10 @@ export function createTemplateCenterHandler(deps = {}) {
           const [drafts, releases] = await Promise.all([listDrafts(db), listReleases(db)]);
           const pointersSnapshot = await db.collection(POINTERS).get();
           const pointers = pointersSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-          const acksSnapshot = await db.collection(DEVICE_ACKS).limit(200).get();
-          const deviceAcks = acksSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-          return res.status(200).json({ success: true, drafts, releases, pointers, deviceAcks });
+          const acksSnapshot = await db.collectionGroup(ACK_SUBCOLLECTION)
+            .orderBy('synced_at', 'desc').limit(MAX_DEVICE_ACKS).get();
+          const acks = acksSnapshot.docs.map(ackAdminView);
+          return res.status(200).json({ success: true, drafts, releases, pointers, acks, deviceAcks: acks });
         }
         case 'list-networks': {
           const snapshot = await db.collection('networks').limit(500).get();
@@ -628,4 +703,3 @@ export function createTemplateCenterHandler(deps = {}) {
 
 const defaultHandler = createTemplateCenterHandler();
 export default defaultHandler;
-

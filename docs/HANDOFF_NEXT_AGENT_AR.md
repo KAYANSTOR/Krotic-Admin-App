@@ -1,14 +1,16 @@
 # تسليم إلى الوكيل التالي — لوحة إدارة كروتك برو
 
+> **تحديث 2026-10-23:** الحالة المعتمدة الآن هي فرع `cline/f0d32hzt` في مستودع الإدارة، لا تعليمات `main` التاريخية أدناه. العقد الحالي موثّق في `docs/ACCOUNT_FEATURES_ACK_CONTRACT_AR.md`: `account_features` هو المصدر الوحيد، وACK latest-only تحت `users/{uid}/template_acks/{deviceId}`. لا تدفع إلى `main` ولا تنشر إنتاجاً ضمن هذا التغيير.
+
 > **الغرض:** استلام الحالة من حيث توقّف الوكيل السابق دون إعادة عمل ولا كسر
 > قرارات المالك. اقرأ هذا الملف، ثم `docs/DEPLOY_STEPS_AR.md` (ما يجب نشره)
 > و`docs/CI_TRIAGE_AR.md` و`docs/ADMIN_LOCAL_FIRST_ARCHITECTURE_AR.md`
 > و`docs/PERF_BASELINE_AR.md`.
 
 **المستودع:** `KAYANSTOR/Krotic-Admin-App` (خاص).
-**الفرع العامل:** `main` **فقط** — كل الفروع الأخرى دُمجت أو أُرشفت وحُذفت (2026-10-22).
-**HEAD عند التسليم:** رأس `origin/main` (تحقّق بـ`git log -1`).
-**الدمج:** دُمج `feat/local-first-admin` (وما فوقه) إلى `main` بدمج fast-forward، ثم حُذفت كل الفروع. بقيت وسوم `archive/*` فقط كنسخة أمان.
+**الفرع العامل (التحديث الحالي):** `cline/f0d32hzt` في `KAYANSTOR/Krotic-Admin-App`؛ راجع `git log -1` بعد دفع التغييرات.
+**HEAD عند التسليم:** يُسجَّل بعد commit الفرع الحالي.
+**حالة التغيير:** branch-only؛ لا دمج إلى `main` ولا نشر إنتاجي.
 **المرجع الحي (قراءة فقط، ممنوع التعديل):** `KAYANSTOR/Krotak-Pro`.
 **تاريخ التسليم:** 2026-10-22.
 
@@ -52,12 +54,10 @@
 
 ## 2) ما أُنجز (لا تُعده)
 
-### أ) المزايا المدفوعة — مكتمل (من الوكيل السابق)
-- `server/_lib/paidFeatureEntitlements.js`: كتابة/قراءة
-  `users/{uid}.feature_entitlements` بمفاتيح معتمدة فقط، داخل `runTransaction`
-  + `admin_audit_logs` (`PAID_FEATURE_ENTITLEMENT_UPDATE`). مدير فقط.
-- المسار `POST /api/paid-features` عبر **نفس** `api/settings.js`؛ بلا ملف API جديد.
-- الشاشة `/paid-features` + القواعد تقفل كتابة العميل.
+### أ) مزايا الحساب — التنفيذ الحالي على الفرع
+- المصدر الوحيد `users/{uid}.account_features`؛ لا قراءة أو نسخ من `feature_entitlements`.
+- المسار `POST /api/admin/account-features` عبر دالة `api/settings.js` المشتركة.
+- المفاتيح الأربعة الافتراضية مغلقة؛ الكتابة إدارية ومعاملة ذرية مع audit و`updatedAtMs`.
 
 ### ب) المرحلة 1 (علامات الخادم والقواعد) — مُثبَّتة على `main` مسبقًا
 `updatedAtMs` في 16 ملفًا خادميًا، `sync_tombstones`، قواعد `collectionGroup`،
@@ -114,14 +114,10 @@
 - الأرقام الحالية في الوثيقة **محسوبة من الكود** وموسومة كذلك؛ لا تستبدلها
   بأرقام Console إلا بعد قياس حقيقي.
 
-### المهمة 2 — عقود ACK: تحتاج اعتماد وكيل Android
-- العقد والحالات موثّقة ومختبرة: `contracts/schemas/android-ack.schema.json`،
-  `android-application-state.schema.json`، و`docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md` §3/§4/§4.2.
-- **فجوة مفتوحة:** لا حقل لنتيجة **renderer** في `ackVersion=1` (فقط
-  `parserRefreshed`). القرار: حقل اختياري الآن أم `ackVersion=2`؟
-- لا تدّعِ أثرًا على جهاز. تحقق 2026-10-21 (وكيل آخر) قال إن مستهلك
-  `PaidFeature`/`PaidFeatureGate` غير موجود في `Krotak-Pro@main`؛ محاولتي
-  لإعادة التحقق فشلت (404 لهذا التكامل) → الحالة `Unknown`.
+### المهمة 2 — ACK القوالب — التنفيذ الحالي على الفرع
+- يُقبل ACK على `/api/template-center` بعد التحقق من Firebase ID token وربط الجهاز والإصدار والبصمة والنطاق.
+- يكتب Vercel آخر وثيقة فقط لكل جهاز في `users/{uid}/template_acks/{deviceId}`؛ حالات `matched/conflict/stale/failed/unknown` محسوبة في لوحة الإصدارات.
+- لا تُعرض حالة تطبيق على Android دون ACK موثوق؛ `account_features` المخزنة وحدها لا تثبت استهلاك نسخة التطبيق لها.
 
 ### المهمة 3 — `needs_decision`: مفتاح ثابت للمحافظ
 - `docs/NEEDS_DECISION_WALLET_KEY_AR.md` — أربعة خيارات وأثر كل خيار.

@@ -7,8 +7,8 @@ import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
 import { useTemplateCenter } from './TemplateCenterContext';
 import {
-  APPLICATION_STATE_LABELS, countAcknowledgingDevices, deriveApplicationState, describeScope,
-  formatTimestamp, scopeKeyFor, selectVerifiedAck,
+  ACK_HEALTH_LABELS, APPLICATION_STATE_LABELS, classifyAckHealth, countAcknowledgingDevices,
+  deriveApplicationState, describeScope, formatTimestamp, scopeKeyFor,
 } from '../../lib/templateCenterView';
 import { BUNDLED_TEMPLATE_PACK } from '../../lib/bundledTemplatePack';
 
@@ -46,14 +46,29 @@ export default function ReleasesTab() {
     releaseId: currentPointer?.releaseId ?? null,
     scopeKey: activeScopeKey,
   });
+  const ackHealthRows = acks.map((ack) => {
+    const pointer = pointers.find((item) => item.id === (ack.scopeKey || 'global')) || null;
+    const state = classifyAckHealth(ack, { pointer, releases });
+    const tone = state === 'matched' ? 'success' : state === 'failed' ? 'danger'
+      : state === 'conflict' ? 'warning' : 'neutral';
+    return { ack, state, tone };
+  });
 
   const ackSummary = (release) => {
-    const ack = selectVerifiedAck(acks, { releaseId: release.id, scopeKey: release.scopeKey || 'global' });
-    if (!ack) return { tone: 'warning', label: 'غير معروف' };
-    const count = countAcknowledgingDevices(acks, { releaseId: release.id, scopeKey: release.scopeKey || 'global' });
-    if (ack.outcome === 'failed' || ack.outcome === 'rejected') return { tone: 'danger', label: `${count} جهاز — فشل` };
-    if (ack.outcome === 'partially_applied') return { tone: 'warning', label: `${count} جهاز — جزئي` };
-    return { tone: 'success', label: `${count} جهاز أكّد` };
+    const scope = release.scopeKey || 'global';
+    const pointer = pointers.find((item) => item.id === scope) || null;
+    const scopeAcks = acks.filter((ack) => ack.verified === true && (ack.scopeKey || 'global') === scope);
+    if (!scopeAcks.length) return { tone: 'warning', label: 'لا يوجد ACK' };
+    if (!pointer || pointer.releaseId !== release.id) return { tone: 'neutral', label: `${scopeAcks.length} ACK حديث — الإصدار سابق` };
+    const counts = { matched: 0, conflict: 0, stale: 0, failed: 0, unknown: 0 };
+    scopeAcks.forEach((ack) => {
+      const state = classifyAckHealth(ack, { pointer, releases });
+      counts[state] = (counts[state] || 0) + 1;
+    });
+    if (counts.conflict) return { tone: 'warning', label: `${counts.matched} مطابق · ${counts.conflict} تعارض` };
+    if (counts.failed) return { tone: 'danger', label: `${counts.failed} فشل` };
+    if (counts.matched) return { tone: 'success', label: `${counts.matched} مطابق` };
+    return { tone: 'neutral', label: ACK_HEALTH_LABELS[Object.keys(counts).find((key) => counts[key]) || 'unknown'] };
   };
 
   return (
@@ -137,6 +152,47 @@ export default function ReleasesTab() {
                 </li>
               ))}
             </ul>
+          )}
+        </Card>
+      </Section>
+
+      <Section title="آخر تأكيد لكل جهاز" description="تُقرأ وثيقة واحدة فقط لكل users/{uid}/template_acks/{deviceId}. الحالات مشتقة لحظياً مقارنة بالمؤشر النشط وبصمة الإصدار." className="mt-6">
+        <Card className="p-4">
+          {ackHealthRows.length === 0 ? (
+            <EmptyState icon={Smartphone} title="لا توجد تأكيدات أجهزة" description="ستظهر آخر استجابة من كل جهاز بعد استلام ACK موثّق من تطبيق Android." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-right text-sm">
+                <thead>
+                  <tr className="border-b border-stone-200 text-stone-600">
+                    <th className="px-3 py-3 font-bold">الحساب / الشبكة</th>
+                    <th className="px-3 py-3 font-bold">الجهاز</th>
+                    <th className="px-3 py-3 font-bold">آخر إصدار</th>
+                    <th className="px-3 py-3 font-bold">نتيجة التطبيق</th>
+                    <th className="px-3 py-3 font-bold">الحالة المحسوبة</th>
+                    <th className="px-3 py-3 font-bold">وقت الاستلام</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ackHealthRows.map(({ ack, state, tone }) => (
+                    <tr key={`${ack.uid || 'unknown'}-${ack.installationId}`} className="border-b border-stone-100 last:border-0">
+                      <td className="px-3 py-3">
+                        <span>{ack.networkId ? describeScope({ type: 'network', networkId: ack.networkId }, networks) : (ack.uid || '—')}</span>
+                        <span className="mt-1 block font-mono text-[11px] text-stone-500" dir="ltr">{ack.uid || '—'}</span>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs" dir="ltr">{ack.installationId}</td>
+                      <td className="px-3 py-3">
+                        <span className="font-mono" dir="ltr">{ack.version || ack.releaseId || '—'}</span>
+                        <span className="mt-1 block font-mono text-[11px] text-stone-500" dir="ltr">{ack.releaseId || '—'}</span>
+                      </td>
+                      <td className="px-3 py-3">{ack.outcome} · {ack.insertedCount} أضيف · {ack.conflictCount} تعارض</td>
+                      <td className="px-3 py-3"><Badge tone={tone}>{ACK_HEALTH_LABELS[state]}</Badge></td>
+                      <td className="px-3 py-3">{formatTimestamp(ack.appliedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       </Section>

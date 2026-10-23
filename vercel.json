@@ -17,8 +17,8 @@
       "destination": "/api/settings?__apiRoute=template-center"
     },
     {
-      "source": "/api/paid-features",
-      "destination": "/api/settings?__apiRoute=paid-features"
+      "source": "/api/admin/account-features",
+      "destination": "/api/settings?__apiRoute=account-features"
     },
     {
       "source": "/api/request-otp",

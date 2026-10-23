@@ -1,0 +1,11 @@
+{
+  "_synthetic": true,
+  "account_features": {
+    "mikrotik_card_generator": false,
+    "hotspot_template_editor": true,
+    "sms_auto_parser": false,
+    "advanced_analytics": false
+  },
+  "account_features_version": 1,
+  "account_features_updated_at_ms": 1761177600000
+}

@@ -1,5 +1,7 @@
 # عقود مركز الإدارة (قوالب / رسائل صادرة / محافظ / مزايا مدفوعة / ACK)
 
+> **ملاحظة superseded — 2026-10-23:** أجزاء `feature_entitlements` وACK التاريخي هنا لم تعد العقد المعتمد. المرجع الحالي هو `docs/ACCOUNT_FEATURES_ACK_CONTRACT_AR.md`: `account_features` فقط، وACK latest-only عبر Vercel في `users/{uid}/template_acks/{deviceId}`.
+
 > **الحالة:** المرحلة 1 — تثبيت العقود والحالات قبل بناء الشاشات. هذه الوثيقة
 > والمخططات في `contracts/` **عقود إصدار (versioned)** قابلة للاختبار، وليست
 > إعلانًا بأن أي شيء منفَّذ على Android أو منشور في الإنتاج.

@@ -27,7 +27,7 @@ const navGroups = [
       { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
       { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
       { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
-      { path: '/paid-features', label: 'المزايا المدفوعة', icon: Sparkles },
+      { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
     ],
   },
   {

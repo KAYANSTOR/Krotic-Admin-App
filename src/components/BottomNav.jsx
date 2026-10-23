@@ -34,7 +34,7 @@ const quickItems = [
   { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
   { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
   { path: '/template-center', label: 'مركز القوالب والمحافظ', icon: Layers3 },
-  { path: '/paid-features', label: 'المزايا المدفوعة', icon: Sparkles },
+  { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
   { path: '/audit', label: 'سجل العمليات', icon: ScrollText },

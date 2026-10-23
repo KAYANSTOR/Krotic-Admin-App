@@ -100,9 +100,15 @@ export const ADMIN_API_ERRORS = {
   template_center_read_failed: 'تعذرت قراءة الإصدار المنشور. أعد المحاولة لاحقًا.',
   template_center_failed: 'تعذر تنفيذ إجراء مركز القوالب. لم يكتمل الطلب.',
   request_body_invalid: 'تعذر قراءة بيانات الطلب. حدّث الصفحة وأعد المحاولة.',
-  paid_feature_update_failed: 'تعذر حفظ المزايا المدفوعة على الخادم.',
-  entitlements_must_be_object: 'بيانات المزايا غير صالحة.',
-  entitlements_empty: 'لم يتم تحديد أي ميزة للتعديل.',
+  account_features_failed: 'تعذر حفظ أو قراءة مزايا الحساب على الخادم.',
+  account_feature_catalog_invalid: 'كتالوج مزايا الحساب على الخادم غير صالح؛ أوقف الحفظ وراجع إعدادات الكتالوج.',
+  features_must_be_object: 'بيانات مزايا الحساب غير صالحة.',
+  features_empty: 'لم يتم تحديد أي ميزة للتعديل.',
+  installation_not_bound: 'لم يُربط هذا الجهاز بالحساب بعد؛ لا يمكن قبول ACK قبل ربطه.',
+  installation_mismatch: 'معرّف الجهاز لا يطابق الجهاز المرتبط بهذا الحساب.',
+  network_scope_mismatch: 'إصدار القالب لا يطابق الشبكة المرتبطة بالحساب.',
+  payload_hash_mismatch: 'بصمة ACK لا تطابق بصمة الإصدار المنشور.',
+  scope_mismatch: 'نطاق ACK لا يطابق نطاق الإصدار المنشور.',
   unknown_feature: 'ميزة غير معروفة في الطلب.',
 };
 
@@ -258,14 +264,15 @@ export async function callAdminApi(path, payload) {
   }
 }
 
-/**
- * المزايا المدفوعة: قراءة/كتابة خريطة `users/{uid}.feature_entitlements`
- * عبر المسار الخادمي المقيّد فقط (لا كتابة عميل مباشرة على Firestore).
- */
-export async function fetchPaidFeatureEntitlements(uid) {
-  return callAdminApi('/api/paid-features', { action: 'get', uid });
+/** إدارة account_features والكتالوج عبر الخادم فقط؛ لا قراءة/كتابة للحقول القديمة. */
+export async function fetchAccountFeatureCatalog() {
+  return callAdminApi('/api/admin/account-features', { action: 'catalog' });
 }
 
-export async function updatePaidFeatureEntitlements({ uid, entitlements }) {
-  return callAdminApi('/api/paid-features', { action: 'set', uid, entitlements });
+export async function fetchAccountFeatures(uid) {
+  return callAdminApi('/api/admin/account-features', { action: 'get', uid });
+}
+
+export async function updateAccountFeatures({ uid, features }) {
+  return callAdminApi('/api/admin/account-features', { action: 'set', uid, features });
 }

@@ -41,7 +41,7 @@ const PAGE_TITLES = {
   '/template-center/outbound': 'الرسائل الصادرة',
   '/template-center/releases': 'الإصدارات والمؤشرات',
   '/template-center/reconciliation': 'التسوية والعناصر القديمة',
-  '/paid-features': 'المزايا المدفوعة',
+  '/paid-features': 'مزايا الحساب',
 };
 
 export default function Layout({ children }) {

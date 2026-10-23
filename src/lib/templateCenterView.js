@@ -229,6 +229,29 @@ export function countAcknowledgingDevices(acks = [], { releaseId = null, scopeKe
   return devices.size;
 }
 
+export const ACK_HEALTH_LABELS = Object.freeze({
+  matched: 'مطابق ومطبّق',
+  conflict: 'تعارض أو تطبيق جزئي',
+  stale: 'ACK لإصدار قديم',
+  failed: 'فشل على الجهاز',
+  unknown: 'غير معروف',
+});
+
+/** حالة حسابية فقط: لا تُخزَّن، وتُقارن آخر ACK للمثبت بالإصدار النشط وبصمته. */
+export function classifyAckHealth(ack, { pointer = null, releases = [] } = {}) {
+  if (!ack || ack.verified !== true) return 'unknown';
+  if (!pointer?.releaseId) return 'stale';
+  if ((ack.scopeKey || 'global') !== pointer.id) return 'conflict';
+  if (ack.releaseId !== pointer.releaseId) return 'stale';
+  const release = releases.find((item) => item.id === pointer.releaseId);
+  if (!release) return 'unknown';
+  const expectedHash = String(release.payloadHashSha256 || release.payloadHash || '').toLowerCase();
+  if (!expectedHash || String(ack.payloadHash || '').toLowerCase() !== expectedHash) return 'conflict';
+  if (ack.outcome === 'failed') return 'failed';
+  if (ack.outcome !== 'applied' || ack.conflictCount > 0 || ack.parserRefreshed !== true) return 'conflict';
+  return 'matched';
+}
+
 /** وصف نطاق مقروء (عام / اسم شبكة). */
 export function describeScope(scope, networks = []) {
   if (!scope || scope.type === 'global') return 'عام لكل الشبكات';

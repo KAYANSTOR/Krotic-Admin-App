@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/account-features-catalog.schema.json",
+  "schemaVersion": 1,
+  "title": "Krotak Pro account feature catalog",
+  "description": "وثيقة app_settings/account_features_catalog: قائمة المفاتيح المعروفة وتسمياتها. الكتالوج للعرض والتحقق الإداري فقط؛ لا يمنح صلاحية. الصلاحية الفعلية في users/{uid}.account_features.",
+  "type": "object",
+  "required": ["schema_version", "updated_at_ms", "features"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "updated_at_ms": { "type": "integer", "minimum": 1700000000000 },
+    "features": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "required": ["key", "label_ar", "default", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "$ref": "#/$defs/featureKey" },
+          "label_ar": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "description_ar": { "type": "string", "maxLength": 300 },
+          "default": { "const": false },
+          "status": { "enum": ["active", "retired"] },
+          "min_app_build": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "featureKey": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}$" }
+  }
+}

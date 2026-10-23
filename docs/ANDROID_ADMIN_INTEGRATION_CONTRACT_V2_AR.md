@@ -1,5 +1,7 @@
 # عقد التكامل المحدّث بين لوحة الإدارة وتطبيق Android (Krotak Pro) — المرحلة 1
 
+> **تحديث 2026-10-23:** مرجع المزايا وACK الحالي هو `docs/ACCOUNT_FEATURES_ACK_CONTRACT_AR.md`. لا تعتمد `feature_entitlements` أو `template_center_device_acks` الواردة في النسخة التاريخية أدناه؛ العقد الحالي `account_features` و`users/{uid}/template_acks/{deviceId}` مع كتابة Vercel فقط.
+
 **الإصدار:** `1.0.0` (Contract Versioned)  
 **الحالة:** عقد رسمي وموحّد لربط لوحة الإدارة (`KAYANSTOR/Krotic-Admin-App`) بتطبيق Android (`KAYANSTOR/Krotak-Pro`).  
 **حدود الأمان والنطاق:**
