@@ -752,138 +752,264 @@
   .dash-error__msg { margin-top: .25rem; font-size: .875rem; }
 
 
-  /* المالية */
-  .dash-finance {
-    display: grid; gap: 1rem;
-    grid-template-columns: 1fr;
-    margin-bottom: 2rem;
+  /* ===== لوحة التحكم — هيكل الشاشة الرئيسية ===== */
+
+  /* الترحيب المدمج: هوية + تاريخ تحديث، بلا مساحة رأسية زائدة. */
+  .dash-welcome {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: 1rem;
+    padding: .875rem 1rem;
+    border: 1px solid var(--ui-line);
+    border-radius: 16px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
   }
-  @media (min-width: 1024px) {
-    .dash-finance { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  .dash-welcome__avatar {
+    display: grid; place-items: center;
+    width: 44px; height: 44px; flex-shrink: 0;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--ui-brand), var(--ui-brand-deep));
+    color: #fff; font-size: 1rem; font-weight: 800;
+    box-shadow: 0 6px 14px -8px rgba(var(--ui-forest-rgb), .5);
   }
-  .dash-finance__primary {
+  .dash-welcome__identity { min-width: 0; }
+  .dash-welcome__eyebrow { font-size: .6875rem; font-weight: 800; letter-spacing: .06em; color: var(--ui-muted); }
+  .dash-welcome__title {
+    margin-top: .1rem; font-size: 1.0625rem; font-weight: 800; color: var(--ui-ink);
+    letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dash-welcome__status { display: inline-flex; align-items: center; gap: .3rem; margin-top: .2rem; font-size: .6875rem; font-weight: 700; color: var(--ui-muted); }
+  .dash-welcome__dot { width: 6px; height: 6px; border-radius: 999px; background: var(--ui-success); }
+  .dash-welcome__status.is-offline { color: var(--ui-warning-ink); }
+  .dash-welcome__status.is-offline .dash-welcome__dot { background: var(--ui-warning); }
+  .dash-welcome__freshness {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    padding-top: .625rem;
+    border-top: 1px solid var(--ui-line);
+  }
+  @media (min-width: 720px) {
+    .dash-welcome { grid-template-columns: auto minmax(0, 1fr) auto; gap: 1rem; }
+    .dash-welcome__freshness { grid-column: auto; padding-top: 0; border-top: 0; flex-wrap: wrap; }
+  }
+
+  /* البطاقة الرئيسية: أهم مؤشر + مؤشرات ثانوية + أربعة إجراءات. */
+  .dash-summary { margin-bottom: 1.25rem; }
+  .dash-summary__hero {
     position: relative; overflow: hidden; isolation: isolate;
-    padding: 1.75rem; border-radius: 28px; color: #fff;
-    background: linear-gradient(125deg, #235347 0%, #163832 45%, #0B2B26 100%);
-    box-shadow: 0 18px 38px -22px rgba(var(--ui-green-rgb),.68);
+    padding: 1.25rem;
+    border-radius: 20px;
+    color: #fff;
+    background: linear-gradient(150deg, var(--ui-primary-green) 0%, var(--ui-forest-green) 52%, var(--ui-deep-forest) 100%);
+    box-shadow: 0 16px 34px -24px rgba(var(--ui-forest-rgb), .75);
   }
-  .dash-finance__primary::before,
-  .dash-finance__primary::after {
+  .dash-summary__hero::before,
+  .dash-summary__hero::after {
     position: absolute; z-index: -1; border-radius: 999px; content: '';
     pointer-events: none;
   }
-  .dash-finance__primary::before {
-    top: -90px; inset-inline-start: -50px; height: 230px; width: 230px;
-    background: rgba(255,255,255,.08);
+  .dash-summary__hero::before {
+    top: -100px; inset-inline-start: -60px; width: 230px; height: 230px;
+    background: rgba(255,255,255,.07);
   }
-  .dash-finance__primary::after {
-    inset-inline-end: -45px; bottom: -120px; height: 280px; width: 280px;
-    background: rgba(var(--ui-forest-rgb),.18);
+  .dash-summary__hero::after {
+    inset-inline-end: -70px; bottom: -130px; width: 260px; height: 260px;
+    background: rgba(var(--ui-forest-rgb), .22);
   }
-  .dash-finance__head {
-    display: flex; flex-wrap: wrap; align-items: center;
-    justify-content: space-between; gap: .75rem;
+  .dash-summary__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+  .dash-summary__label { font-size: .8125rem; font-weight: 700; color: rgba(255,255,255,.82); }
+  .dash-summary__badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .3rem .6rem; border-radius: 999px;
+    font-size: .6875rem; font-weight: 800;
+    background: rgba(255,255,255,.14); color: #fff;
+    white-space: nowrap;
   }
-  .dash-finance__eyebrow {
-    font-size: .875rem; font-weight: 700; color: rgba(255,255,255,.85);
+  .dash-summary__value { display: flex; align-items: baseline; flex-wrap: wrap; gap: .375rem; margin-top: .875rem; }
+  .dash-summary__value strong {
+    font-size: clamp(2rem, 9.5vw, 2.75rem); font-weight: 800;
+    letter-spacing: -.03em; line-height: 1.05;
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
   }
-  .dash-finance__pill {
-    display: inline-flex; align-items: center; gap: .375rem;
-    padding: .375rem .75rem; border-radius: 999px;
-    font-size: .75rem; font-weight: 800;
-    background: rgba(255,255,255,.14); color: rgba(255,255,255,.92);
-    backdrop-filter: blur(8px);
+  .dash-summary__value span { font-size: .8125rem; font-weight: 700; color: rgba(255,255,255,.75); }
+  .dash-summary__hint { margin-top: .5rem; font-size: .75rem; line-height: 1.6; color: rgba(255,255,255,.7); max-width: 32rem; }
+  .dash-summary__meta {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem;
+    margin-top: 1rem; padding-top: .875rem;
+    border-top: 1px solid rgba(255,255,255,.16);
   }
-  .dash-finance__value {
-    display: flex; align-items: baseline; gap: .5rem; margin-top: 1.5rem;
+  .dash-summary__meta-item { min-width: 0; }
+  .dash-summary__meta dt { display: flex; align-items: center; gap: .3rem; font-size: .6875rem; font-weight: 700; color: rgba(255,255,255,.68); }
+  .dash-summary__meta dd { margin-top: .25rem; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .dash-summary__meta dd small { font-size: .6875rem; font-weight: 700; color: rgba(255,255,255,.7); }
+
+  /* الإجراءات الأربعة داخل البطاقة الرئيسية */
+  .dash-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; margin-top: 1.125rem; }
+  .dash-quick__item {
+    display: flex; flex-direction: column; align-items: center; gap: .45rem;
+    min-width: 0; min-height: 44px; padding: .25rem .1rem;
+    border-radius: 12px; color: #fff; text-decoration: none; text-align: center;
+    transition: background-color var(--ui-motion-fast) var(--ui-ease), transform var(--ui-motion-fast) var(--ui-ease);
   }
-  .dash-finance__value strong {
-    font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 800;
-    letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  .dash-quick__icon {
+    display: grid; place-items: center;
+    width: 46px; height: 46px; border-radius: 999px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.16);
+    color: #fff;
+    transition: background-color var(--ui-motion-fast) var(--ui-ease), color var(--ui-motion-fast) var(--ui-ease);
   }
-  .dash-finance__value span {
-    font-size: 1rem; font-weight: 700; color: rgba(255,255,255,.78);
-  }
-  .dash-finance__hint {
-    margin-top: .75rem; font-size: .8125rem; color: rgba(255,255,255,.72);
-    max-width: 32rem;
-  }
-  .dash-finance__side {
-    display: grid; gap: 1rem;
-    grid-template-columns: 1fr;
-  }
-  @media (min-width: 640px) {
-    .dash-finance__side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-quick__icon svg { width: 20px; height: 20px; }
+  .dash-quick__item--primary .dash-quick__icon { background: var(--ui-mint-surface); border-color: var(--ui-mint-surface); color: var(--ui-forest-green); }
+  .dash-quick__label { font-size: .6875rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+  .dash-quick__item:active { transform: scale(.97); }
+  @media (hover: hover) {
+    .dash-quick__item:hover .dash-quick__icon { background: rgba(255,255,255,.2); }
+    .dash-quick__item--primary:hover .dash-quick__icon { background: #fff; }
   }
   @media (min-width: 1024px) {
-    .dash-finance__side { grid-template-columns: 1fr; }
-  }
-  .dash-finance__tile {
-    display: flex; align-items: center; gap: .875rem;
-    padding: 1.25rem; border-radius: 22px;
-    border: 1px solid var(--ui-line); background: var(--ui-surface);
-    box-shadow: var(--ui-shadow-card);
-  }
-  .dash-finance__tile-icon {
-    display: grid; place-items: center; width: 44px; height: 44px;
-    border-radius: 15px; flex-shrink: 0;
-  }
-  .dash-finance__tile--gold .dash-finance__tile-icon {
-    background: var(--ui-gold-soft); color: var(--ui-gold-ink);
-  }
-  .dash-finance__tile--brand .dash-finance__tile-icon {
-    background: var(--ui-brand-soft); color: var(--ui-brand-deep);
-  }
-  .dash-finance__tile-label {
-    font-size: .75rem; font-weight: 700; color: var(--ui-muted);
-  }
-  .dash-finance__tile-value {
-    margin-top: .25rem; font-size: 1.375rem; font-weight: 800;
-    font-variant-numeric: tabular-nums; color: var(--ui-ink);
-  }
-  .dash-finance__tile-value small {
-    font-size: .75rem; font-weight: 700; color: var(--ui-muted);
+    .dash-welcome { padding: 1rem 1.25rem; }
+    .dash-summary__hero { padding: 1.75rem 2rem; }
+    .dash-summary__value strong { font-size: clamp(2.5rem, 3.6vw, 3.25rem); }
+    .dash-summary__hint { font-size: .8125rem; }
+    .dash-quick { max-width: 560px; }
   }
 
-  /* إجراءات سريعة */
-  .dash-actions { display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  /* الخدمات والأقسام: شبكة موحّدة داخل بطاقة واحدة */
+  .dash-services-section { margin-bottom: 1.25rem; }
+  .dash-services {
+    display: grid; gap: .625rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: .75rem;
+    border: 1px solid var(--ui-line);
+    border-radius: 16px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+  }
   @media (min-width: 640px) {
-    .dash-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dash-services { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
-  @media (min-width: 1280px) { .dash-actions { grid-template-columns:repeat(4,minmax(0,1fr)); } }
-  .dash-action {
-    position: relative; display: flex; align-items: center; gap: .75rem;
-    min-height: 96px; padding: 1.125rem;
-    border-radius: 22px; background: var(--ui-surface);
-    border: 1px solid var(--ui-line); color: var(--ui-ink);
-    text-decoration: none;
-    box-shadow: 0 4px 20px -4px rgba(var(--ui-ink-rgb),.05);
-    transition: transform .18s var(--ui-ease), box-shadow .18s var(--ui-ease),
-                border-color .18s var(--ui-ease);
+  .dash-service {
+    display: flex; align-items: center; justify-content: flex-start;
+    gap: .625rem; min-width: 0; min-height: 76px; padding: .625rem .75rem;
+    border: 1px solid transparent; border-radius: 12px;
+    background: var(--ui-sunken);
+    color: var(--ui-ink); text-decoration: none; text-align: start;
+    transition: background-color var(--ui-motion-fast) var(--ui-ease),
+                border-color var(--ui-motion-fast) var(--ui-ease);
   }
-  .dash-action:hover {
-    transform: translateY(-3px);
-    border-color: var(--ui-brand-tint);
-    box-shadow: var(--ui-shadow-soft);
+  .dash-service:active { background: var(--ui-brand-soft); }
+  @media (hover: hover) {
+    .dash-service:hover { background: var(--ui-brand-soft); border-color: rgba(var(--ui-primary-rgb),.16); }
   }
-  .dash-action__label { font-size: .875rem; font-weight: 700; }
-  .dash-action__arrow {
-    margin-inline-start: auto; width: 1rem; height: 1rem;
-    color: #C0D3C6;
-    transition: transform .18s var(--ui-ease), color .18s var(--ui-ease);
+  .dash-service__label {
+    min-width: 0;
+    font-size: .75rem; font-weight: 700; line-height: 1.35;
+    overflow-wrap: anywhere;
   }
-  .dash-action:hover .dash-action__arrow {
-    transform: translate(-2px, -2px); color: var(--ui-brand);
+
+  /* الملخص الثانوي: نسبة تسوية عمولة الإدارة */
+  .dash-progress {
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.125rem;
+    border: 1px solid var(--ui-line);
+    border-radius: 16px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
   }
-  .recent-operations { display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--ui-line); border-radius:22px; background:var(--ui-surface); box-shadow:var(--ui-shadow-card); }
-  .recent-operation { display:flex; align-items:center; gap:.75rem; min-width:0; padding:1rem 1.125rem; color:var(--ui-ink); text-decoration:none; border-bottom:1px solid var(--ui-line); transition:background-color .16s var(--ui-ease); }
-  .recent-operation:last-child { border-bottom:0; }
-  .recent-operation:hover { background:var(--ui-brand-soft); }
-  .recent-operation__icon { display:grid; place-items:center; width:36px; height:36px; flex-shrink:0; border-radius:12px; background:var(--ui-gold-soft); color:var(--ui-gold-ink); }
-  .recent-operation__body { display:flex; flex-direction:column; min-width:0; flex:1; gap:.2rem; }
-  .recent-operation__body strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; }
-  .recent-operation__body span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.6875rem; color:var(--ui-muted); }
-  .recent-operation__amount { flex-shrink:0; font-size:.75rem; font-weight:800; color:var(--ui-brand-deep); }
+  .dash-progress__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .dash-progress__eyebrow { font-size: .6875rem; font-weight: 800; letter-spacing: .06em; color: var(--ui-muted); }
+  .dash-progress__title { margin-top: .15rem; font-size: 1rem; font-weight: 800; color: var(--ui-ink); }
+  .dash-progress__percent { font-size: 1.25rem; font-weight: 800; color: var(--ui-brand-deep); font-variant-numeric: tabular-nums; }
+  .dash-progress__track {
+    height: 10px; margin-top: .875rem;
+    border-radius: 999px; background: var(--ui-sunken); overflow: hidden;
+  }
+  .dash-progress__fill {
+    display: block; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg, var(--ui-brand), var(--ui-sage-green));
+    transition: width var(--ui-motion-slow) var(--ui-ease-out);
+  }
+  .dash-progress__caption { margin-top: .625rem; font-size: .8125rem; font-weight: 700; color: var(--ui-ink-soft); font-variant-numeric: tabular-nums; }
+  .dash-progress__note { margin-top: .2rem; font-size: .6875rem; color: var(--ui-muted); }
+
+  /* رابط "عرض الكل" داخل رؤوس الأقسام */
+  .section__link {
+    display: inline-flex; align-items: center;
+    min-height: 36px; padding: .25rem .55rem;
+    border-radius: 8px;
+    font-size: .75rem; font-weight: 800;
+    color: var(--ui-brand-deep); text-decoration: none;
+    white-space: nowrap;
+    transition: background-color var(--ui-motion-fast) var(--ui-ease);
+  }
+  .section__link:hover { background: var(--ui-brand-soft); }
+  .section__link:active { background: var(--ui-brand-soft); }
+
+  /* أدوات الصيانة المتقدمة: في نهاية الشاشة وقابلة للطي */
+  .card.dash-maintenance { margin-top: 1.25rem; padding: 0; overflow: hidden; }
+  .dash-maintenance__summary {
+    display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+    padding: 1rem 1.125rem;
+    cursor: pointer; list-style: none;
+  }
+  .dash-maintenance__summary::-webkit-details-marker { display: none; }
+  .dash-maintenance__summary-main { display: flex; align-items: center; gap: .625rem; min-width: 0; }
+  .dash-maintenance__icon {
+    display: grid; place-items: center;
+    width: 36px; height: 36px; flex-shrink: 0;
+    border-radius: 12px; background: var(--ui-sunken); color: var(--ui-muted);
+  }
+  .dash-maintenance__title { display: block; font-size: .8125rem; font-weight: 800; color: var(--ui-ink); }
+  .dash-maintenance__sub { display: block; margin-top: .1rem; font-size: .6875rem; color: var(--ui-muted); }
+  .dash-maintenance__chevron {
+    width: 1rem; height: 1rem; flex-shrink: 0; color: var(--ui-muted);
+    transition: transform var(--ui-motion-base) var(--ui-ease);
+  }
+  .dash-maintenance details[open] .dash-maintenance__chevron { transform: rotate(180deg); }
+  .dash-maintenance__body { padding: .875rem 1.125rem 1.125rem; border-top: 1px solid var(--ui-line); }
+  .dash-maintenance__actions { display: flex; margin-top: .75rem; }
+  .card.dash-maintenance--done { margin-top: 1.25rem; padding: 1rem 1.125rem; }
+  /* آخر العمليات: قائمة موحّدة الصفوف مع حالة واضحة */
+  .recent-operations {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--ui-line); border-radius: 16px;
+    background: var(--ui-surface); box-shadow: var(--ui-shadow-card);
+  }
+  .recent-operations li + li { border-top: 1px solid var(--ui-line); }
+  .recent-operation {
+    display: flex; align-items: center; gap: .75rem;
+    min-height: 68px; padding: .75rem 1rem;
+    color: var(--ui-ink); text-decoration: none;
+    transition: background-color var(--ui-motion-fast) var(--ui-ease);
+  }
+  .recent-operation:active { background: #F1F7F3; }
+  @media (hover: hover) {
+    .recent-operation:hover { background: #F6FAF7; }
+  }
+  .recent-operation__icon {
+    display: grid; place-items: center;
+    width: 40px; height: 40px; flex-shrink: 0;
+    border-radius: 12px; background: var(--ui-brand-soft); color: var(--ui-brand-deep);
+  }
+  .recent-operation__body { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: .15rem; }
+  .recent-operation__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 800; }
+  .recent-operation__body > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .6875rem; color: var(--ui-muted); }
+  .recent-operation__end { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; flex-shrink: 0; text-align: end; }
+  .recent-operation__amount { font-size: .8125rem; font-weight: 800; color: var(--ui-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .recent-operation__amount small { font-size: .625rem; font-weight: 700; color: var(--ui-muted); }
+  .recent-operation .badge { font-size: .625rem; padding: .2rem .5rem; white-space: nowrap; }
+  @media (max-width: 420px) {
+    .recent-operation { gap: .625rem; padding: .7rem .75rem; }
+    .recent-operation__icon { width: 36px; height: 36px; }
+    .recent-operation__body strong { font-size: .75rem; }
+    .recent-operation__body > span { font-size: .625rem; }
+    .recent-operation__amount { font-size: .75rem; }
+  }
 
   /* حالة النظام */
   .dash-status {
@@ -2330,6 +2456,8 @@ body { background: var(--ui-paper); }
   .app-header__actions { gap: .375rem; }
   .app-header__actions > button { min-width: 40px; min-height: 40px; }
   .admin-chip__avatar { width: 36px; height: 36px; border-radius: 10px; box-shadow: 0 4px 10px -6px rgba(var(--ui-forest-rgb),.4); }
+  /* على الهاتف: زر كلمة المرور يكفي، والهوية ظاهرة في ترحيب اللوحة. */
+  .app-header .admin-chip { display: none; }
   .page-header {
     background: linear-gradient(150deg, #FFFFFF 0%, #F3FAF5 58%, #E7F3EA 100%);
     border: 1px solid var(--ui-line);
