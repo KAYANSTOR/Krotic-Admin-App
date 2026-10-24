@@ -269,7 +269,7 @@ export default function Layout({ children }) {
         <main className="app-main" id="main-content" tabIndex={-1}>
           <PullToRefresh
             onRefresh={async () => {
-              // السحب للأسفل = مزامنة تزايدية (لا قراءة كاملة)، ثم إعادة قراءة محلية.
+              // التحديث اليدوي يزامن التغييرات ويستورد تاريخ السجلات القديمة عند وجود نقص محلي.
               await runSync({ reason: 'manual' }).catch(() => undefined);
               emitAppRefresh();
               await new Promise((resolve) => setTimeout(resolve, 400));

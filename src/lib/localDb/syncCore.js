@@ -30,13 +30,13 @@ export async function applyRows(localDb, src, rows) {
   await localDb.table(src.table).bulkPut(rows);
 }
 
-/** يعيد مؤشري sales/payments مرة واحدة لالتقاط مسار UID القديم عند التحديث اليدوي. */
-export async function resetSalesHistoryCursorsOnce(localDb) {
+/** يعيد مؤشرات الحسابات والشبكات والمبيعات والدفعات مرة واحدة عند التحديث اليدوي. */
+export async function resetLegacyDataCursorsOnce(localDb) {
   if (!localDb) return false;
-  const key = 'legacy-sales-path-reset-v1';
+  const key = 'legacy-data-path-reset-v2';
   const marker = await localDb.meta.get(key);
   if (marker?.value === 1) return false;
-  for (const sourceKey of ['sales', 'payments']) {
+  for (const sourceKey of ['users', 'networks', 'sales', 'payments']) {
     const state = await localDb.sync_state.get(sourceKey);
     if (state && Number(state.cursorMs) > 0) {
       await localDb.sync_state.put({ ...state, cursorMs: 0, legacyPathResetAt: Date.now() });
@@ -44,6 +44,44 @@ export async function resetSalesHistoryCursorsOnce(localDb) {
   }
   await localDb.meta.put({ key, value: 1, resetAt: Date.now() });
   return true;
+}
+
+/**
+ * يستورد محلياً الوثائق التي لا تحمل updatedAtMs دون تعديل Firestore.
+ * لا يعيد المسح الكامل إلا في أول مرة أو عندما يتغير عدد وثائق المصدر.
+ */
+export async function importUnindexedRowsWhenCountChanges(localDb, sources, { getRemoteCount, scanAll, now = () => Date.now() } = {}) {
+  if (!localDb || typeof getRemoteCount !== 'function' || typeof scanAll !== 'function') {
+    return { scannedDocuments: 0, importedRows: 0, scannedSources: 0 };
+  }
+  let scannedDocuments = 0;
+  let importedRows = 0;
+  let scannedSources = 0;
+
+  for (const src of sources) {
+    const remoteCount = Number(await getRemoteCount(src));
+    if (!Number.isSafeInteger(remoteCount) || remoteCount < 0) throw new TypeError(`remote_count_invalid:${src.key}`);
+    const markerKey = `legacy-unindexed-count:${src.key}`;
+    const marker = await localDb.meta.get(markerKey);
+    if (marker && Number(marker.remoteCount) === remoteCount) continue;
+
+    const importedBefore = importedRows;
+    await scanAll(src, async (rows) => {
+      scannedDocuments += rows.length;
+      const missingTimestamp = rows.filter((row) => {
+        const updatedAtMs = Number(row?.updatedAtMs);
+        return !Number.isFinite(updatedAtMs) || updatedAtMs <= 0;
+      });
+      if (!missingTimestamp.length) return;
+      await localDb.table(src.table).bulkPut(missingTimestamp);
+      importedRows += missingTimestamp.length;
+    });
+    await localDb.meta.put({ key: markerKey, remoteCount, scannedAt: now(), imported: importedRows - importedBefore });
+    scannedSources += 1;
+  }
+
+  if (importedRows > 0) emitSyncEvent({ type: 'rows', key: 'legacy_unindexed', changed: importedRows });
+  return { scannedDocuments, importedRows, scannedSources };
 }
 
 /**

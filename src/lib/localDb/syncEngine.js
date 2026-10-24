@@ -1,10 +1,17 @@
 import {
-  collection, collectionGroup, getDocs, limit, orderBy, query, startAfter, where,
+  collection, collectionGroup, documentId, getCountFromServer, getDocs, limit, orderBy, query, startAfter, where,
 } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
 import { plain } from './plain';
 import { countReads } from './readMeter';
-import { applyRows, applyTombstones, syncSource, createSyncController, resetSalesHistoryCursorsOnce } from './syncCore';
+import {
+  applyRows,
+  applyTombstones,
+  syncSource,
+  createSyncController,
+  resetLegacyDataCursorsOnce,
+  importUnindexedRowsWhenCountChanges,
+} from './syncCore';
 
 const PAGE_SIZE = 300;
 const MIN_AUTO_INTERVAL_MS = 60_000;
@@ -105,13 +112,47 @@ export async function pullSince(src, cursorMs, onRows) {
   return maxMs;
 }
 
+const LEGACY_COUNT_KEYS = new Set(['users', 'networks', 'sales', 'payments']);
+
+async function getRemoteCount(src) {
+  const snapshot = await getCountFromServer(query(src.ref()));
+  countReads(`sync:legacy-count:${src.key}`, 1, { fromCache: false });
+  return snapshot.data().count;
+}
+
+/** قراءة صفحات كاملة للقراءة فقط؛ تُطبق محلياً على الصفوف التي تفتقد updatedAtMs. */
+async function scanAllDocuments(src, onRows) {
+  let last = null;
+  for (;;) {
+    const constraints = [orderBy(documentId(), 'asc')];
+    if (last) constraints.push(startAfter(last));
+    constraints.push(limit(PAGE_SIZE));
+    const snapshot = await getDocs(query(src.ref(), ...constraints));
+    countReads(`sync:legacy-scan:${src.key}`, snapshot.size, { fromCache: snapshot.metadata?.fromCache ?? null });
+    if (snapshot.empty) return;
+    await onRows(snapshot.docs.map(src.map));
+    last = snapshot.docs[snapshot.docs.length - 1];
+    if (snapshot.size < PAGE_SIZE) return;
+  }
+}
+
 const controller = createSyncController({ minAutoIntervalMs: MIN_AUTO_INTERVAL_MS });
 controller.configure({ latestMs, pullSince });
 
 /** مزامنة واحدة في كل وقت. التلقائي محدود بفاصل دقيقة، واليدوي دائماً ينفذ. */
 export function syncAll(localDb, { reason = 'auto' } = {}) {
   if (reason === 'manual') {
-    return resetSalesHistoryCursorsOnce(localDb).then(() => controller.run(localDb, SOURCES, { reason }));
+    return (async () => {
+      await resetLegacyDataCursorsOnce(localDb);
+      const results = await controller.run(localDb, SOURCES, { reason });
+      if (!Array.isArray(results)) return results;
+      const legacy = await importUnindexedRowsWhenCountChanges(
+        localDb,
+        SOURCES.filter((src) => LEGACY_COUNT_KEYS.has(src.key)),
+        { getRemoteCount, scanAll: scanAllDocuments },
+      );
+      return [...results, { key: 'legacy_unindexed', changed: legacy.importedRows, scanned: legacy.scannedDocuments }];
+    })();
   }
   return controller.run(localDb, SOURCES, { reason });
 }

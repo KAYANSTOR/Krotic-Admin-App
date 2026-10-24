@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { plain } from '../src/lib/localDb/plain.js';
-import { applyRows, applyTombstones, syncSource, createSyncController, resetSalesHistoryCursorsOnce } from '../src/lib/localDb/syncCore.js';
+import {
+  applyRows,
+  applyTombstones,
+  syncSource,
+  createSyncController,
+  resetLegacyDataCursorsOnce,
+  importUnindexedRowsWhenCountChanges,
+} from '../src/lib/localDb/syncCore.js';
 import { createMemoryDb, createFakeSource } from './helpers/memoryDb.js';
 
 test('plain converts Firestore timestamps into epoch milliseconds', () => {
@@ -55,22 +62,59 @@ test('second sync without changes reads only the check query', async () => {
   assert.equal(pullCalls, 0, 'the incremental pull must be skipped when nothing changed');
 });
 
-test('manual legacy path refresh resets sales and payment cursors once without deleting cached data', async () => {
+test('manual legacy refresh resets entity cursors once without deleting cached data', async () => {
   const localDb = createMemoryDb();
   await localDb.sync_state.put({ key: 'sales', cursorMs: 500 });
   await localDb.sync_state.put({ key: 'payments', cursorMs: 700 });
   await localDb.sync_state.put({ key: 'users', cursorMs: 900 });
+  await localDb.sync_state.put({ key: 'networks', cursorMs: 1100 });
+  await localDb.sync_state.put({ key: 'audit_logs', cursorMs: 1300 });
   await localDb.sales.put({ networkId: 'NET-1', id: 'cached-sale', updatedAtMs: 12 });
 
-  assert.equal(await resetSalesHistoryCursorsOnce(localDb), true);
+  assert.equal(await resetLegacyDataCursorsOnce(localDb), true);
   assert.equal((await localDb.sync_state.get('sales')).cursorMs, 0);
   assert.equal((await localDb.sync_state.get('payments')).cursorMs, 0);
-  assert.equal((await localDb.sync_state.get('users')).cursorMs, 900);
+  assert.equal((await localDb.sync_state.get('users')).cursorMs, 0);
+  assert.equal((await localDb.sync_state.get('networks')).cursorMs, 0);
+  assert.equal((await localDb.sync_state.get('audit_logs')).cursorMs, 1300);
   assert.equal(await localDb.sales.count(), 1, 'existing local rows are retained for idempotent refresh');
 
   await localDb.sync_state.put({ key: 'sales', cursorMs: 1200 });
-  assert.equal(await resetSalesHistoryCursorsOnce(localDb), false);
+  assert.equal(await resetLegacyDataCursorsOnce(localDb), false);
   assert.equal((await localDb.sync_state.get('sales')).cursorMs, 1200);
+});
+
+test('manual history scan imports only unindexed rows and rescans only when collection count changes', async () => {
+  const localDb = createMemoryDb();
+  const source = { key: 'sales', table: 'sales' };
+  let remoteCount = 3;
+  let scanCalls = 0;
+  let rows = [
+    { networkId: 'uid-old', id: 'legacy-1', amount: 12 },
+    { networkId: 'NET-1', id: 'current-1', updatedAtMs: 100, amount: 20 },
+    { networkId: 'uid-old', id: 'legacy-zero', updatedAtMs: 0, amount: 5 },
+  ];
+  const options = {
+    getRemoteCount: async () => remoteCount,
+    scanAll: async (_src, onRows) => { scanCalls += 1; await onRows(rows); },
+    now: () => 1234,
+  };
+
+  const first = await importUnindexedRowsWhenCountChanges(localDb, [source], options);
+  assert.deepEqual(first, { scannedDocuments: 3, importedRows: 2, scannedSources: 1 });
+  assert.equal(await localDb.sales.count(), 2);
+  assert.equal(scanCalls, 1);
+
+  const unchanged = await importUnindexedRowsWhenCountChanges(localDb, [source], options);
+  assert.deepEqual(unchanged, { scannedDocuments: 0, importedRows: 0, scannedSources: 0 });
+  assert.equal(scanCalls, 1, 'unchanged collections should not be rescanned');
+
+  remoteCount = 4;
+  rows = [...rows, { networkId: 'uid-old', id: 'legacy-2', amount: 17 }];
+  const added = await importUnindexedRowsWhenCountChanges(localDb, [source], options);
+  assert.equal(added.importedRows, 3, 'the changed count triggers an idempotent refresh of unindexed rows');
+  assert.equal(await localDb.sales.count(), 3);
+  assert.equal(scanCalls, 2);
 });
 
 test('empty sources skip the pull query and still pick up rows backfilled to updatedAtMs=1', async () => {
