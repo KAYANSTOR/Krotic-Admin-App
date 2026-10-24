@@ -22,6 +22,7 @@ test('update requires at least one mutable field; delete requires a valid uid', 
   assert.equal(validateAdminInput({ action: 'update', uid: 'admin-1' }).error, 'no_fields');
   assert.equal(validateAdminInput({ action: 'delete', uid: 'bad uid!' }).error, 'uid_invalid');
   assert.equal(validateAdminInput({ action: 'delete', uid: 'admin-1' }).ok, true);
+});
 
 test('server admin check accepts the legacy lowercase admins collection', async () => {
   const makeDb = (legacyAdmin) => ({
@@ -41,6 +42,4 @@ test('server admin check accepts the legacy lowercase admins collection', async 
 
   assert.equal(await isAdminUid('legacy-admin-test-uid', () => makeDb(true)), true);
   assert.equal(await isAdminUid('missing-admin-test-uid', () => makeDb(false)), false);
-});
-
 });
