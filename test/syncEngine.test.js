@@ -55,6 +55,29 @@ test('second sync without changes reads only the check query', async () => {
   assert.equal(pullCalls, 0, 'the incremental pull must be skipped when nothing changed');
 });
 
+test('empty sources skip the pull query and still pick up rows backfilled to updatedAtMs=1', async () => {
+  const localDb = createMemoryDb();
+  const source = createFakeSource('users', 'users', []);
+  let pullCalls = 0;
+  const ctx = {
+    latestMs: (src) => src.latestMs(),
+    pullSince: (src, cursor, onRows) => {
+      pullCalls += 1;
+      return src.pullSince(src, cursor, onRows);
+    },
+  };
+
+  const empty = await syncSource(localDb, source, ctx);
+  assert.equal(empty.changed, 0);
+  assert.equal(pullCalls, 0, 'an empty source must not pay for a second read');
+
+  source.rows = [{ uid: 'u1', networkName: 'شبكة', updatedAtMs: 1 }];
+  const filled = await syncSource(localDb, source, ctx);
+  assert.equal(filled.changed, 1);
+  assert.equal(pullCalls, 1);
+  assert.equal(await localDb.users.count(), 1);
+});
+
 test('a settled sale is updated locally instead of duplicated', async () => {
   const localDb = createMemoryDb();
   const source = createFakeSource('sales', 'sales', [

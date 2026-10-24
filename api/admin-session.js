@@ -105,6 +105,8 @@ export default async function handler(req, res) {
         phone: decoded.phone_number || '',
         role: 'admin',
         createdAt: Date.now(),
+        createdAtMs: Date.now(),
+        updatedAtMs: Date.now(),
       };
 
       await Promise.all([

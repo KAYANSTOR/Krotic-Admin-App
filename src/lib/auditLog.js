@@ -57,6 +57,7 @@ export function auditActionTone(action) {
 
 export async function logAdminAction({ action, targetType, targetId, targetLabel, details }) {
   const actor = auth.currentUser;
+  const now = Date.now();
   try {
     await addDoc(collection(db, AUDIT_COLLECTION), {
       action,
@@ -67,7 +68,10 @@ export async function logAdminAction({ action, targetType, targetId, targetLabel
       actorUid: actor?.uid || null,
       actorEmail: actor?.email || null,
       createdAt: serverTimestamp(),
-      createdAtMs: Date.now(),
+      createdAtMs: now,
+      // المزامنة التزايدية تقرأ admin_audit_logs بحقل updatedAtMs؛ غيابه يجعل
+      // الحدث غير مرئي في شاشة «سجل العمليات» إلى الأبد.
+      updatedAtMs: now,
     });
     return true;
   } catch (error) {

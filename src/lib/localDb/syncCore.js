@@ -37,6 +37,10 @@ export async function applyRows(localDb, src, rows) {
 export async function syncSource(localDb, src, { latestMs, pullSince }) {
   const state = (await localDb.sync_state.get(src.key)) || { key: src.key, cursorMs: 0 };
   const latest = await latestMs(src); // قراءة واحدة
+  // لا توجد أي وثيقة تحمل updatedAtMs (المجموعة فارغة أو لم تُرحَّل بعد).
+  // استعلام السحب لن يعيد شيئًا، لذا نتخطاه ونبقي المؤشر كما هو حتى تظهر
+  // بيانات فعلية (بما فيها الوثائق التي يُعطيها الترحيل updatedAtMs = 1).
+  if (latest === 0) return { key: src.key, changed: 0 };
   if (state.cursorMs > 0 && latest <= state.cursorMs) {
     return { key: src.key, changed: 0 }; // لا شيء جديد
   }

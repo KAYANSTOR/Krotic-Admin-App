@@ -97,14 +97,14 @@ const MeniscusSurface = forwardRef(function MeniscusSurface({ position = 0 }, re
     >
       <defs>
         <linearGradient id="meniscus-liquid" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#d97757" />
-          <stop offset="1" stopColor="#9a4a32" />
+          <stop offset="0" stopColor="var(--ui-primary-green)" />
+          <stop offset="1" stopColor="var(--ui-deep-forest)" />
         </linearGradient>
         <radialGradient id="meniscus-bead" cx="32%" cy="24%" r="78%">
-          <stop offset="0" stopColor="#f8b49a" />
-          <stop offset="0.2" stopColor="#e88363" />
-          <stop offset="0.72" stopColor="#b85c3e" />
-          <stop offset="1" stopColor="#8f3e2b" />
+          <stop offset="0" stopColor="#DFF5E4" />
+          <stop offset="0.2" stopColor="var(--ui-sage-green)" />
+          <stop offset="0.72" stopColor="var(--ui-primary-green)" />
+          <stop offset="1" stopColor="var(--ui-forest-black)" />
         </radialGradient>
       </defs>
       <path ref={fillRef} className="meniscus-liquid" d="" fill="url(#meniscus-liquid)" />

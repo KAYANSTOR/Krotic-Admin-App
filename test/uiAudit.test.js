@@ -166,15 +166,16 @@ test('all modal dialogs escape the pull-to-refresh containing block on mobile', 
   assert.match(modal, /\}, \[isOpen\]\);/);
 });
 
-test('paid-features screen writes through the server path and never touches Firestore directly', async () => {
+test('account-features screen writes through the server path and never touches Firestore directly', async () => {
   const page = await read('src/pages/PaidFeaturesPage.jsx');
   // الكتابة تمر بالمسار الخادمي المقيّد فقط.
-  assert.match(page, /updatePaidFeatureEntitlements/);
-  assert.match(page, /fetchPaidFeatureEntitlements/);
+  assert.match(page, /updateAccountFeatures/);
+  assert.match(page, /fetchAccountFeatures/);
+  assert.match(page, /fetchAccountFeatureCatalog/);
+  assert.match(page, /account_features/);
   // لا كتابة عميل مباشرة على Firestore من الشاشة.
   assert.doesNotMatch(page, /from 'firebase\/firestore'/);
   assert.doesNotMatch(page, /setDoc|updateDoc|addDoc/);
-  // تُظهر بصدق أن المستهلك على Android غير مُثبَت (لا ادّعاء تطبيق على الجهاز).
-  assert.match(page, /PaidFeatureGate/);
-  assert.match(page, /غير موجود/);
+  // لا تدّعي الشاشة أن التخزين الإداري وحده يفعّل ميزة على كل إصدار Android.
+  assert.match(page, /ما لم يكن ذلك الإصدار يقرأ عقد account_features/);
 });

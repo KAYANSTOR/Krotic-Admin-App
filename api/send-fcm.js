@@ -39,6 +39,43 @@ function stringifyData(data) {
   );
 }
 
+/**
+ * Builds the notification-delivery history row for both the per-user and the
+ * global-broadcast paths. `updatedAtMs` is mandatory: the admin dashboard syncs
+ * `notification_deliveries` by that field, so a row without it never appears in
+ * the local history view.
+ */
+export function buildDeliveryHistory({
+  requestId = null,
+  title,
+  body,
+  target,
+  targetUid = null,
+  audienceType,
+  sent,
+  failed,
+  createdBy,
+  nowMs = Date.now(),
+}) {
+  return {
+    ...(requestId ? { requestId } : {}),
+    title,
+    body,
+    message: body,
+    target,
+    ...(targetUid ? { targetUid } : {}),
+    audienceType,
+    sent,
+    failed,
+    createdBy,
+    createdAt: FieldValue.serverTimestamp(),
+    timestamp: nowMs,
+    createdAtMs: nowMs,
+    updatedAtMs: nowMs,
+    status: failed && !sent ? 'failed' : 'sent',
+  };
+}
+
 const FCM_BATCH_SIZE = 500;
 const FCM_DELETE_BATCH_SIZE = 450;
 const RETRYABLE_FCM_CODES = new Set([
@@ -266,23 +303,18 @@ export default async function handler(req, res) {
       }
 
       const historyRef = db.collection('notification_deliveries').doc();
-      const historyDoc = {
+      const historyDoc = buildDeliveryHistory({
         requestId: historyRef.id,
         title,
         body: text,
-        message: text,
         target,
         targetUid,
         audienceType: 'user',
         sent,
         failed,
         createdBy: callerUid,
-        createdAt: FieldValue.serverTimestamp(),
-        timestamp: nowMs,
-        createdAtMs: nowMs,
-        updatedAtMs: nowMs,
-        status: failed && !sent ? 'failed' : 'sent',
-      };
+        nowMs,
+      });
 
       const batch = db.batch();
       batch.set(historyRef, historyDoc);
@@ -316,19 +348,16 @@ export default async function handler(req, res) {
       sent = 1;
       failed = 0;
 
-      const historyDoc = {
+      const historyDoc = buildDeliveryHistory({
         title,
         body: text,
-        message: text,
         target,
         audienceType: 'global',
         sent: 1,
         failed: 0,
         createdBy: callerUid,
-        createdAt: FieldValue.serverTimestamp(),
-        timestamp: nowMs,
-        status: 'sent',
-      };
+        nowMs,
+      });
 
       await db.collection('notification_deliveries').add(historyDoc);
     }

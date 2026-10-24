@@ -1,0 +1,22 @@
+{
+  "_synthetic": true,
+  "schema_version": 1,
+  "ack_version": 1,
+  "writer": "server",
+  "device_id": "9f2c1a7b4e8d4c0fa1b2c3d4e5f60718",
+  "uid": "firebase-uid",
+  "network_id": "NET-10001",
+  "applied_version_id": "rel_2026_10_21_001",
+  "applied_version": "1.2.3",
+  "applied_version_code": 12,
+  "payload_hash_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "scope_key": "global",
+  "outcome": "applied",
+  "parser_refreshed": true,
+  "inserted_count": 3,
+  "conflict_count": 0,
+  "app_version": "1.0.16",
+  "app_build": 16,
+  "applied_at": "2026-10-23T10:00:00.000Z",
+  "synced_at": "2026-10-23T10:00:02.000Z"
+}

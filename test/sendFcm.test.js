@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sendTokensInBatches } from '../api/send-fcm.js';
+import { readFile } from 'node:fs/promises';
+import { sendTokensInBatches, buildDeliveryHistory } from '../api/send-fcm.js';
 
 function successfulResult(tokens) {
   return {
@@ -9,6 +10,50 @@ function successfulResult(tokens) {
     responses: tokens.map(() => ({ success: true })),
   };
 }
+
+test('delivery history records carry the sync timestamp for local admin history', () => {
+  const userDelivery = buildDeliveryHistory({
+    requestId: 'request-1',
+    title: 'عنوان',
+    body: 'نص',
+    target: 'user:uid-1',
+    targetUid: 'uid-1',
+    audienceType: 'user',
+    sent: 2,
+    failed: 0,
+    createdBy: 'admin-1',
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(userDelivery.updatedAtMs, 1_700_000_000_000);
+  assert.equal(userDelivery.createdAtMs, 1_700_000_000_000);
+  assert.equal(userDelivery.timestamp, 1_700_000_000_000);
+  assert.equal(userDelivery.targetUid, 'uid-1');
+  assert.equal(userDelivery.status, 'sent');
+  assert.ok(userDelivery.createdAt);
+
+  const globalDelivery = buildDeliveryHistory({
+    title: 'عنوان',
+    body: 'نص',
+    target: 'topic:krotak_all_users',
+    audienceType: 'global',
+    sent: 1,
+    failed: 0,
+    createdBy: 'admin-1',
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(globalDelivery.updatedAtMs, 1_700_000_000_000);
+  assert.equal(globalDelivery.audienceType, 'global');
+  assert.equal(globalDelivery.targetUid, undefined);
+  assert.equal('requestId' in globalDelivery, false);
+});
+
+test('all notification senders use the same Android channel', async () => {
+  const files = ['../api/send-fcm.js', '../api/dispatch-notifications.js', '../functions/index.js'];
+  for (const file of files) {
+    const source = await readFile(new URL(file, import.meta.url), 'utf8');
+    assert.match(source, /krotak_admin_v2/, `${file} must use the registered channel`);
+  }
+});
 
 test('sends all device tokens in FCM-safe batches of at most 500', async () => {
   const tokens = Array.from({ length: 1001 }, (_, index) => `token-${index}`);

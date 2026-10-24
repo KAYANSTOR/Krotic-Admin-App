@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/account-features.schema.json",
+  "schemaVersion": 1,
+  "title": "Krotak Pro account features fragment",
+  "description": "الحقول التي تضيفها لوحة الإدارة إلى users/{uid}. الخريطة account_features هي مصدر الصلاحية الوحيد، وأي مفتاح غائب أو قيمة غير boolean true يعني غير مفعّل. لا يكتبها العميل.",
+  "type": "object",
+  "required": [
+    "account_features",
+    "account_features_version",
+    "account_features_updated_at_ms"
+  ],
+  "properties": {
+    "account_features": {
+      "type": "object",
+      "description": "مفاتيح مزايا كروتك وقيمها المنطقية. المفاتيح غير المعروفة في التطبيق تُهمَل.",
+      "propertyNames": { "$ref": "#/$defs/featureKey" },
+      "additionalProperties": { "type": "boolean" },
+      "maxProperties": 128
+    },
+    "account_features_version": { "const": 1 },
+    "account_features_updated_at_ms": {
+      "type": "integer",
+      "minimum": 1700000000000,
+      "description": "مللي ثانية UTC لآخر كتابة إدارية. تُستخدم لإبطال الكاش، وليست مصدر صلاحية."
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "featureKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,63}$"
+    }
+  }
+}

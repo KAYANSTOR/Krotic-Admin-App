@@ -26,7 +26,8 @@ service cloud.firestore {
       return ['accessStatus', 'trialStartedAt', 'subscriptionEndsAt', 'is_active',
               'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning',
               'feature_entitlements', 'feature_entitlements_updated_at',
-              'feature_entitlements_updated_by'];
+              'feature_entitlements_updated_by', 'account_features',
+              'account_features_version', 'account_features_updated_at_ms'];
     }
     function touchesAccessFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());
@@ -217,7 +218,12 @@ service cloud.firestore {
       }
 
       match /{subcollection}/{documentId} {
-        allow read, write: if isAdmin();
+        allow read: if isAdmin();
+        // account_features وACK تكتبان عبر Admin SDK فقط؛ حتى مدير اللوحة
+        // لا يكتبها مباشرة من المتصفح، منعاً لتجاوز التحقق والتدقيق الخادمي.
+        allow write: if isAdmin()
+          && subcollection != 'template_acks'
+          && subcollection != 'account_feature_audit';
       }
     }
 

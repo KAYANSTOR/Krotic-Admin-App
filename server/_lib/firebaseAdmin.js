@@ -55,6 +55,19 @@ export async function isAdminUid(uid, getFirestoreParam) {
   const data = snap?.exists ? snap.data() : null;
   let isAdmin = Boolean(data && data.uid === uid);
 
+  // Legacy deployments stored admins in the lowercase `admins` collection.
+  // AuthContext and Firestore rules accept both, so the server path must too;
+  // otherwise a legacy admin can sign in but every server action returns 403.
+  if (!isAdmin && uid !== PRIMARY_ADMIN_UID) {
+    try {
+      const legacySnap = await db.collection('admins').doc(uid).get();
+      const legacyData = legacySnap?.exists ? legacySnap.data() : null;
+      isAdmin = Boolean(legacyData && legacyData.uid === uid);
+    } catch (err) {
+      console.warn('Legacy admins check failed:', err?.message);
+    }
+  }
+
   // If this is the primary owner account and the document is not yet in this database instance,
   // self-heal and create the verified document now.
   if (!isAdmin && uid === PRIMARY_ADMIN_UID) {
@@ -65,6 +78,8 @@ export async function isAdminUid(uid, getFirestoreParam) {
         name: 'مدير Krotak Pro',
         role: 'admin',
         createdAt: 1791156000000,
+        createdAtMs: 1791156000000,
+        updatedAtMs: 1791156000000,
       }, { merge: true });
       isAdmin = true;
     } catch {}
@@ -153,6 +168,9 @@ export async function syncDatabaseInstancesIfNeeded() {
     name: 'مدير Krotak Pro',
     role: 'admin',
     createdAt: 1791156000000,
+    // حقل المزامنة: بدونه لا يظهر المالك الأساسي في قائمة المدراء المحلية.
+    createdAtMs: 1791156000000,
+    updatedAtMs: 1791156000000,
   };
 
   try {

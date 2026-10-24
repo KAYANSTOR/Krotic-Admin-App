@@ -2,17 +2,20 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  AlertTriangle, Archive, ArrowDownToLine, ArrowUpLeft, Bell, CreditCard,
-  ListChecks, RefreshCw, Send, Settings, Sparkles,
-  TrendingUp, UserPlus, Users, Wallet,
+  AlertTriangle, Archive, ArrowDownToLine, Bell, ChevronDown, CreditCard, Eye, EyeOff,
+  Layers3, ListChecks, RefreshCw, Send, Settings, TrendingUp, UserPlus, Users,
+  Wallet, Wrench,
 } from 'lucide-react';
 import IconTile from '../components/ui/IconTile';
 import Button from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { PageSkeleton } from '../components/ui/Skeleton';
 import useAppRefresh from '../lib/useAppRefresh';
+import useOnlineStatus from '../lib/useOnlineStatus';
 import Section from '../components/ui/Section';
 import DataFreshness from '../components/ui/DataFreshness';
+import Badge from '../components/ui/Badge';
+import EmptyState from '../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 import { formatDate, formatNumber, toDate } from '../lib/format';
@@ -23,6 +26,17 @@ import { loadLocalDashboard, loadLocalNetworkSales } from '../lib/localDb/localD
 
 const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 const AGGREGATE_REPAIR_PROGRESS_KEY = 'krotak:aggregate-repair-progress:v1';
+
+/** تسميات حالات البيع الفعلية المستخدمة في شاشة المبيعات. */
+const SALE_STATUS = {
+  COMPLETED: { label: 'مكتمل', tone: 'success' },
+  ROLLED_BACK: { label: 'مسترجع', tone: 'warning' },
+  SMS_PENDING: { label: 'بانتظار SMS', tone: 'info' },
+};
+
+function saleStatusMeta(status) {
+  return SALE_STATUS[status] || { label: 'غير محدد', tone: 'neutral' };
+}
 
 function summarizeRealtimeSales(networks) {
   const now = new Date();
@@ -79,6 +93,8 @@ function recentOperationsFromNetworks(networks) {
 export default function DashboardPage() {
   const { adminData } = useAuth();
   const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const online = useOnlineStatus();
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [rebuildingAggregates, setRebuildingAggregates] = useState(false);
   const [aggregateRepairProgress, setAggregateRepairProgress] = useState(() => {
     try {
@@ -170,48 +186,35 @@ export default function DashboardPage() {
 
   const maintenance = appStatus && !appStatus.is_app_active;
   const adminName = (adminData?.name || 'المدير').trim();
+  const adminInitial = adminName.charAt(0) || 'م';
+
+  // نسبة تسوية عمولة الإدارة من بيانات حقيقية (المسوّى = المستحق − غير المسوّى).
+  const commissionDue = Math.max(0, Number(stats?.totalCommissionDue) || 0);
+  const commissionOutstanding = Math.max(0, Number(stats?.totalCommissionOutstanding) || 0);
+  const commissionSettled = Math.max(0, commissionDue - commissionOutstanding);
+  const settlementPercent = commissionDue > 0
+    ? Math.min(100, Math.round((commissionSettled / commissionDue) * 100))
+    : 0;
 
   return (
     <div className="dashboard-page">
-      <section className="flex items-center justify-between gap-2 px-1 py-1.5 mb-2.5" aria-label="ترحيب">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="النظام متصل" />
-          <h1 className="text-base sm:text-lg font-black text-ink truncate">
-            أهلاً، {adminName}
-          </h1>
-          <span className="text-[11px] font-bold text-muted hidden sm:inline">• الإدارة</span>
+      <header className="dash-welcome" aria-label="ترحيب">
+        <span className="dash-welcome__avatar" aria-hidden="true">{adminInitial}</span>
+        <div className="dash-welcome__identity">
+          <p className="dash-welcome__eyebrow">لوحة الإدارة</p>
+          <h1 className="dash-welcome__title">أهلاً، {adminName}</h1>
+          <p className={`dash-welcome__status ${online ? 'is-online' : 'is-offline'}`} role="status">
+            <span className="dash-welcome__dot" aria-hidden="true" />
+            {online ? 'النظام متصل' : 'غير متصل — تُعرض بيانات محلية'}
+          </p>
         </div>
         <DataFreshness
+          className="dash-welcome__freshness"
           lastSyncedAt={lastSyncAt}
           refreshing={loading || syncing}
           onRefresh={refresh}
         />
-      </section>
-
-
-      {!aggregateRepairProgress.done && (
-        <Card className="mb-3 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-extrabold text-ink">صيانة الملخصات المالية القديمة</p>
-              <p className="mt-1 text-xs leading-5 text-muted">تعيد حساب إجمالي المبيعات والعمولات والدفعات من السجلات المخزنة، ثم تحفظ الملخصات في Firestore لتستخدمها الشاشات سريعًا. لا تعدّل سجل البيع نفسه.</p>
-              <p className="mt-1 text-xs leading-5 text-amber-700">قد تستهلك آلاف القراءات حسب حجم الشبكة. انتظر تجدد الحصة اليومية قبل تشغيلها. تتم قراءة السجل التاريخي على صفحات حتى آخر عملية، دون إسقاط السجلات القديمة بصمت.</p>
-              {(aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0) && (
-                <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. {aggregateRepairProgress.done ? 'الإصلاح مكتمل.' : 'التقدم محفوظ محليًا؛ اضغط المتابعة لمعالجة شبكة واحدة أخرى.'}</p>
-              )}
-            </div>
-            <Button variant="secondary" size="sm" icon={RefreshCw} loading={rebuildingAggregates} disabled={rebuildingAggregates} onClick={repairFinancialAggregates}>
-              {rebuildingAggregates ? 'جارٍ إصلاح شبكة واحدة…' : aggregateRepairProgress.cursor ? 'متابعة الإصلاح (شبكة واحدة)' : 'إصلاح الملخصات (شبكة واحدة)'}
-            </Button>
-          </div>
-        </Card>
-      )}
-      {aggregateRepairProgress.done && (
-        <Card className="mb-3 p-4">
-          <p className="text-sm font-extrabold text-emerald-700">اكتملت إعادة بناء المجاميع المالية ({formatNumber(aggregateRepairProgress.processed)} شبكة).</p>
-          <p className="mt-1 text-xs text-muted">تم حفظ النتيجة لهذا المتصفح. لا تعِد تشغيل الإجراء إلا إذا كنت تحتاج إلى إعادة بناء جديدة.</p>
-        </Card>
-      )}
+      </header>
 
       {maintenance && (
         <div className="dash-alert" role="status" aria-live="polite">
@@ -294,116 +297,220 @@ export default function DashboardPage() {
 
       {stats && (
         <>
-          <section className="dash-finance" aria-label="الملخص المالي">
-            <article className="dash-finance__primary">
-              <header className="dash-finance__head">
-                <span className="dash-finance__eyebrow">إجمالي المبيعات</span>
-                <span className="dash-finance__pill">
+          {/* 1) البطاقة الرئيسية: أهم مؤشر + مؤشران ثانويان + أربعة إجراءات */}
+          <section className="dash-summary" aria-label="الملخص المالي">
+            <article className="dash-summary__hero">
+              <header className="dash-summary__head">
+                <span className="dash-summary__label">إجمالي المبيعات</span>
+                <span className="dash-summary__badge">
                   <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
                   كل الوقت
                 </span>
               </header>
-              <div className="dash-finance__value">
-                <strong>{formatNumber(stats.totalSales)}</strong>
+              <p className="dash-summary__value">
+                <strong>{balanceVisible ? formatNumber(stats.totalSales) : '••••••'}</strong>
+                <button
+                  type="button"
+                  className="dash-summary__visibility"
+                  onClick={() => setBalanceVisible((visible) => !visible)}
+                  aria-label={balanceVisible ? 'إخفاء إجمالي المبيعات' : 'إظهار إجمالي المبيعات'}
+                  aria-pressed={!balanceVisible}
+                  title={balanceVisible ? 'إخفاء المبلغ' : 'إظهار المبلغ'}
+                >
+                  {balanceVisible
+                    ? <Eye className="w-5 h-5" aria-hidden="true" />
+                    : <EyeOff className="w-5 h-5" aria-hidden="true" />}
+                </button>
                 <span>ريال يمني</span>
-              </div>
-              <p className="dash-finance__hint">
+              </p>
+              <p className="dash-summary__hint">
                 يحتسب المبيعات المكتملة فقط، وتتحدث المبيعات والعمولة المتبقية مع سجل البيع نفسه.
               </p>
-            </article>
 
-            <div className="dash-finance__side">
-              <article className="dash-finance__tile dash-finance__tile--gold">
-                <span className="dash-finance__tile-icon"><Wallet className="w-5 h-5" aria-hidden="true" /></span>
-                <div>
-                  <p className="dash-finance__tile-label">عمولة الإدارة غير المسوّاة</p>
-                  <p className="dash-finance__tile-value">
-                    {formatNumber(stats.totalCommissionOutstanding || 0)} <small>ريال يمني</small>
-                  </p>
+              <dl className="dash-summary__meta">
+                <div className="dash-summary__meta-item">
+                  <dt><Wallet className="w-4 h-4" aria-hidden="true" /> عمولة الإدارة غير المسوّاة</dt>
+                  <dd>{formatNumber(stats.totalCommissionOutstanding || 0)} <small>ريال يمني</small></dd>
                 </div>
-              </article>
-              <article className="dash-finance__tile dash-finance__tile--brand">
-                <span className="dash-finance__tile-icon"><Users className="w-5 h-5" aria-hidden="true" /></span>
-                <div>
-                  <p className="dash-finance__tile-label">عدد الشبكات</p>
-                  <p className="dash-finance__tile-value">
-                    {formatNumber(stats.totalUsers || 0)} <small>شبكة</small>
-                  </p>
+                <div className="dash-summary__meta-item">
+                  <dt><Users className="w-4 h-4" aria-hidden="true" /> عدد الشبكات</dt>
+                  <dd>{formatNumber(stats.totalUsers || 0)} <small>شبكة</small></dd>
                 </div>
-              </article>
-            </div>
+              </dl>
+
+              <nav className="dash-quick" aria-label="إجراءات سريعة">
+                <Link to="/users" className="dash-quick__item dash-quick__item--primary">
+                  <span className="dash-quick__icon"><UserPlus aria-hidden="true" /></span>
+                  <span className="dash-quick__label">إدارة المستخدمين</span>
+                </Link>
+                <Link to="/sales" className="dash-quick__item">
+                  <span className="dash-quick__icon"><CreditCard aria-hidden="true" /></span>
+                  <span className="dash-quick__label">المبيعات والعمولات</span>
+                </Link>
+                <Link to="/notifications" className="dash-quick__item">
+                  <span className="dash-quick__icon"><Bell aria-hidden="true" /></span>
+                  <span className="dash-quick__label">إرسال إشعار</span>
+                </Link>
+                <Link to="/template-center" className="dash-quick__item">
+                  <span className="dash-quick__icon"><Layers3 aria-hidden="true" /></span>
+                  <span className="dash-quick__label">مركز القوالب</span>
+                </Link>
+              </nav>
+            </article>
           </section>
 
-          <Section eyebrow="تنقل سريع" title="إجراءات سريعة" aria-label="إجراءات سريعة">
-            <div className="dash-actions">
-              <Link to="/users" className="dash-action">
-                <IconTile icon={UserPlus} tone="brand" />
-                <span className="dash-action__label">إدارة المستخدمين</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
-              </Link>
-              <Link to="/sales" className="dash-action">
-                <IconTile icon={CreditCard} tone="gold" />
-                <span className="dash-action__label">المبيعات والعمولات</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
-              </Link>
-              <Link to="/notifications" className="dash-action">
-                <IconTile icon={Bell} tone="warning" />
-                <span className="dash-action__label">إرسال إشعار</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
-              </Link>
-              <Link to="/template-center/inbound" className="dash-action">
+          {/* 2) الخدمات والأقسام: بطاقات موحّدة الحجم */}
+          <Section
+            className="dash-services-section"
+            eyebrow="الوصول السريع"
+            title="الخدمات والأقسام"
+            aria-label="الخدمات والأقسام"
+          >
+            <div className="dash-services">
+              <Link to="/template-center/inbound" className="dash-service">
                 <IconTile icon={ArrowDownToLine} tone="brand" />
-                <span className="dash-action__label">قوالب التحويل الواردة</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">قوالب التحويل الواردة</span>
               </Link>
-              <Link to="/template-center/outbound" className="dash-action">
+              <Link to="/template-center/outbound" className="dash-service">
                 <IconTile icon={Send} tone="brand" />
-                <span className="dash-action__label">الرسائل الصادرة (SMS)</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">الرسائل الصادرة (SMS)</span>
               </Link>
-              <Link to="/template-center/wallets" className="dash-action">
+              <Link to="/template-center/wallets" className="dash-service">
                 <IconTile icon={Wallet} tone="gold" />
-                <span className="dash-action__label">المحافظ ومصادر الرسائل</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">المحافظ ومصادر الرسائل</span>
               </Link>
-              <Link to="/template-center/releases" className="dash-action">
+              <Link to="/template-center/releases" className="dash-service">
                 <IconTile icon={Archive} tone="neutral" />
-                <span className="dash-action__label">الإصدارات والنشر</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">الإصدارات والنشر</span>
               </Link>
-              <Link to="/template-center/reconciliation" className="dash-action">
+              <Link to="/template-center/reconciliation" className="dash-service">
                 <IconTile icon={ListChecks} tone="neutral" />
-                <span className="dash-action__label">التسوية والعناصر القديمة</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">التسوية والعناصر القديمة</span>
               </Link>
-              <Link to="/settings" className="dash-action">
+              <Link to="/settings" className="dash-service">
                 <IconTile icon={Settings} tone="neutral" />
-                <span className="dash-action__label">الإعدادات العامة</span>
-                <ArrowUpLeft className="dash-action__arrow" aria-hidden="true" />
+                <span className="dash-service__label">الإعدادات العامة</span>
               </Link>
             </div>
           </Section>
 
-          <Section eyebrow="آخر العمليات" title="آخر مبيعات الشبكات" description="أحدث العمليات الواردة من الشبكات مرتبة حسب وقت التسجيل." aria-label="آخر العمليات">
-            {recentOperations.length === 0 ? (
-              <Card><p className="text-sm text-ink-secondary">لا توجد عمليات حديثة لعرضها.</p></Card>
-            ) : (
-              <div className="recent-operations">
-                {recentOperations.map((operation) => (
-                  <Link key={`${operation.networkName}-${operation.id}`} to="/sales" className="recent-operation">
-                    <span className="recent-operation__icon"><CreditCard className="w-4 h-4" aria-hidden="true" /></span>
-                    <span className="recent-operation__body">
-                      <strong>{operation.networkName}</strong>
-                      <span>{formatDate(operation.createdAt, { withTime: true })} • {operation.customerId || 'عميل غير محدد'}</span>
-                    </span>
-                    <span className="recent-operation__amount">{formatNumber(operation.faceValue)} ريال</span>
-                  </Link>
-                ))}
+          {/* 3) ملخص ثانوي من بيانات حقيقية: نسبة تسوية عمولة الإدارة */}
+          <section className="dash-progress" aria-labelledby="settlement-title">
+            <div className="dash-progress__head">
+              <div className="dash-progress__heading">
+                <p className="dash-progress__eyebrow">الملخص الثانوي</p>
+                <h2 className="dash-progress__title" id="settlement-title">تسوية عمولة الإدارة</h2>
               </div>
+              {commissionDue > 0 && (
+                <span className="dash-progress__percent" aria-hidden="true">{settlementPercent}%</span>
+              )}
+            </div>
+            {commissionDue > 0 ? (
+              <>
+                <div
+                  className="dash-progress__track"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={settlementPercent}
+                  aria-valuetext={`${settlementPercent}%`}
+                  aria-label="نسبة تسوية عمولة الإدارة"
+                >
+                  <span className="dash-progress__fill" style={{ width: `${settlementPercent}%` }} />
+                </div>
+                <p className="dash-progress__caption">
+                  المسوّى {formatNumber(commissionSettled)} من {formatNumber(commissionDue)} ريال يمني
+                </p>
+                <p className="dash-progress__note">
+                  المتبقي غير المسوّى {formatNumber(commissionOutstanding)} ريال يمني.
+                </p>
+              </>
+            ) : (
+              <p className="dash-progress__caption">لا توجد عمولات مستحقة مسجّلة حتى الآن.</p>
+            )}
+          </section>
+
+          {/* 4) آخر العمليات: صفوف قابلة للقراءة مع الحالة */}
+          <Section
+            eyebrow="آخر العمليات"
+            title="آخر مبيعات الشبكات"
+            action={<Link to="/sales" className="section__link">عرض الكل</Link>}
+            aria-label="آخر العمليات"
+          >
+            {recentOperations.length === 0 ? (
+              <Card>
+                <EmptyState
+                  icon={CreditCard}
+                  title="لا توجد عمليات حديثة"
+                  description="ستظهر أحدث مبيعات الشبكات هنا تلقائياً بعد مزامنتها."
+                />
+              </Card>
+            ) : (
+              <ul className="recent-operations">
+                {recentOperations.map((operation, index) => {
+                  const status = saleStatusMeta(operation.status);
+                  return (
+                    <li key={`${operation.networkName}-${operation.id || index}`}>
+                      <Link
+                        to="/sales"
+                        className="recent-operation"
+                        aria-label={`${operation.networkName}، ${formatNumber(operation.faceValue)} ريال، ${status.label}`}
+                      >
+                        <span className="recent-operation__icon"><CreditCard className="w-4 h-4" aria-hidden="true" /></span>
+                        <span className="recent-operation__body">
+                          <strong>{operation.networkName}</strong>
+                          <span>{formatDate(operation.createdAt, { withTime: true })} • {operation.customerId || 'عميل غير محدد'}</span>
+                        </span>
+                        <span className="recent-operation__end">
+                          <span className="recent-operation__amount">{formatNumber(operation.faceValue)} <small>ريال</small></span>
+                          <Badge tone={status.tone} dot>{status.label}</Badge>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </Section>
 
         </>
+      )}
+
+      {/* أدوات متقدمة: كانت تسبق المحتوى وتدفعه للأسفل؛ أصبحت في نهاية الشاشة وقابلة للطي. */}
+      {!aggregateRepairProgress.done && (
+        <Card className="dash-maintenance">
+          <details open={aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0 ? true : undefined}>
+            <summary className="dash-maintenance__summary">
+              <span className="dash-maintenance__summary-main">
+                <span className="dash-maintenance__icon" aria-hidden="true"><Wrench className="w-4 h-4" /></span>
+                <span>
+                  <span className="dash-maintenance__title">أدوات صيانة الملخصات المالية</span>
+                  <span className="dash-maintenance__sub">إجراء متقدم يعيد بناء المجاميع من السجلات المخزنة.</span>
+                </span>
+              </span>
+              <ChevronDown className="dash-maintenance__chevron" aria-hidden="true" />
+            </summary>
+            <div className="dash-maintenance__body">
+              <p className="text-sm font-extrabold text-ink">صيانة الملخصات المالية القديمة</p>
+              <p className="mt-1 text-xs leading-5 text-muted">تعيد حساب إجمالي المبيعات والعمولات والدفعات من السجلات المخزنة، ثم تحفظ الملخصات في Firestore لتستخدمها الشاشات سريعًا. لا تعدّل سجل البيع نفسه.</p>
+              <p className="mt-1 text-xs leading-5 text-warning-ink">قد تستهلك آلاف القراءات حسب حجم الشبكة. انتظر تجدد الحصة اليومية قبل تشغيلها. تتم قراءة السجل التاريخي على صفحات حتى آخر عملية، دون إسقاط السجلات القديمة بصمت.</p>
+              {(aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0) && (
+                <p className="mt-1 text-xs font-semibold text-ink-soft">تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة. {aggregateRepairProgress.done ? 'الإصلاح مكتمل.' : 'التقدم محفوظ محليًا؛ اضغط المتابعة لمعالجة شبكة واحدة أخرى.'}</p>
+              )}
+              <div className="dash-maintenance__actions">
+                <Button variant="secondary" size="sm" icon={RefreshCw} loading={rebuildingAggregates} disabled={rebuildingAggregates} onClick={repairFinancialAggregates}>
+                  {rebuildingAggregates ? 'جارٍ إصلاح شبكة واحدة…' : aggregateRepairProgress.cursor ? 'متابعة الإصلاح (شبكة واحدة)' : 'إصلاح الملخصات (شبكة واحدة)'}
+                </Button>
+              </div>
+            </div>
+          </details>
+        </Card>
+      )}
+      {aggregateRepairProgress.done && (
+        <Card className="dash-maintenance dash-maintenance--done">
+          <p className="text-sm font-extrabold text-success-ink">اكتملت إعادة بناء المجاميع المالية ({formatNumber(aggregateRepairProgress.processed)} شبكة).</p>
+          <p className="mt-1 text-xs text-muted">تم حفظ النتيجة لهذا المتصفح. لا تعِد تشغيل الإجراء إلا إذا كنت تحتاج إلى إعادة بناء جديدة.</p>
+        </Card>
       )}
 
       {!stats && !error && (

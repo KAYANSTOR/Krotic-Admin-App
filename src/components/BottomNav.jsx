@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
+import useBodyScrollLock from '../lib/useBodyScrollLock';
 
 const primaryItems = [
   { path: '/', label: 'الرئيسية', icon: LayoutDashboard },
@@ -34,7 +35,7 @@ const quickItems = [
   { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
   { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
   { path: '/template-center', label: 'مركز القوالب والمحافظ', icon: Layers3 },
-  { path: '/paid-features', label: 'المزايا المدفوعة', icon: Sparkles },
+  { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
   { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
@@ -50,6 +51,8 @@ export default function BottomNav() {
   const navigate = useNavigate();
   const quickSheetRef = useRef(null);
   const quickTriggerRef = useRef(null);
+
+  useBodyScrollLock(quickOpen);
 
   useEffect(() => setQuickOpen(false), [location.pathname]);
 

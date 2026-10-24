@@ -10,6 +10,7 @@ import {
   validateOutboundTemplate,
   selectVerifiedAck,
   countAcknowledgingDevices,
+  classifyAckHealth,
 } from '../src/lib/templateCenterView.js';
 import { getTemplateCenterCatalog } from '../server/_lib/templateCenter.js';
 import { BUNDLED_TEMPLATE_PACK, cloneBundledPack } from '../src/lib/bundledTemplatePack.js';
@@ -77,6 +78,26 @@ test('countAcknowledgingDevices counts distinct installations only', () => {
   ];
   assert.equal(countAcknowledgingDevices(acks, { releaseId: 'r1', scopeKey: 'global' }), 2);
   assert.equal(countAcknowledgingDevices(acks, { releaseId: null }), 0);
+});
+
+test('ACK health is calculated against the active pointer and release hash', () => {
+  const pointer = { id: 'global', releaseId: 'r2' };
+  const releases = [{ id: 'r2', payloadHashSha256: 'a'.repeat(64) }];
+  const base = {
+    verified: true,
+    scopeKey: 'global',
+    releaseId: 'r2',
+    payloadHash: 'a'.repeat(64),
+    outcome: 'applied',
+    conflictCount: 0,
+    parserRefreshed: true,
+  };
+  assert.equal(classifyAckHealth(base, { pointer, releases }), 'matched');
+  assert.equal(classifyAckHealth({ ...base, payloadHash: 'b'.repeat(64) }, { pointer, releases }), 'conflict');
+  assert.equal(classifyAckHealth({ ...base, releaseId: 'r1' }, { pointer, releases }), 'stale');
+  assert.equal(classifyAckHealth({ ...base, outcome: 'failed' }, { pointer, releases }), 'failed');
+  assert.equal(classifyAckHealth({ ...base, parserRefreshed: false }, { pointer, releases }), 'conflict');
+  assert.equal(classifyAckHealth({ ...base, verified: false }, { pointer, releases }), 'unknown');
 });
 
 test('a verified ACK flips the derived state to AppliedLocally', () => {

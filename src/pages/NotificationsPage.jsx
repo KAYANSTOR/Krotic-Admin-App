@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  collection, addDoc, doc, deleteDoc, serverTimestamp,
+  collection, addDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import {
@@ -280,18 +280,25 @@ export default function NotificationsPage() {
     setDeleting(true);
     try {
       const idToken = await auth.currentUser?.getIdToken();
-      if (idToken) {
-        await fetch('/api/send-fcm', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ action: 'delete', id: deleteTarget.id }),
-        }).catch(() => null);
+      if (!idToken) {
+        toast.error('انتهت الجلسة، يرجى تسجيل الدخول من جديد.');
+        return false;
       }
-
-      await deleteDoc(doc(db, 'notification_deliveries', deleteTarget.id)).catch(() => null);
+      // الحذف خادمي فقط: قواعد Firestore تمنع الكتابة المباشرة على
+      // notification_deliveries حتى للمدير.
+      const response = await fetch('/api/send-fcm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ action: 'delete', id: deleteTarget.id }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        toast.error('تعذر حذف الإشعار من السجل على الخادم.');
+        return false;
+      }
 
       historyQuery.refresh();
       void logAdminAction({

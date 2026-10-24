@@ -106,6 +106,42 @@ test('administrative access changes and account deletion happen on the server on
   assert.match(api, /action: 'delete'/);
 });
 
+test('client-written audit logs carry the sync timestamp', async () => {
+  const audit = await read(new URL('lib/auditLog.js', SRC));
+  // بدون updatedAtMs لا يظهر الحدث في سجل العمليات المحلي أبدًا.
+  assert.match(audit, /updatedAtMs: now/);
+});
+
+test('the updatedAtMs backfill covers every collection the sync engine reads', async () => {
+  const sync = await read(new URL('lib/localDb/syncEngine.js', SRC));
+  const backfill = await read(new URL('../scripts/backfill-updated-at.mjs', import.meta.url));
+  const collections = new Set([
+    ...[...sync.matchAll(/collection\(firestore, '([^']+)'\)/g)].map((match) => match[1]),
+    ...[...sync.matchAll(/collectionGroup\(firestore, '([^']+)'\)/g)].map((match) => match[1]),
+  ]);
+  // الشواهد يُنشئها الخادم دائمًا مع updatedAtMs، وليست بيانات قديمة تحتاج ترحيلًا.
+  collections.delete('sync_tombstones');
+  assert.ok(collections.size >= 8);
+  for (const name of collections) {
+    assert.ok(backfill.includes(`'${name}'`), `backfill-updated-at.mjs is missing ${name}`);
+  }
+});
+
+test('settings exposes a confirmed full-sync action that resets cursors', async () => {
+  const settings = await read(new URL('pages/SettingsPage.jsx', SRC));
+  assert.match(settings, /resetSyncCursors\(localDb\)/);
+  assert.match(settings, /await runSync\(\{ reason: 'manual' \}\)/);
+  assert.match(settings, /requireText="تأكيد"/);
+});
+
+test('notification history deletion stays on the server', async () => {
+  const page = await read(new URL('pages/NotificationsPage.jsx', SRC));
+  // Firestore rules set `allow write: if false` on notification_deliveries.
+  assert.doesNotMatch(page, /deleteDoc\(/);
+  assert.match(page, /fetch\('\/api\/send-fcm'/);
+  assert.match(page, /action: 'delete'/);
+});
+
 test('collection-group sync queries have the indexes they need', async () => {
   const raw = await read(new URL('../firestore.indexes.json', import.meta.url));
   const indexes = JSON.parse(raw);
@@ -119,6 +155,11 @@ test('collection-group sync queries have the indexes they need', async () => {
     // لا نُلغي نطاق المجموعة العادي الذي تستخدمه قراءات الشبكة الواحدة.
     assert.ok(scopes.includes('ASCENDING:COLLECTION'), `${group} must keep COLLECTION scope`);
   }
+  const ackFields = overrides
+    .filter((entry) => entry.collectionGroup === 'template_acks')
+    .map((entry) => entry.fieldPath);
+  assert.ok(ackFields.includes('synced_at'), 'template_acks.synced_at needs a collection-group index');
+  assert.ok(ackFields.includes('applied_version_id'), 'device-acks filters on applied_version_id');
 });
 
 test('the sync engine only queries collections covered by those indexes', async () => {

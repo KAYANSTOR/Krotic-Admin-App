@@ -7,12 +7,49 @@ const crypto = require('crypto');
 initializeApp();
 const db = getFirestore();
 
-const DEFAULT_TOPIC = 'krotak_all_users';
-const ANDROID_CHANNEL_ID = 'krotak_admin';
+const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
+// Keep the same channel as the live Vercel senders (`api/send-fcm.js` and
+// `api/dispatch-notifications.js`); a different channel id silently drops the
+// notification on devices that only register the current channel.
+const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';
 
 function stringifyData(data) {
   if (!data || typeof data !== 'object') return {};
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, String(value)]));
+}
+
+/**
+ * Builds the notification_deliveries row. `updatedAtMs` is required by the
+ * admin dashboard's incremental sync; without it the delivery never reaches the
+ * local history view.
+ */
+function buildDeliveryRecord({
+  requestId,
+  title,
+  body,
+  target,
+  audienceType,
+  targetUid = null,
+  sent,
+  failed,
+  now = Date.now(),
+}) {
+  return {
+    requestId,
+    title,
+    body,
+    message: body,
+    target,
+    ...(targetUid ? { targetUid } : {}),
+    audienceType,
+    sent,
+    failed,
+    createdAt: FieldValue.serverTimestamp(),
+    createdAtMs: now,
+    updatedAtMs: now,
+    timestamp: now,
+    status: failed && !sent ? 'failed' : 'sent',
+  };
 }
 
 function chunksOf(items, size) {
@@ -278,17 +315,16 @@ async function dispatchRequest(snapshot) {
       sent = 1;
     }
 
-    const delivery = {
+    const delivery = buildDeliveryRecord({
       requestId,
       title,
       body,
       target: targetDescription,
       audienceType: request.audienceType === 'user' && request.targetUid ? 'user' : 'global',
-      ...(request.audienceType === 'user' && request.targetUid ? { targetUid: request.targetUid } : {}),
+      targetUid: request.audienceType === 'user' && request.targetUid ? request.targetUid : null,
       sent,
       failed,
-      createdAt: FieldValue.serverTimestamp(),
-    };
+    });
     const inbox = request.audienceType === 'user' && request.targetUid && sent > 0
       ? {
           uid: request.targetUid,
@@ -510,6 +546,7 @@ exports.updatePaymentAggregate = onDocumentWritten('networks/{networkId}/payment
 // Test seam: production handlers above continue to use the initialized db.
 exports.__test = {
   applySaleDelta,
+  buildDeliveryRecord,
   saleContribution,
   claimDispatchRequest,
   chunksOf,

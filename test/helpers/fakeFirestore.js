@@ -73,12 +73,37 @@ class CollectionRef {
   }
 }
 
+class CollectionGroupRef {
+  constructor(store, collectionName) {
+    this.store = store;
+    this.collectionName = collectionName;
+  }
+
+  limit() { return this; }
+  orderBy() { return this; }
+  where() { return this; }
+
+  async get() {
+    const docs = [];
+    for (const [path, data] of this.store.entries()) {
+      const segments = path.split('/');
+      if (segments.length >= 4 && segments.at(-2) === this.collectionName) {
+        docs.push(new DocSnapshot(path, data));
+      }
+    }
+    return { docs, empty: docs.length === 0, size: docs.length };
+  }
+}
+
 export function createFakeFirestore(seed = {}) {
   const store = new Map(Object.entries(seed));
   const db = {
     _store: store,
     collection(name) {
       return new CollectionRef(store, name);
+    },
+    collectionGroup(name) {
+      return new CollectionGroupRef(store, name);
     },
     batch() {
       const ops = [];

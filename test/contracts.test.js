@@ -73,9 +73,11 @@ const SCHEMA_FILES = [
   'inbound-template.schema.json',
   'outbound-template.schema.json',
   'template-release.schema.json',
-  'android-ack.schema.json',
+  'template-center-ack-request.schema.json',
+  'template-ack.schema.json',
   'android-application-state.schema.json',
-  'feature-entitlements.schema.json',
+  'account-features.schema.json',
+  'account-features-catalog.schema.json',
   'default-template-catalog.schema.json',
 ];
 
@@ -95,11 +97,11 @@ const FIXTURE_SCHEMA_MAP = {
   'inbound-template.sample.json': 'inbound-template.schema.json',
   'outbound-template.sample.json': 'outbound-template.schema.json',
   'template-release.sample.json': 'template-release.schema.json',
-  'android-ack.applied.json': 'android-ack.schema.json',
-  'android-ack.conflict.json': 'android-ack.schema.json',
-  'android-ack.failed.json': 'android-ack.schema.json',
+  'template-center-ack-request.sample.json': 'template-center-ack-request.schema.json',
+  'template-ack.sample.json': 'template-ack.schema.json',
   'android-application-state.sample.json': 'android-application-state.schema.json',
-  'feature-entitlements.sample.json': 'feature-entitlements.schema.json',
+  'account-features.sample.json': 'account-features.schema.json',
+  'account-features-catalog.sample.json': 'account-features-catalog.schema.json',
   'android-default-catalog-v1.json': 'default-template-catalog.schema.json',
 };
 
@@ -146,35 +148,18 @@ test('release payload references validate wallet + template sub-schemas', async 
   assert.ok(validateSchema(badWallet, schema).length > 0, 'financial field inside release must be rejected');
 });
 
-test('ACK contract pins ackVersion=1 and requires the identity triple', async () => {
-  const schema = await loadSchema('android-ack.schema.json');
+test('ACK request matches the Android-to-Vercel contract and rejects extra identity or secret fields', async () => {
+  const schema = await loadSchema('template-center-ack-request.schema.json');
   const base = {
-    ackVersion: 1, uid: 'u1', installationId: 'i1', releaseId: 'r1',
-    payloadHash: 'a'.repeat(64), scopeKey: 'global', outcome: 'applied',
-    appliedAt: '2026-01-01T00:00:00.000Z',
+    action: 'ack', ackVersion: 1, installationId: 'device-12345678', releaseId: 'r1',
+    payloadHash: 'b'.repeat(64), scopeKey: 'global', outcome: 'applied',
+    appliedAt: '2026-10-23T10:00:00.000Z', insertedCount: 1, conflictCount: 0,
+    parserRefreshed: true, appVersion: '1.2.3',
   };
   assert.deepEqual(validateSchema(base, schema), []);
-  assert.ok(validateSchema({ ...base, ackVersion: 2 }, schema).length > 0, 'wrong ackVersion must fail');
-  assert.ok(validateSchema({ ...base, outcome: 'ok' }, schema).length > 0, 'unknown outcome must fail');
-  const { uid, ...withoutUid } = base;
-  assert.ok(validateSchema(withoutUid, schema).length > 0, 'uid is required');
-  assert.ok(validateSchema({ ...base, payloadHash: 'short' }, schema).length > 0, 'hash must be 64 hex');
-});
-
-test('ACK contract is idempotency-shaped: identity triple is stable and secret-free', async () => {
-  const schema = await loadSchema('android-ack.schema.json');
-  const base = {
-    ackVersion: 1, uid: 'u1', installationId: 'i1', releaseId: 'r1',
-    payloadHash: 'b'.repeat(64), scopeKey: 'global', outcome: 'applied',
-    appliedAt: '2026-01-01T00:00:00.000Z',
-  };
-  // Unknown fields (which could smuggle secrets or message bodies) are rejected.
   assert.ok(validateSchema({ ...base, messageBody: 'secret text' }, schema).length > 0);
   assert.ok(validateSchema({ ...base, networkSecret: 'abc' }, schema).length > 0);
-  // The idempotency key fields are all present and typed.
-  for (const key of ['uid', 'installationId', 'releaseId', 'payloadHash', 'outcome']) {
-    assert.ok(key in base, `${key} must be part of the ACK`);
-  }
+  assert.ok(validateSchema({ ...base, uid: 'spoofed' }, schema).length > 0, 'uid is derived from Firebase token');
 });
 
 test('application-state contract keeps applied states distinct from fetch/cache', async () => {
@@ -186,33 +171,47 @@ test('application-state contract keeps applied states distinct from fetch/cache'
   assert.ok(validateSchema({ state: 'AppliedLocally', evidence: 'guess' }, schema).length > 0, 'evidence enum is enforced');
 });
 
-test('feature-entitlements contract is boolean-only and separate from lease', async () => {
-  const schema = await loadSchema('feature-entitlements.schema.json');
-  assert.deepEqual(validateSchema({ hotspot_template_editor: true, mikrotik_card_generator: false }, schema), []);
-  assert.ok(validateSchema({ hotspot_template_editor: 'yes' }, schema).length > 0, 'non-boolean must fail');
-  // Lease/device fields must not leak into the entitlement map.
-  assert.ok(validateSchema({ leaseExpiry: '2026-01-01T00:00:00Z' }, schema).length > 0);
-  assert.ok(validateSchema({ installationId: 'i1' }, schema).length > 0);
+test('account_features schema is the sole boolean entitlement map', async () => {
+  const schema = await loadSchema('account-features.schema.json');
+  const valid = {
+    account_features: { hotspot_template_editor: true, mikrotik_card_generator: false },
+    account_features_version: 1,
+    account_features_updated_at_ms: 1761177600000,
+  };
+  assert.deepEqual(validateSchema(valid, schema), []);
+  assert.ok(validateSchema({ ...valid, account_features: { sms_auto_parser: 'yes' } }, schema).length > 0);
+  assert.ok(validateSchema({ account_features: valid.account_features }, schema).length > 0, 'version and timestamp are required');
+
+  const catalogSchema = await loadSchema('account-features-catalog.schema.json');
+  const { ACCOUNT_FEATURE_CATALOG } = await import('../server/_lib/accountFeatures.js');
+  const catalog = {
+    schema_version: 1,
+    updated_at_ms: 1761177600000,
+    features: ACCOUNT_FEATURE_CATALOG.map((feature) => ({ ...feature })),
+  };
+  assert.deepEqual(validateSchema(catalog, catalogSchema), []);
 });
 
-test('paid-feature write path is server-only and keyed to the contract', async () => {
+test('account_features uses the approved catalog and remains server-only', async () => {
   const {
-    PAID_FEATURE_KEYS,
-    validatePaidFeatureInput,
-    normalizeStoredEntitlements,
-  } = await import('../server/_lib/paidFeatureEntitlements.js');
-  const schema = await loadSchema('feature-entitlements.schema.json');
-  // المفاتيح المعتمدة خادميًا يجب أن تطابق حقول المخطط (لا مفاتيح مخترعة).
-  assert.deepEqual([...PAID_FEATURE_KEYS].sort(), Object.keys(schema.properties).sort());
-  // رفض أي مفتاح خارج العقد، وقبول البولياني فقط.
-  assert.equal(validatePaidFeatureInput({ unknown_feature: true }).ok, false);
-  assert.equal(validatePaidFeatureInput({ hotspot_template_editor: 1 }).ok, false);
-  // التطبيع لا يمرّر مفاتيح غير معتمدة إلى التخزين.
-  assert.deepEqual(Object.keys(normalizeStoredEntitlements({ leaseExpiry: 'x' })).sort(),
-    [...PAID_FEATURE_KEYS].sort());
-  // المسار محجوب عن كتابة العميل في القواعد.
+    ACCOUNT_FEATURE_CATALOG,
+    validateAccountFeatureInput,
+    normalizeAccountFeatures,
+  } = await import('../server/_lib/accountFeatures.js');
+  assert.deepEqual(ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key).sort(), [
+    'advanced_analytics',
+    'hotspot_template_editor',
+    'mikrotik_card_generator',
+    'sms_auto_parser',
+  ]);
+  assert.ok(ACCOUNT_FEATURE_CATALOG.every((feature) => feature.default === false));
+  assert.equal(validateAccountFeatureInput({ made_up_feature: true }).ok, false);
+  assert.equal(validateAccountFeatureInput({ hotspot_template_editor: 1 }).ok, false);
+  assert.equal(normalizeAccountFeatures({ feature_entitlements: { hotspot_template_editor: true } }).hotspot_template_editor, false);
   const rules = await readFile(path.join(root, 'firestore.rules'), 'utf8');
-  assert.match(rules, /'feature_entitlements'/u, 'rules must block client writes to feature_entitlements');
+  assert.match(rules, /'account_features'/u, 'rules must block client writes to account_features');
+  assert.match(rules, /subcollection != 'template_acks'/u, 'template ACK writes must be server-only');
+  assert.match(rules, /subcollection != 'account_feature_audit'/u, 'feature audit writes must be server-only');
 });
 
 test('release fixture also passes the real server publish validation (not just the schema)', async () => {

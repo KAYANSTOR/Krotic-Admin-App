@@ -46,7 +46,7 @@ Vercel → مشروع krotak-pro → Settings → Environment Variables
 | المتغير | الافتراضي | الوصف |
 | --- | --- | --- |
 | `FCM_DEFAULT_TOPIC` | `krotak_all_users` | قناة الإشعارات العامة |
-| `FCM_ANDROID_CHANNEL_ID` | `krotak_admin` | قناة إشعارات أندرويد |
+| `FCM_ANDROID_CHANNEL_ID` | `krotak_admin_v2` | قناة إشعارات أندرويد |
 
 ## مهم لتطبيق الأندرويد
 
@@ -56,7 +56,7 @@ Vercel → مشروع krotak-pro → Settings → Environment Variables
 await FirebaseMessaging.instance.subscribeToTopic('krotak_all_users');
 ```
 
-ويُفضَّل تعريف قناة أندرويد باسم `krotak_admin` لعرض الإشعارات بالشكل الصحيح.
+ويجب تعريف قناة أندرويد باسم `krotak_admin_v2` (نفس القناة في `api/send-fcm.js` و`api/dispatch-notifications.js` وFunctions) لعرض الإشعارات بالشكل الصحيح.
 
 لا يحتاج هذا التغيير إلى إصدار Android جديد: التطبيق يقرأ الإشعارات الخاصة بالحساب
 من `users/{uid}/notifications` بالفعل. يجب نشر قواعد Firestore المحدّثة حتى يبقى
@@ -90,8 +90,10 @@ firebase deploy --only firestore:rules
 
 ## ملاحظات
 
-- Cloud Function القديمة في `functions/` لم تعد مستخدمة (تبقى كمرجع فقط).
-- لم تعد الصفحة تكتب في `notification_requests` — الإرسال مباشر الآن.
+- Cloud Function في `functions/` اختيارية (تحتاج Blaze). المسار الفعلي للإرسال
+  الفوري هو `/api/send-fcm`، والجدولة يستهلكها Cron أو الدالة.
+- الإرسال الفوري لا يكتب في `notification_requests`؛ **الجدولة وحدها** تُنشئ طلبًا
+  في `notification_requests` ليستهلكه `/api/dispatch-notifications`.
 - بعد الإرسال الناجح، تحفظ اللوحة سجلًا إداريًا خاصًا وتنسخ إشعارًا عامًا إلى صناديق
   الحسابات الموجودة؛ إنشاء حساب جديد لاحقًا لا ينشئ له نسخًا من الإشعارات السابقة.
 - لا تضع أي مفتاح Service Account داخل `src/` أو `.env` الخاص بالواجهة.

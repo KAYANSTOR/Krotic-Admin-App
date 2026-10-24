@@ -73,6 +73,12 @@ if (!emulatorAddress) {
         is_read: false,
         timestamp: Timestamp.now(),
       });
+      await setDoc(doc(db, 'users/user-1/template_acks/device-12345678'), {
+        uid: 'user-1', device_id: 'device-12345678', writer: 'server',
+      });
+      await setDoc(doc(db, 'users/user-1/account_feature_audit/audit-1'), {
+        account_uid: 'user-1', action: 'account_features_update',
+      });
       await setDoc(doc(db, 'admin_notification_history/history-1'), {
         title: 'Private admin history',
         timestamp: Timestamp.now(),
@@ -298,7 +304,32 @@ if (!emulatorAddress) {
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { accessStatus: 'LOCKED_EXPIRED' }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { subscriptionEndsAt: Timestamp.now() }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { commission_rate: 3 }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features: { sms_auto_parser: true } }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_version: 1 }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_updated_at_ms: Date.now() }));
     await assertSucceeds(updateDoc(doc(adminDb, 'users/user-1'), { network_name: 'Renamed' }));
+
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    await assertFails(updateDoc(doc(ownerDb, 'users/user-1'), { account_features: { sms_auto_parser: true } }));
+  });
+
+  test('template ACK and account feature audit subcollections are server-write-only', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const ackPath = 'users/user-1/template_acks/device-12345678';
+    const auditPath = 'users/user-1/account_feature_audit/audit-1';
+
+    await assertSucceeds(getDoc(doc(adminDb, ackPath)));
+    await assertSucceeds(getDoc(doc(adminDb, auditPath)));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/template_acks/device-87654321'), { writer: 'client' }));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/account_feature_audit/audit-2'), { actor_uid: 'admin-1' }));
+    await assertFails(updateDoc(doc(adminDb, ackPath), { outcome: 'applied' }));
+    await assertFails(updateDoc(doc(adminDb, auditPath), { action: 'tampered' }));
+
+    await assertFails(getDoc(doc(ownerDb, ackPath)));
+    await assertFails(getDoc(doc(ownerDb, auditPath)));
+    await assertFails(setDoc(doc(ownerDb, 'users/user-1/template_acks/device-owner'), { writer: 'client' }));
+    await assertFails(setDoc(doc(ownerDb, 'users/user-1/account_feature_audit/audit-owner'), { actor_uid: 'user-1' }));
   });
 
   test('network identity documents are server-write-only but readable by admin and owner', async () => {

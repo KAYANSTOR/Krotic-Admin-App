@@ -20,12 +20,12 @@ class AppErrorBoundary extends React.Component {
   render() {
     if (!this.state.hasError) return this.props.children;
     return (
-      <main dir="rtl" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '2rem', background: '#211b1a', color: '#fff' }}>
-        <section style={{ maxWidth: 520, width: '100%', textAlign: 'center', background: '#fff', color: '#241c1a', borderRadius: 20, padding: '2rem', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+      <main dir="rtl" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '2rem', background: 'var(--ui-forest-black, #051F20)', color: '#fff' }}>
+        <section style={{ maxWidth: 520, width: '100%', textAlign: 'center', background: 'var(--ui-surface, #fff)', color: 'var(--ui-ink, #0B1F18)', borderRadius: 16, padding: '2rem', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
           <h1 style={{ margin: 0, fontSize: '1.25rem' }}>تعذر عرض لوحة التحكم</h1>
-          <p style={{ lineHeight: 1.8, color: '#6b625e' }}>حدث خطأ مؤقت في تشغيل الصفحة. أعد تحميل الموقع، وإذا استمر الخطأ امسح بيانات الموقع ثم حاول مرة أخرى.</p>
-          {this.state.errorMessage ? <code dir="ltr" style={{ display: 'block', margin: '1rem 0', padding: '.75rem', overflowWrap: 'anywhere', textAlign: 'left', fontSize: '.75rem', color: '#8b3a20', background: '#fff3ed', borderRadius: 8 }}>{this.state.errorMessage}</code> : null}
-          <button type="button" onClick={() => window.location.reload()} style={{ border: 0, borderRadius: 10, padding: '.75rem 1.5rem', background: '#c9652b', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>إعادة تحميل الصفحة</button>
+          <p style={{ lineHeight: 1.8, color: 'var(--ui-muted, #5B7268)' }}>حدث خطأ مؤقت في تشغيل الصفحة. أعد تحميل الموقع، وإذا استمر الخطأ امسح بيانات الموقع ثم حاول مرة أخرى.</p>
+          {this.state.errorMessage ? <code dir="ltr" style={{ display: 'block', margin: '1rem 0', padding: '.75rem', overflowWrap: 'anywhere', textAlign: 'left', fontSize: '.75rem', color: 'var(--ui-danger-ink, #8A2B2B)', background: 'var(--ui-danger-soft, #FBECEC)', borderRadius: 8 }}>{this.state.errorMessage}</code> : null}
+          <button type="button" onClick={() => window.location.reload()} style={{ border: 0, borderRadius: 10, padding: '.75rem 1.5rem', background: 'var(--ui-primary-green, #235347)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>إعادة تحميل الصفحة</button>
         </section>
       </main>
     );
