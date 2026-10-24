@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { plain } from '../src/lib/localDb/plain.js';
-import { applyRows, applyTombstones, syncSource, createSyncController } from '../src/lib/localDb/syncCore.js';
+import { applyRows, applyTombstones, syncSource, createSyncController, resetSalesHistoryCursorsOnce } from '../src/lib/localDb/syncCore.js';
 import { createMemoryDb, createFakeSource } from './helpers/memoryDb.js';
 
 test('plain converts Firestore timestamps into epoch milliseconds', () => {
@@ -53,6 +53,24 @@ test('second sync without changes reads only the check query', async () => {
 
   assert.equal(result.changed, 0);
   assert.equal(pullCalls, 0, 'the incremental pull must be skipped when nothing changed');
+});
+
+test('manual legacy path refresh resets sales and payment cursors once without deleting cached data', async () => {
+  const localDb = createMemoryDb();
+  await localDb.sync_state.put({ key: 'sales', cursorMs: 500 });
+  await localDb.sync_state.put({ key: 'payments', cursorMs: 700 });
+  await localDb.sync_state.put({ key: 'users', cursorMs: 900 });
+  await localDb.sales.put({ networkId: 'NET-1', id: 'cached-sale', updatedAtMs: 12 });
+
+  assert.equal(await resetSalesHistoryCursorsOnce(localDb), true);
+  assert.equal((await localDb.sync_state.get('sales')).cursorMs, 0);
+  assert.equal((await localDb.sync_state.get('payments')).cursorMs, 0);
+  assert.equal((await localDb.sync_state.get('users')).cursorMs, 900);
+  assert.equal(await localDb.sales.count(), 1, 'existing local rows are retained for idempotent refresh');
+
+  await localDb.sync_state.put({ key: 'sales', cursorMs: 1200 });
+  assert.equal(await resetSalesHistoryCursorsOnce(localDb), false);
+  assert.equal((await localDb.sync_state.get('sales')).cursorMs, 1200);
 });
 
 test('empty sources skip the pull query and still pick up rows backfilled to updatedAtMs=1', async () => {

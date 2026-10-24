@@ -4,7 +4,7 @@ import {
 import { db as firestore } from '../../firebase';
 import { plain } from './plain';
 import { countReads } from './readMeter';
-import { applyRows, applyTombstones, syncSource, createSyncController } from './syncCore';
+import { applyRows, applyTombstones, syncSource, createSyncController, resetSalesHistoryCursorsOnce } from './syncCore';
 
 const PAGE_SIZE = 300;
 const MIN_AUTO_INTERVAL_MS = 60_000;
@@ -110,6 +110,9 @@ controller.configure({ latestMs, pullSince });
 
 /** مزامنة واحدة في كل وقت. التلقائي محدود بفاصل دقيقة، واليدوي دائماً ينفذ. */
 export function syncAll(localDb, { reason = 'auto' } = {}) {
+  if (reason === 'manual') {
+    return resetSalesHistoryCursorsOnce(localDb).then(() => controller.run(localDb, SOURCES, { reason }));
+  }
   return controller.run(localDb, SOURCES, { reason });
 }
 

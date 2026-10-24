@@ -30,6 +30,22 @@ export async function applyRows(localDb, src, rows) {
   await localDb.table(src.table).bulkPut(rows);
 }
 
+/** يعيد مؤشري sales/payments مرة واحدة لالتقاط مسار UID القديم عند التحديث اليدوي. */
+export async function resetSalesHistoryCursorsOnce(localDb) {
+  if (!localDb) return false;
+  const key = 'legacy-sales-path-reset-v1';
+  const marker = await localDb.meta.get(key);
+  if (marker?.value === 1) return false;
+  for (const sourceKey of ['sales', 'payments']) {
+    const state = await localDb.sync_state.get(sourceKey);
+    if (state && Number(state.cursorMs) > 0) {
+      await localDb.sync_state.put({ ...state, cursorMs: 0, legacyPathResetAt: Date.now() });
+    }
+  }
+  await localDb.meta.put({ key, value: 1, resetAt: Date.now() });
+  return true;
+}
+
 /**
  * يزامن مصدراً واحداً: فحص ثم تنزيل تزايدي ثم تحريك المؤشر.
  * latestMs و pullSince يحسبهما المستدعي (محرك Firebase أو الاختبار).

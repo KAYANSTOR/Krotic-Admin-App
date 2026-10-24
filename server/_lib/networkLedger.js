@@ -46,25 +46,56 @@ export function monthlySalesQuery(networkRef, month, limit = 400) {
     .limit(limit);
 }
 
+function timestampMs(value) {
+  if (value && typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /**
  * يطبّق مبلغ دفعة داخل معاملة: يسوّي المبيعات غير المسوّاة (FIFO) ويحدّث
  * الرصيد التراكمي على مستند الشبكة. يُرجع ملخص التخصيص والرصيد المتبقي.
  */
 export async function settleNetworkPayment(transaction, {
   networkRef,
+  networkRefs = [networkRef],
   salesQuery,
+  salesQueries,
   amountMinor,
   settlementId,
   month,
   networkAccessPatch = {},
   now = Date.now(),
 }) {
-  const networkSnap = await transaction.get(networkRef);
-  const network = networkSnap.exists ? networkSnap.data() : {};
+  const refs = [...new Set([networkRef, ...(networkRefs || [])].filter(Boolean))];
+  const networkSnaps = await Promise.all(refs.map((ref) => transaction.get(ref)));
+  const primaryIndex = refs.indexOf(networkRef);
+  const network = networkSnaps[primaryIndex]?.exists ? networkSnaps[primaryIndex].data() : {};
 
-  const salesSnap = await transaction.get(salesQuery);
-  const sales = salesSnap.docs.map((saleDoc) => ({ id: saleDoc.id, ref: saleDoc.ref, ...saleDoc.data() }));
-  const unsettled = sales.filter((sale) => (!sale.status || sale.status === 'COMPLETED') && saleOutstanding(sale) > 0);
+  const queries = (salesQueries?.length ? salesQueries : [salesQuery]).filter(Boolean);
+  const salesSnaps = await Promise.all(queries.map((salesRef) => transaction.get(salesRef)));
+  const seen = new Set();
+  const sales = [];
+  for (const salesSnap of salesSnaps) {
+    for (const saleDoc of salesSnap.docs) {
+      const data = saleDoc.data() || {};
+      const keys = [data.saleUuid, data.saleId, data.uuid, saleDoc.id]
+        .filter((key) => key !== undefined && key !== null && String(key) !== '')
+        .map(String);
+      if (keys.some((key) => seen.has(key))) continue;
+      keys.forEach((key) => seen.add(key));
+      sales.push({ ...data, id: saleDoc.id, ref: saleDoc.ref });
+    }
+  }
+  sales.sort((a, b) => timestampMs(a.createdAt ?? a.createdAtMs ?? a.timestamp)
+    - timestampMs(b.createdAt ?? b.createdAtMs ?? b.timestamp));
+  // The same monthly cap applies after merging both paths, so one transaction
+  // cannot exceed Firestore's write limit if many tiny sales are settled.
+  const unsettled = sales.slice(0, 400)
+    .filter((sale) => (!sale.status || sale.status === 'COMPLETED') && saleOutstanding(sale) > 0);
   const monthlyOutstanding = unsettled.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
 
   // لا نقبل رصيداً مقدماً لشهر آخر، ولا نسمح للدفعة الشهرية بتسوية مبيعات
@@ -97,19 +128,25 @@ export async function settleNetworkPayment(transaction, {
     });
   });
 
-  const totalCommissionDue = Number(network.totalCommissionDue) || 0;
-  const totalPaidAmount = (Number(network.totalPaidAmount) || 0) + amountMinor;
-  const outstandingBalance = computeOutstanding(totalCommissionDue, totalPaidAmount);
-
-  transaction.set(networkRef, {
-    totalPaidAmount,
-    outstandingBalance,
-    lastPaymentMinor: amountMinor,
-    lastPaymentAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-    updatedAtMs: now,
-    ...networkAccessPatch,
-  }, { merge: true });
+  let outstandingBalance = 0;
+  refs.forEach((ref, index) => {
+    const snapshot = networkSnaps[index];
+    if (index > 0 && !snapshot.exists) return;
+    const pathNetwork = snapshot.exists ? snapshot.data() || {} : network;
+    const totalCommissionDue = Number(pathNetwork.totalCommissionDue) || 0;
+    const totalPaidAmount = (Number(pathNetwork.totalPaidAmount) || 0) + amountMinor;
+    const pathOutstanding = computeOutstanding(totalCommissionDue, totalPaidAmount);
+    if (ref === networkRef) outstandingBalance = pathOutstanding;
+    transaction.set(ref, {
+      totalPaidAmount,
+      outstandingBalance: pathOutstanding,
+      lastPaymentMinor: amountMinor,
+      lastPaymentAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
+      ...networkAccessPatch,
+    }, { merge: true });
+  });
 
   return {
     allocatedMinor: amountMinor - allocation.remainingMinor,

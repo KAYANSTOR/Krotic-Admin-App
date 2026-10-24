@@ -102,8 +102,11 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
   // الرصيد التراكمي والتسويات تُخزَّن على مستند الشبكة (NET-xxxxx إن وُجد).
   const networkId = parseNetworkId(userPre.data()?.networkId) ? userPre.data().networkId : value.uid;
   const networkRef = db.collection('networks').doc(networkId);
-  const settlementRef = networkRef.collection('settlements').doc(settlementId);
-  const salesQuery = monthlySalesQuery(networkRef, value.month, MAX_SETTLEMENT_SALES);
+  const networkRefs = networkId === value.uid
+    ? [networkRef]
+    : [networkRef, db.collection('networks').doc(value.uid)];
+  const settlementRefs = networkRefs.map((ref) => ref.collection('settlements').doc(settlementId));
+  const salesQueries = networkRefs.map((ref) => monthlySalesQuery(ref, value.month, MAX_SETTLEMENT_SALES));
   const notificationRef = db.collection('users').doc(value.uid).collection('notifications').doc(`settlement_${settlementId}`);
   const auditRef = db.collection('admin_audit_logs').doc(`settlement_${settlementId}`);
   const fingerprint = createHash('sha256').update(JSON.stringify({
@@ -114,11 +117,22 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
   })).digest('hex');
 
   return db.runTransaction(async (transaction) => {
-    const existing = await transaction.get(settlementRef);
-    if (existing.exists) {
+    const existingSnaps = await Promise.all(settlementRefs.map((ref) => transaction.get(ref)));
+    const existing = existingSnaps.find((snapshot) => snapshot.exists);
+    if (existing) {
       const previous = existing.data() || {};
+      if (existingSnaps.some((snapshot) => snapshot.exists && snapshot.data()?.fingerprint !== fingerprint)) {
+        return { status: 'conflict', settlementId };
+      }
       if (previous.fingerprint === fingerprint) {
         const notification = await transaction.get(notificationRef);
+        existingSnaps.forEach((snapshot, index) => {
+          if (!snapshot.exists) transaction.set(settlementRefs[index], {
+            ...previous,
+            networkId: networkRefs[index].id,
+            canonicalNetworkId: networkId,
+          }, { merge: false });
+        });
         if (!notification.exists) transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid));
         return { status: 'duplicate', settlementId };
       }
@@ -145,7 +159,8 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     // دفتر الرصيد والتجديد يُكتبان على مستند الشبكة مرة واحدة داخل المعاملة.
     const ledger = await settleNetworkPayment(transaction, {
       networkRef,
-      salesQuery,
+      networkRefs,
+      salesQueries,
       amountMinor: value.amountMinor,
       settlementId,
       month: value.month,
@@ -164,7 +179,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     const allocatedMinor = ledger.allocatedMinor;
     const outstandingAfterMinor = ledger.outstandingBalance;
 
-    transaction.set(settlementRef, {
+    const settlementData = {
       settlementId,
       uid: value.uid,
       amountMinor: value.amountMinor,
@@ -190,7 +205,12 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       createdAtMs: now,
       updatedAtMs: now,
       recordedAtMs: now,
-    }, { merge: false });
+    };
+    settlementRefs.forEach((ref, index) => transaction.set(ref, {
+      ...settlementData,
+      networkId: networkRefs[index].id,
+      canonicalNetworkId: networkId,
+    }, { merge: false }));
 
     transaction.set(notificationRef, settlementNotification(value, settlementId, callerUid), { merge: false });
 
@@ -260,4 +280,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'settlement_failed' });
   }
 }
-

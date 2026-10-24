@@ -70,41 +70,59 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
   const networkId = parseNetworkId(userSnap.data()?.networkId) ? userSnap.data().networkId : value.uid;
 
   const networkRef = db.collection('networks').doc(networkId);
-  const paymentRef = networkRef.collection('payments').doc(paymentDocId(value.uid, value.idempotencyKey));
-  const salesQuery = monthlySalesQuery(networkRef, value.month, 400);
+  const networkRefs = networkId === value.uid
+    ? [networkRef]
+    : [networkRef, db.collection('networks').doc(value.uid)];
+  const paymentId = paymentDocId(value.uid, value.idempotencyKey);
+  const paymentRefs = networkRefs.map((ref) => ref.collection('payments').doc(paymentId));
+  const salesQueries = networkRefs.map((ref) => monthlySalesQuery(ref, value.month, 400));
   const fingerprint = createHash('sha256').update(JSON.stringify({ amount: value.amount, month: value.month })).digest('hex');
 
   return db.runTransaction(async (transaction) => {
-    const existing = await transaction.get(paymentRef);
-    if (existing.exists) {
+    const existingSnaps = await Promise.all(paymentRefs.map((ref) => transaction.get(ref)));
+    const existing = existingSnaps.find((snapshot) => snapshot.exists);
+    if (existing) {
       const prev = existing.data() || {};
-      if (prev.fingerprint === fingerprint) return { status: 'duplicate', paymentId: paymentRef.id, outstandingBalance: prev.outstandingBalance ?? null };
-      return { status: 'conflict', paymentId: paymentRef.id };
+      if (existingSnaps.some((snapshot) => snapshot.exists && snapshot.data()?.fingerprint !== fingerprint)) {
+        return { status: 'conflict', paymentId };
+      }
+      if (prev.fingerprint !== fingerprint) return { status: 'conflict', paymentId };
+      // Repair a missing mirror on retry without applying the sale allocation twice.
+      existingSnaps.forEach((snapshot, index) => {
+        if (!snapshot.exists) transaction.set(paymentRefs[index], {
+          ...prev,
+          networkId: networkRefs[index].id,
+          canonicalNetworkId: networkId,
+        }, { merge: false });
+      });
+      return { status: 'duplicate', paymentId, outstandingBalance: prev.outstandingBalance ?? null };
     }
 
     // تُخصَّص الدفعة لمبيعات الشهر المحدد فقط، من الأقدم إلى الأحدث داخل الشهر.
     const ledger = await settleNetworkPayment(transaction, {
       networkRef,
-      salesQuery,
+      networkRefs,
+      salesQueries,
       amountMinor: value.amount,
-      settlementId: paymentRef.id,
+      settlementId: paymentId,
       month: value.month,
       now,
     });
     if (ledger.status === 'month_balance_exceeded') {
       return {
         status: ledger.status,
-        paymentId: paymentRef.id,
+        paymentId,
         month: value.month,
         monthlyOutstanding: ledger.monthlyOutstanding,
         requestedAmount: ledger.requestedAmount,
       };
     }
 
-    transaction.set(paymentRef, {
+    paymentRefs.forEach((paymentRef, index) => transaction.set(paymentRef, {
       amount: value.amount,
       month: value.month,
-      networkId,
+      networkId: networkRefs[index].id,
+      canonicalNetworkId: networkId,
       timestamp: now,
       source: 'admin_api',
       recordedBy: callerUid,
@@ -118,9 +136,9 @@ export async function recordPayment({ db, callerUid, value, now = Date.now() }) 
       createdAt: FieldValue.serverTimestamp(),
       createdAtMs: now,
       updatedAtMs: now,
-    }, { merge: false });
+    }, { merge: false }));
 
-    return { status: 'created', paymentId: paymentRef.id, outstandingBalance: ledger.outstandingBalance, settledSales: ledger.settledSales };
+    return { status: 'created', paymentId, outstandingBalance: ledger.outstandingBalance, settledSales: ledger.settledSales };
   });
 }
 

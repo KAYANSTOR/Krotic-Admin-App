@@ -112,3 +112,47 @@ test('settlement marks every changed sale and network with the same update curso
   assert.equal(writes[0][2].updatedAtMs, now);
   assert.equal(writes[1][2].updatedAtMs, now);
 });
+
+test('settlement reads canonical and legacy sales, deduplicates, and writes to each original sale path', async () => {
+  const networkRef = { id: 'NET-1' };
+  const legacyNetworkRef = { id: 'legacy-uid' };
+  const currentQuery = {};
+  const legacyQuery = {};
+  const currentSaleRef = { path: 'networks/NET-1/sales/shared' };
+  const legacyDuplicateRef = { path: 'networks/legacy-uid/sales/shared' };
+  const legacySaleRef = { path: 'networks/legacy-uid/sales/legacy-only' };
+  const doc = (id, ref, data) => ({ id, ref, data: () => data });
+  const writes = [];
+  const transaction = {
+    async get(ref) {
+      if (ref === networkRef) return { exists: true, data: () => ({ totalCommissionDue: 100, totalPaidAmount: 0 }) };
+      if (ref === legacyNetworkRef) return { exists: true, data: () => ({ totalCommissionDue: 100, totalPaidAmount: 0 }) };
+      if (ref === currentQuery) return { docs: [doc('shared', currentSaleRef, { saleUuid: 'shared-key', createdAt: new Date('2026-10-02'), commissionRiyal: 40, paidRiyal: 0 })] };
+      if (ref === legacyQuery) return { docs: [
+        doc('shared', legacyDuplicateRef, { saleUuid: 'shared-key', createdAt: new Date('2026-10-02'), commissionRiyal: 40, paidRiyal: 0 }),
+        doc('legacy-only', legacySaleRef, { saleUuid: 'legacy-key', createdAt: new Date('2026-10-03'), commissionRiyal: 50, paidRiyal: 0 }),
+      ] };
+      throw new Error('unexpected transaction read');
+    },
+    update(...args) { writes.push(['update', ...args]); },
+    set(...args) { writes.push(['set', ...args]); },
+  };
+
+  const result = await settleNetworkPayment(transaction, {
+    networkRef,
+    networkRefs: [networkRef, legacyNetworkRef],
+    salesQueries: [currentQuery, legacyQuery],
+    amountMinor: 60,
+    settlementId: 'dual-path-payment',
+    month: '2026-10',
+    now: 1_800_000_000_123,
+  });
+
+  assert.equal(result.allocatedMinor, 60);
+  assert.equal(result.settledSales, 2);
+  const updatedSaleRefs = writes.filter(([kind]) => kind === 'update').map(([, ref]) => ref);
+  assert.deepEqual(updatedSaleRefs, [currentSaleRef, legacySaleRef]);
+  assert.equal(updatedSaleRefs.includes(legacyDuplicateRef), false);
+  const networkWrites = writes.filter(([kind]) => kind === 'set').map(([, ref]) => ref);
+  assert.deepEqual(networkWrites, [networkRef, legacyNetworkRef]);
+});
