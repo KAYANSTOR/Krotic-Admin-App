@@ -95,8 +95,8 @@ export async function syncSource(localDb, src, { latestMs, pullSince }) {
   // استعلام السحب لن يعيد شيئًا، لذا نتخطاه ونبقي المؤشر كما هو حتى تظهر
   // بيانات فعلية (بما فيها الوثائق التي يُعطيها الترحيل updatedAtMs = 1).
   if (latest === 0) return { key: src.key, changed: 0 };
-  if (state.cursorMs > 0 && latest <= state.cursorMs) {
-    return { key: src.key, changed: 0 }; // لا شيء جديد
+  if (state.cursorMs > 0 && latest < state.cursorMs) {
+    return { key: src.key, changed: 0 }; // لا شيء أحدث من المؤشر؛ عند التساوي قد توجد وثائق جديدة بنفس الطابع الزمني
   }
   let changed = 0;
   const nextCursor = await pullSince(src, state.cursorMs, async (rows) => {
