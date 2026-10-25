@@ -62,6 +62,25 @@ test('second sync without changes reads only the check query', async () => {
   assert.equal(pullCalls, 0, 'the incremental pull must be skipped when nothing changed');
 });
 
+test('sync fetches newly added rows when latest timestamp equals the saved cursor', async () => {
+  const localDb = createMemoryDb();
+  const source = createFakeSource('sales', 'sales', [
+    { networkId: 'uid-old', id: 'sale-before', updatedAtMs: 100, amount: 10 },
+  ]);
+  const ctx = {
+    latestMs: (src) => src.latestMs(),
+    pullSince: (src, cursor, onRows) => src.pullSince(src, cursor, onRows),
+  };
+
+  await syncSource(localDb, source, ctx);
+  source.rows.push({ networkId: 'uid-old', id: 'sale-new-same-ms', updatedAtMs: 100, amount: 20 });
+
+  const result = await syncSource(localDb, source, ctx);
+  assert.equal(result.changed, 2, 'equal timestamps must trigger an inclusive pull');
+  assert.equal(await localDb.sales.count(), 2);
+  assert.ok((await localDb.sales.toArray()).some((sale) => sale.id === 'sale-new-same-ms'));
+});
+
 test('manual legacy refresh resets entity cursors once without deleting cached data', async () => {
   const localDb = createMemoryDb();
   await localDb.sync_state.put({ key: 'sales', cursorMs: 500 });
