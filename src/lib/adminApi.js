@@ -42,6 +42,7 @@ export const ADMIN_API_ERRORS = {
   settlement_failed: 'تعذر اعتماد التسوية على الخادم.',
   settings_failed: 'تعذر حفظ الإعدادات على الخادم.',
   network_action_failed: 'تعذر تنفيذ إجراء الشبكة على الخادم.',
+  network_mapping_ambiguous: 'يوجد أكثر من مستند شبكة لهذا الحساب؛ أوقفنا الإنشاء ونحتاج مراجعة الربط قبل المتابعة.',
   repair_limit_invalid: 'حجم دفعة إصلاح حالات الوصول غير صالح.',
   owner_uid_invalid: 'معرّف مالك الشبكة غير صالح.',
   access_status_invalid: 'حالة الوصول غير صالحة.',

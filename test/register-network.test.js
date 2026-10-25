@@ -12,6 +12,9 @@ class FakeRef {
 }
 class FakeCollection {
   constructor(db, path) { this.db = db; this.path = path; }
+  where(field, operator, value) {
+    return { query: true, collection: this.path, field, operator, value, limit() { return this; } };
+  }
   doc(id) {
     const key = id ?? `generated-${++this.db.autoId}`;
     return new FakeRef(this.db, `${this.path}/${key}`);
@@ -24,6 +27,13 @@ class FakeDb {
     const writes = [];
     const transaction = {
       get: async (ref) => {
+        if (ref?.query) {
+          const docs = [...this.docs.entries()]
+            .filter(([path, data]) => path.startsWith(`${ref.collection}/`)
+              && data?.[ref.field] === ref.value)
+            .map(([path, data]) => ({ id: path.split('/').pop(), data: () => data }));
+          return { docs };
+        }
         const data = this.docs.get(ref.path);
         return { exists: data !== undefined, data: () => data };
       },
@@ -97,6 +107,38 @@ test('retrying the same registration is idempotent and does not extend the trial
   assert.equal(second.subscriptionEndsAtMs, first.subscriptionEndsAtMs);
   assert.equal(db.docs.get('users/client_2').phone_verification_required, false);
   assert.equal(db.docs.get('counters/networks').lastNetworkId, 'NET-10001');
+});
+
+test('existing owner network is reused when the user mapping is missing', async () => {
+  const db = new FakeDb();
+  db.docs.set('users/client_existing', { uid: 'client_existing', phone: validInput.phone });
+  db.docs.set('networks/NET-10077', {
+    networkId: 'NET-10077', owner_uid: 'client_existing',
+    trialStartedAt: Timestamp.fromMillis(1_800_000_000_000),
+    subscriptionEndsAt: Timestamp.fromMillis(1_802_000_000_000),
+  });
+
+  const result = await provisionSelfRegistration(db, {
+    uid: 'client_existing', profile: validInput, now: Date.UTC(2026, 9, 15),
+  });
+
+  assert.equal(result.status, 'duplicate');
+  assert.equal(result.networkId, 'NET-10077');
+  assert.equal(db.docs.has('counters/networks'), false);
+});
+
+test('ambiguous owner networks stop registration instead of creating a third network', async () => {
+  const db = new FakeDb();
+  db.docs.set('users/client_ambiguous', { uid: 'client_ambiguous', phone: validInput.phone });
+  db.docs.set('networks/NET-10078', { networkId: 'NET-10078', owner_uid: 'client_ambiguous' });
+  db.docs.set('networks/NET-10079', { networkId: 'NET-10079', owner_uid: 'client_ambiguous' });
+
+  await assert.rejects(
+    provisionSelfRegistration(db, { uid: 'client_ambiguous', profile: validInput }),
+    (error) => error instanceof RegistrationError
+      && error.status === 409 && error.code === 'network_mapping_ambiguous',
+  );
+  assert.equal(db.docs.has('counters/networks'), false);
 });
 
 test('retrying a pending registration removes the temporary SMS gate without claiming verification', async () => {

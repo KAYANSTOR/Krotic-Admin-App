@@ -175,6 +175,27 @@ async function provision(db, { ownerUid, actorUid, now }) {
     }
   }
 
+  const ownerNetworkIds = new Set();
+  for (const field of ['owner_uid', 'ownerUid', 'uid']) {
+    const snapshot = await db.collection('networks').where(field, '==', ownerUid).limit(3).get();
+    for (const document of snapshot.docs || []) {
+      const network = document.data() || {};
+      const owner = network.owner_uid || network.ownerUid || network.uid;
+      if (owner === ownerUid) ownerNetworkIds.add(document.id);
+    }
+  }
+  if (ownerNetworkIds.size > 1) {
+    const error = new Error('network_mapping_ambiguous');
+    error.status = 409;
+    throw error;
+  }
+  if (ownerNetworkIds.size === 1) {
+    const networkId = [...ownerNetworkIds][0];
+    const networkRef = db.collection('networks').doc(networkId);
+    const { networkSecret } = await ensureNetworkSecret(db, networkRef);
+    return { status: 'duplicate', networkId, networkSecret };
+  }
+
   const networkId = await allocateNetworkId(db);
   const trialStartedAt = now;
   const subscriptionEndsAt = now + TRIAL_DAYS * DAY_MS;
@@ -647,6 +668,9 @@ export default async function handler(req, res) {
     if (result.status === 'account_not_found') return res.status(404).json({ success: false, error: 'account_not_found' });
     return res.status(200).json({ success: true, ...result });
   } catch (error) {
+    if (error?.message === 'network_mapping_ambiguous') {
+      return res.status(409).json({ success: false, error: 'network_mapping_ambiguous' });
+    }
     if (error?.message === 'network_secret_master_not_configured') {
       return res.status(503).json({ success: false, error: 'hmac_not_configured' });
     }

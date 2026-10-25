@@ -55,6 +55,21 @@ function phoneIndexId(phone) {
   return createHash('sha256').update(phone, 'utf8').digest('hex');
 }
 
+async function findOwnedNetworkCandidates(transaction, db, uid) {
+  const candidates = new Map();
+  for (const field of ['owner_uid', 'ownerUid', 'uid']) {
+    const snapshot = await transaction.get(
+      db.collection('networks').where(field, '==', uid).limit(3),
+    );
+    for (const document of snapshot.docs || []) {
+      const network = document.data() || {};
+      const owner = network.owner_uid || network.ownerUid || network.uid;
+      if (owner === uid) candidates.set(document.id, network);
+    }
+  }
+  return [...candidates.entries()];
+}
+
 /**
  * Provision one server-owned network and one 30-day trial atomically.
  * Repeated calls for the same UID/normalized phone are idempotent; the phone
@@ -79,7 +94,14 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       throw new RegistrationError(409, 'phone_already_registered');
     }
 
-    const currentNetworkId = typeof user.networkId === 'string' ? user.networkId.trim() : '';
+    let currentNetworkId = typeof user.networkId === 'string' ? user.networkId.trim() : '';
+    if (!currentNetworkId) {
+      const ownedNetworks = await findOwnedNetworkCandidates(transaction, db, uid);
+      if (ownedNetworks.length > 1) {
+        throw new RegistrationError(409, 'network_mapping_ambiguous');
+      }
+      if (ownedNetworks.length === 1) currentNetworkId = ownedNetworks[0][0];
+    }
     if (currentNetworkId) {
       if (!NETWORK_ID_PATTERN.test(currentNetworkId)) {
         throw new RegistrationError(409, 'network_mapping_invalid');
