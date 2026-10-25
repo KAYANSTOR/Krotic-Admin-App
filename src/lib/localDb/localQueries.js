@@ -233,10 +233,12 @@ export function aggregateMapByUid(aggregateRows) {
  * يبني تقرير شبكة واحدة: بيانات الشبكة + إجمالياتها من المبيعات المحلية + المدفوعات.
  * لا حسابات مالية مُختلقة: العمولة تأتي من الحقول الخادمية في سجلات البيع.
  */
-export function buildNetworkReport({ user, sales, payments, aggregate, defaultCommissionRate = 5 }) {
+export function buildNetworkReport({ user, sales, payments, aggregate, defaultCommissionRate = 5, preferAggregateSales = true }) {
   const summary = summarizeCompletedSales(sales || []);
   const aggregateData = aggregate || {};
-  const due = Number(aggregateData.totalCommissionDue) || summary.commissionDue;
+  const due = preferAggregateSales
+    ? (Number(aggregateData.totalCommissionDue) || summary.commissionDue)
+    : summary.commissionDue;
   const recordedPayments = Number(aggregateData.totalPaid)
     || (payments || []).reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   const customRate = Number(user?.commission_rate);
@@ -249,8 +251,12 @@ export function buildNetworkReport({ user, sales, payments, aggregate, defaultCo
     networkName: user?.networkName || user?.network_name || '',
     phoneNumber: user?.phoneNumber || user?.phone || '',
     commissionRate,
-    reportedSalesValue: Number(aggregateData.totalFaceValue) || summary.reportedSalesValue,
-    reportedTransactions: Number(aggregateData.totalTransactions) || summary.reportedTransactions,
+    reportedSalesValue: preferAggregateSales
+      ? (Number(aggregateData.totalFaceValue) || summary.reportedSalesValue)
+      : summary.reportedSalesValue,
+    reportedTransactions: preferAggregateSales
+      ? (Number(aggregateData.totalTransactions) || summary.reportedTransactions)
+      : summary.reportedTransactions,
     recordedPayments,
     commissionDue: due,
     outstandingCommission: Math.max(0, due - recordedPayments),
@@ -281,8 +287,46 @@ export function summarizeSubscriptionAlerts(users, config, now = Date.now()) {
 }
 
 /** يبني تقرير لوحة التحكم كاملاً من القاعدة المحلية. */
-export function buildDashboardReport({ users, aggregates, config }) {
-  const { totals, monthlySales } = summarizeAggregates(aggregates);
+export function buildDashboardReport({ users, aggregates, salesRows = null, paymentRows = null, config }) {
+  const aggregateSummary = summarizeAggregates(aggregates);
+  let { totals, monthlySales } = aggregateSummary;
+  if (Array.isArray(salesRows) && (salesRows.length > 0 || (paymentRows || []).length > 0)) {
+    const aggregateMap = aggregateMapByUid(aggregates);
+    const defaultCommissionRate = Number(config?.default_commission_rate ?? 5);
+    const reports = (users || []).map((user) => {
+      const networkId = user.networkId || user.uid;
+      return buildNetworkReport({
+        user,
+        sales: salesForNetwork(salesRows, networkId, user.uid),
+        payments: paymentsForNetwork(paymentRows || [], networkId, user.uid),
+        aggregate: aggregateMap.get(user.uid),
+        defaultCommissionRate,
+        preferAggregateSales: false,
+      });
+    });
+    const monthly = {};
+    totals = reports.reduce((sum, report) => {
+      sum.totalFaceValue += Number(report.reportedSalesValue) || 0;
+      sum.totalTransactions += Number(report.reportedTransactions) || 0;
+      sum.totalCommissionDue += Number(report.commissionDue) || 0;
+      sum.totalPaid += Number(report.recordedPayments) || 0;
+      sum.totalCommissionOutstanding += Number(report.outstandingCommission) || 0;
+      Object.entries(report.monthly || {}).forEach(([month, bucket]) => {
+        const current = monthly[month] || { face: 0, count: 0 };
+        current.face += Number(bucket.face) || 0;
+        current.count += Number(bucket.count) || 0;
+        monthly[month] = current;
+      });
+      return sum;
+    }, {
+      totalFaceValue: 0,
+      totalTransactions: 0,
+      totalCommissionDue: 0,
+      totalPaid: 0,
+      totalCommissionOutstanding: 0,
+    });
+    monthlySales = recentMonthsFrom(monthly, 6);
+  }
   const alerts = summarizeSubscriptionAlerts(users, config);
   return {
     appStatus: config,

@@ -706,7 +706,8 @@ export default function UsersPage() {
                 {visibleUsers.map((user) => {
                   const billing = getUserBilling(user);
                   const expired = isExpired(user.subscription_end_date);
-                  const networkTitle = user.networkName || `شبكة ${user.uid.slice(0, 8)}`;
+                  const networkTitle = user.networkName || user.network_name || user.name
+                    || user.networkTitle || `شبكة ${user.networkId || user.uid.slice(0, 8)}`;
                   const phoneStr = user.phoneNumber || user.phone || '';
                   const isVerified = isUserPhoneVerified(user);
 

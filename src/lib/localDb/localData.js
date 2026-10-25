@@ -51,12 +51,14 @@ export async function loadLocalUserOptions(localDb) {
 
 /** يحمّل تقرير لوحة التحكم. */
 export async function loadLocalDashboard(localDb) {
-  const [users, aggregates, config] = await Promise.all([
+  const [users, aggregates, salesRows, paymentRows, config] = await Promise.all([
     loadLocalUsers(localDb),
     readAllRows(localDb, 'aggregates'),
+    readAllRows(localDb, 'sales'),
+    readAllRows(localDb, 'payments'),
     readGlobalConfig(localDb),
   ]);
-  return buildDashboardReport({ users, aggregates, config });
+  return buildDashboardReport({ users, aggregates, salesRows, paymentRows, config });
 }
 
 /** يحمّل المستخدمين مع تقريرهم المالي. */

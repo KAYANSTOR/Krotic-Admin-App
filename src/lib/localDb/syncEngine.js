@@ -141,20 +141,23 @@ controller.configure({ latestMs, pullSince });
 
 /** مزامنة واحدة في كل وقت. التلقائي محدود بفاصل دقيقة، واليدوي دائماً ينفذ. */
 export function syncAll(localDb, { reason = 'auto' } = {}) {
-  if (reason === 'manual') {
-    return (async () => {
-      await resetLegacyDataCursorsOnce(localDb);
-      const results = await controller.run(localDb, SOURCES, { reason });
-      if (!Array.isArray(results)) return results;
-      const legacy = await importUnindexedRowsWhenCountChanges(
-        localDb,
-        SOURCES.filter((src) => LEGACY_COUNT_KEYS.has(src.key)),
-        { getRemoteCount, scanAll: scanAllDocuments },
-      );
-      return [...results, { key: 'legacy_unindexed', changed: legacy.importedRows, scanned: legacy.scannedDocuments }];
-    })();
-  }
-  return controller.run(localDb, SOURCES, { reason });
+  return (async () => {
+    if (reason === 'manual') await resetLegacyDataCursorsOnce(localDb);
+    const results = await controller.run(localDb, SOURCES, { reason });
+    if (!Array.isArray(results)) return results;
+    // التطبيق القديم لا يكتب updatedAtMs؛ نفحص عدد المبيعات في كل مزامنة
+    // ناجحة، ثم نمسح فقط عند تغيّر العدد. هذا يجعل المبيعات الجديدة تظهر
+    // تلقائيًا دون فرض قراءة كاملة في كل فتح للوحة.
+    const legacySources = reason === 'manual'
+      ? SOURCES.filter((src) => LEGACY_COUNT_KEYS.has(src.key))
+      : SOURCES.filter((src) => src.key === 'sales');
+    const legacy = await importUnindexedRowsWhenCountChanges(
+      localDb,
+      legacySources,
+      { getRemoteCount, scanAll: scanAllDocuments },
+    );
+    return [...results, { key: 'legacy_unindexed', changed: legacy.importedRows, scanned: legacy.scannedDocuments }];
+  })();
 }
 
 /** إعادة تعيين المؤشرات: تُستخدم فقط لزر "مزامنة كاملة" في الإعدادات. */

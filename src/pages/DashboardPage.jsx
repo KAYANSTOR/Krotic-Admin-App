@@ -83,7 +83,8 @@ function recentOperationsFromNetworks(networks) {
   return networks
     .flatMap((network) => (network.sales || []).map((sale) => ({
       ...sale,
-      networkName: network.networkName || network.uid,
+      networkName: network.networkName || network.network_name || network.name
+        || network.networkTitle || `شبكة ${network.networkId || network.uid}`,
       commissionRate: network.commissionRate,
     })))
     .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))

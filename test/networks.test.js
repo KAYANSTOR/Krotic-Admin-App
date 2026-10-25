@@ -9,6 +9,7 @@ import {
   updateAccess,
   repairLegacyAccess,
   deleteAccount,
+  isProtectedPhone,
   TRIAL_DAYS,
   RENEWAL_DAYS,
 } from '../api/networks.js';
@@ -45,6 +46,14 @@ test('renew is manual and only 30 days', () => {
 test('batch-expiry requires a positive timestamp', () => {
   assert.equal(validateNetworkInput({ action: 'batch-expiry', subscriptionEndsAt: 1_800_000_000_000 }).ok, true);
   assert.equal(validateNetworkInput({ action: 'batch-expiry', subscriptionEndsAt: 0 }).error, 'subscription_end_invalid');
+});
+
+test('protected real accounts cannot be identified for deletion by phone number', () => {
+  assert.equal(isProtectedPhone('967771835552'), true);
+  assert.equal(isProtectedPhone('+967 771 835 552'), true);
+  assert.equal(isProtectedPhone('0771835552'), true);
+  assert.equal(isProtectedPhone('967773086403'), true);
+  assert.equal(isProtectedPhone('967771234567'), false);
 });
 
 test('renewal adds 30 days to the later of the current end and now', () => {
@@ -384,6 +393,7 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
     uid: 'user_del',
     actorUid: 'admin_1',
     now: 1_800_000_000_000,
+    authService: { async deleteUser() {} },
   });
 
   assert.equal(result.status, 'deleted');

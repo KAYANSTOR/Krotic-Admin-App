@@ -31,6 +31,23 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_WARNING = 500;
 const BATCH_LIMIT = 200;
+const PROTECTED_PHONE_DIGITS = new Set([
+  '967771835552',
+  '967773086403',
+]);
+
+function phoneCandidates(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return [];
+  const candidates = new Set([digits]);
+  if (digits.startsWith('00')) candidates.add(digits.slice(2));
+  if (digits.startsWith('0') && digits.length >= 9) candidates.add(`967${digits.slice(1)}`);
+  return [...candidates];
+}
+
+export function isProtectedPhone(value) {
+  return phoneCandidates(value).some((candidate) => PROTECTED_PHONE_DIGITS.has(candidate));
+}
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -540,17 +557,19 @@ async function purgeDocAndAllSubcollections(db, docRef, { collection, id, now })
   }
 }
 
-export async function deleteAccount(db, { uid, actorUid, now }) {
+export async function deleteAccount(db, { uid, actorUid, now, authService = getAuth() }) {
   const userRef = db.collection('users').doc(uid);
   const userSnap = await userRef.get();
   const userData = userSnap.exists ? userSnap.data() : null;
+  if (!userData) return { status: 'account_not_found', uid };
   const networkId = userData?.networkId || null;
   const phone = userData?.phone || userData?.phoneNumber || null;
+  if (isProtectedPhone(phone)) {
+    throw new Error('protected_account');
+  }
 
-  // 1. Purge user document and all subcollections (devices, notifications, etc.)
-  await purgeDocAndAllSubcollections(db, userRef, { collection: 'users', id: uid, now });
-
-  // 2. Discover all network documents related to this user/owner
+  // Discover all network documents before deleting anything. This avoids
+  // starting a partial delete when a legacy account has multiple networks.
   const networksToDelete = new Map();
   if (networkId) {
     networksToDelete.set(networkId, db.collection('networks').doc(networkId));
@@ -563,7 +582,10 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
   const ownedSnap2 = await db.collection('networks').where('ownerUid', '==', uid).get();
   (ownedSnap2?.docs || ownedSnap2 || []).forEach((d) => networksToDelete.set(d.id, d.ref));
 
-  // 3. Purge all network documents and their subcollections (sales, payments, settlements, _metadata)
+  // 1. Purge user document and all subcollections (devices, notifications, etc.)
+  await purgeDocAndAllSubcollections(db, userRef, { collection: 'users', id: uid, now });
+
+  // 2. Purge all network documents and their subcollections (sales, payments, settlements, _metadata)
   for (const [, netRef] of networksToDelete.entries()) {
     await purgeDocAndAllSubcollections(db, netRef, { collection: 'networks', id: netRef.id, now });
   }
@@ -611,10 +633,10 @@ export async function deleteAccount(db, { uid, actorUid, now }) {
 
   // 7. Delete Firebase Auth user
   try {
-    await getAuth().deleteUser(uid);
+    await authService.deleteUser(uid);
   } catch (authError) {
     if (authError?.code !== 'auth/user-not-found') {
-      console.warn('deleteAccount: auth deleteUser warning', authError);
+      throw authError;
     }
   }
 
@@ -677,6 +699,9 @@ export default async function handler(req, res) {
     if (error?.message === 'network_secret_decryption_failed') {
       console.error('networks: stored network key could not be decrypted');
       return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
+    }
+    if (error?.message === 'protected_account') {
+      return res.status(403).json({ success: false, error: 'protected_account' });
     }
     console.error('networks action failed', error);
     return res.status(500).json({ success: false, error: 'network_action_failed' });
