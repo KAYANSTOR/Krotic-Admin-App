@@ -92,6 +92,11 @@ if (!emulatorAddress) {
       await setDoc(doc(db, 'networks/NET-10001/settlements/settlement-1'), {
         amountMinor: 100,
       });
+      await setDoc(doc(db, 'networks/NET-10001/device_heartbeats/install-1'), {
+        installationId: 'install-1',
+        accountId: 'user-1',
+        serverReceivedAtMs: 1792992600000,
+      });
       await setDoc(doc(db, 'networks/NET-10001/sales/sale-1'), { saleId: 'sale-1', status: 'COMPLETED' });
       await setDoc(doc(db, 'networks/NET-10001/payments/payment-1'), { amount: 100 });
       await setDoc(doc(db, 'sync_tombstones/tombstone-1'), {
@@ -189,6 +194,26 @@ if (!emulatorAddress) {
     assert.equal(payments.size, 1);
     await assertFails(getDocs(collectionGroup(userDb, 'sales')));
     await assertFails(getDocs(collectionGroup(userDb, 'payments')));
+  });
+
+  test('heartbeat telemetry is server-write-only and admin-readable', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const otherDb = testEnv.authenticatedContext('user-2').firestore();
+    const heartbeatPath = 'networks/NET-10001/device_heartbeats/install-1';
+
+    await assertSucceeds(getDoc(doc(adminDb, heartbeatPath)));
+    await assertFails(setDoc(doc(adminDb, 'networks/NET-10001/device_heartbeats/client-write'), {
+      installationId: 'client-write',
+    }));
+    await assertFails(getDoc(doc(ownerDb, heartbeatPath)));
+    await assertFails(setDoc(doc(ownerDb, 'networks/NET-10001/device_heartbeats/client-write'), {
+      installationId: 'client-write',
+    }));
+    await assertFails(getDoc(doc(otherDb, heartbeatPath)));
+    await assertFails(setDoc(doc(otherDb, 'networks/NET-10001/device_heartbeats/client-write'), {
+      installationId: 'client-write',
+    }));
   });
 
   test('sync tombstones are admin-readable and server-write-only', async () => {
