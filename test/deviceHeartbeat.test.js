@@ -33,24 +33,46 @@ function fakeDb({ admin = false, legacyAdmin = false, user = { networkId: 'NET-1
   const stored = new Map();
   const snapshot = (value) => ({ exists: value !== undefined && value !== null, data: () => value });
   const collection = (name) => ({
-    doc: (id) => ({
-      get: async () => {
-        if (name === 'Admins') return snapshot(admin ? { uid: id } : undefined);
-        if (name === 'admins') return snapshot(legacyAdmin ? { uid: id } : undefined);
-        if (name === 'users') return snapshot(user);
-        if (name === 'networks') return snapshot(network);
-        return snapshot(undefined);
-      },
-      collection: (child) => ({
-        doc: (childId) => ({
-          set: async (value, options) => stored.set(`${name}/${id}/${child}/${childId}`, { value, options }),
+    doc: (id) => {
+      const path = `${name}/${id}`;
+      return {
+        path,
+        get: async () => {
+          if (name === 'Admins') return snapshot(admin ? { uid: id } : undefined);
+          if (name === 'admins') return snapshot(legacyAdmin ? { uid: id } : undefined);
+          if (name === 'users') return snapshot(user);
+          if (name === 'networks') return snapshot(network);
+          return snapshot(undefined);
+        },
+        set: async (value, options) => stored.set(path, { value, options }),
+        collection: (child) => ({
+          doc: (childId) => {
+            const childPath = `${path}/${child}/${childId}`;
+            return {
+              path: childPath,
+              get: async () => snapshot(stored.get(childPath)?.value),
+              set: async (value, options) => stored.set(childPath, { value, options }),
+            };
+          },
         }),
-      }),
-    }),
+      };
+    },
   });
-  return { db: { collection }, stored };
+  const db = {
+    collection,
+    runTransaction: async (callback) => {
+      const transaction = {
+        get: async (ref) => ref.get(),
+        set: (ref, value, options) => {
+          stored.set(ref.path, { value, options });
+          return transaction;
+        },
+      };
+      return callback(transaction);
+    },
+  };
+  return { db, stored };
 }
-
 function dependencies(db, claims = { uid: 'user-1' }) {
   return {
     ensureFirebaseAdmin: () => ({ ok: true }),
@@ -75,6 +97,8 @@ test('rejects unsupported schema, negative counters, malformed timestamps and ov
   assert.equal(validateHeartbeat({ ...valid, schemaVersion: 2 }).error, 'schema_version_unsupported');
   assert.equal(validateHeartbeat({ ...valid, pendingCount: -1 }).error, 'counter_invalid');
   assert.equal(validateHeartbeat({ ...valid, lastSyncAt: 'not-a-date' }).error, 'last_sync_at_invalid');
+  assert.equal(validateHeartbeat({ ...valid, lastSeenAt: 'not-a-date' }).error, 'last_seen_at_invalid');
+  assert.equal(validateHeartbeat({ ...valid, lastSeenAt: null }).error, 'last_seen_at_invalid');
   assert.equal(validateHeartbeat({ ...valid, riskSignals: Array(33).fill('x') }).error, 'risk_signals_invalid');
 });
 
@@ -117,6 +141,25 @@ test('rejects a network ID not bound to the authenticated account', async () => 
     res, dependencies(fakeDb().db));
   assert.equal(res.statusCode, 403);
   assert.equal(res.body.error, 'network_identity_mismatch');
+});
+
+test('throttles repeated heartbeat writes using the server timestamp', async () => {
+  const fixture = fakeDb();
+  const previousAt = Date.parse('2026-10-26T05:29:00.000Z');
+  fixture.stored.set('networks/NET-10001/device_heartbeats/install-12345678', {
+    value: { serverReceivedAtMs: previousAt, serverReceivedAt: new Date(previousAt).toISOString() },
+    options: { merge: true },
+  });
+  const res = responseMock();
+  await handler(
+    { method: 'POST', headers: { authorization: 'Bearer valid-token' }, body: valid },
+    res,
+    dependencies(fixture.db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.throttled, true);
+  assert.equal(fixture.stored.get('networks/NET-10001/device_heartbeats/install-12345678').value.serverReceivedAtMs, previousAt);
 });
 
 test('stores heartbeat with server receipt time and acknowledges it', async () => {
