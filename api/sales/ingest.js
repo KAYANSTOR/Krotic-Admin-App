@@ -52,6 +52,10 @@ const CLIENT_FINANCIAL_FIELDS = [
   'status', 'source', 'outstandingBalance', 'totalSalesAmount',
   'totalCommissionDue', 'totalPaidAmount',
 ];
+const CLIENT_ALLOWED_FIELDS = new Set([
+  'saleId', 'saleUuid', 'amountMinor', 'currencyCode',
+  'createdMs', 'customerId', 'cardId', 'payloadHash',
+]);
 
 function normalizeBody(body) {
   if (typeof body === 'string') {
@@ -129,6 +133,9 @@ export function validateIngestInput(body) {
   }
   if (CLIENT_FINANCIAL_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
     return { ok: false, error: 'client_financial_field_forbidden' };
+  }
+  if (Object.keys(input).some((field) => !CLIENT_ALLOWED_FIELDS.has(field))) {
+    return { ok: false, error: 'client_field_forbidden' };
   }
   // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
   const saleUuid = typeof input.saleUuid === 'string' ? input.saleUuid.trim()
