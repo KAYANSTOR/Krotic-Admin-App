@@ -51,6 +51,10 @@ export function validateHeartbeat(body) {
     }
     return { ok: true, value: new Date(value).toISOString() };
   };
+  const lastSeenAt = optionalDate(input.lastSeenAt, 'last_seen_at');
+  if (!lastSeenAt.ok || lastSeenAt.value == null) {
+    return { ok: false, error: 'last_seen_at_invalid' };
+  }
   const lastSyncAt = optionalDate(input.lastSyncAt, 'last_sync_at');
   if (!lastSyncAt.ok) return lastSyncAt;
   const oldestPendingAt = optionalDate(input.oldestPendingAt, 'oldest_pending_at');
@@ -74,6 +78,7 @@ export function validateHeartbeat(body) {
       pendingCount,
       unknownDeliveryCount,
       riskSignals: [...new Set(riskSignals.map((v) => v.trim()))],
+      lastSeenAt: lastSeenAt.value,
       lastSyncAt: lastSyncAt.value,
       oldestPendingAt: oldestPendingAt.value,
       lastError,
@@ -144,8 +149,7 @@ export default async function handler(req, res, dependencies = {}) {
       serverReceivedAt: new Date(now).toISOString(),
       serverReceivedAtMs: now,
       // Client telemetry is observational only; never use it to grant entitlement or validate money.
-      clientLastSeenAt: typeof req.body?.lastSeenAt === 'string' && Number.isFinite(Date.parse(req.body.lastSeenAt))
-        ? new Date(req.body.lastSeenAt).toISOString() : null,
+      clientLastSeenAt: validated.value.lastSeenAt,
     };
     const ref = db.collection('networks').doc(networkId)
       .collection('device_heartbeats').doc(validated.value.installationId);
