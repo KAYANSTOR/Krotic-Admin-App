@@ -6,6 +6,7 @@ const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const MAX_SIGNALS = 32;
 const MAX_SIGNAL_LENGTH = 96;
 const MAX_LAST_ERROR_LENGTH = 500;
+const HEARTBEAT_MIN_INTERVAL_MS = 15 * 60 * 1000;
 
 function objectBody(body) {
   if (typeof body === 'string') {
@@ -153,11 +154,26 @@ export default async function handler(req, res, dependencies = {}) {
     };
     const ref = db.collection('networks').doc(networkId)
       .collection('device_heartbeats').doc(validated.value.installationId);
-    await ref.set(heartbeat, { merge: true });
+    const received = await db.runTransaction(async (transaction) => {
+      const previous = await transaction.get(ref);
+      const previousData = previous.exists ? previous.data() || {} : {};
+      const previousReceivedAt = Number(previousData.serverReceivedAtMs);
+      if (Number.isSafeInteger(previousReceivedAt)
+          && now - previousReceivedAt < HEARTBEAT_MIN_INTERVAL_MS) {
+        return {
+          throttled: true,
+          receivedAt: typeof previousData.serverReceivedAt === 'string'
+            ? previousData.serverReceivedAt : null,
+        };
+      }
+      transaction.set(ref, heartbeat, { merge: true });
+      return { throttled: false, receivedAt: heartbeat.serverReceivedAt };
+    });
     return res.status(200).json({
       success: true,
       schemaVersion: 1,
-      receivedAt: heartbeat.serverReceivedAt,
+      throttled: received.throttled,
+      receivedAt: received.receivedAt,
     });
   } catch (error) {
     console.error('device-heartbeat: request failed', { uid, code: error?.code });
