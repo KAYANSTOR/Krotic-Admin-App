@@ -109,7 +109,13 @@ test('rejects client-supplied identity, financial, settlement and verification f
 
 });
 
-test('rejects malformed sale ids, amounts, currency, and timestamps', () => {
+test('rejects malformed sale ids, ambiguous aliases, amounts, currency, and timestamps', () => {
+  assert.equal(validateIngestInput({ ...validBody, saleId: '', saleUuid: '' }).error, 'sale_id_required');
+  assert.equal(validateIngestInput({ ...validBody, saleId: 'sale-a', saleUuid: 'sale-b' }).error, 'sale_id_mismatch');
+  assert.equal(validateIngestInput({ ...validBody, amountMinor: '1500' }).error, 'amount_invalid');
+  assert.equal(validateIngestInput({ ...validBody, createdMs: '1700000000000' }).error, 'created_at_invalid');
+  assert.equal(validateIngestInput({ ...validBody, customerId: { id: 'cust-1' } }).error, 'customer_id_invalid');
+  assert.equal(validateIngestInput({ ...validBody, payloadHash: 1 }).error, 'payload_hash_invalid');
   assert.equal(validateIngestInput({ ...validBody, saleId: '' }).error, 'sale_id_required');
   assert.equal(validateIngestInput({ ...validBody, saleId: 'bad id!' }).error, 'sale_id_invalid');
   assert.equal(validateIngestInput({ ...validBody, amountMinor: 0 }).error, 'amount_invalid');
