@@ -83,6 +83,25 @@ test('accepts a well-formed sale payload and normalizes the currency', () => {
   assert.equal(result.value.amountRiyal, 15);
 });
 
+test('rejects client-supplied identity, financial, settlement and verification fields', () => {
+  for (const field of ['uid', 'networkId', 'accountId', 'owner_uid']) {
+    assert.equal(validateIngestInput({ ...validBody, [field]: 'attacker-value' }).error,
+      'client_identity_field_forbidden', field);
+  }
+  for (const field of [
+    'amount', 'amountRiyal', 'faceValue', 'face_value',
+    'commission', 'commissionAmount', 'commissionMinor', 'commissionRiyal',
+    'commissionRateBps', 'netAmount', 'netAmountMinor', 'paidMinor', 'paidRiyal',
+    'settlement_status', 'settlementId', 'moneyPolicyVersion', 'verified',
+    'verificationReceipt', 'status', 'source', 'totalCommissionDue',
+  ]) {
+    assert.equal(validateIngestInput({ ...validBody, [field]: 0 }).error,
+      'client_financial_field_forbidden', field);
+  }
+  // Diagnostics can include payloadHash, but it is recomputed and checked server-side.
+  assert.equal(validateIngestInput({ ...validBody, payloadHash: 'ignored-unless-mismatched-by-handler' }).ok, true);
+});
+
 test('rejects malformed sale ids, amounts, currency, and timestamps', () => {
   assert.equal(validateIngestInput({ ...validBody, saleId: '' }).error, 'sale_id_required');
   assert.equal(validateIngestInput({ ...validBody, saleId: 'bad id!' }).error, 'sale_id_invalid');
