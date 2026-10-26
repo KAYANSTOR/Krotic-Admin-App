@@ -11,6 +11,7 @@ import settlementHandler from './api/settlement.js';
 import recordPaymentHandler from './server/record-payment.js';
 import registerNetworkHandler from './api/register-network.js';
 import salesIngestHandler from './api/sales/ingest.js';
+import deviceHeartbeatsHandler from './api/device-heartbeats.js';
 import sendFcmHandler from './api/send-fcm.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
 import migrateHandler from './api/migrate.js';
@@ -48,6 +49,7 @@ async function startServer() {
   app.all('/api/record-payment', (req, res) => recordPaymentHandler(req, res));
   app.all('/api/register-network', (req, res) => registerNetworkHandler(req, res));
   app.all('/api/sales/ingest', (req, res) => salesIngestHandler(req, res));
+  app.all('/api/device-heartbeats', (req, res) => deviceHeartbeatsHandler(req, res));
   app.all('/api/send-fcm', (req, res) => sendFcmHandler(req, res));
   app.all('/api/dispatch-notifications', (req, res) => dispatchNotificationsHandler(req, res));
   app.all('/api/migrate', (req, res) => migrateHandler(req, res));
