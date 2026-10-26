@@ -21,6 +21,7 @@ const AdminsPage = lazy(() => loadRoute('/admins'));
 const AuditPage = lazy(() => loadRoute('/audit'));
 const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
 const PaidFeaturesPage = lazy(() => loadRoute('/paid-features'));
+const DevicesPage = lazy(() => loadRoute('/devices'));
 
 /** هيكل واحد لكل الصفحات: الشريط الجانبي يبقى ثابتاً أثناء تغيير الصفحة. */
 function AdminShell() {
@@ -70,6 +71,7 @@ function AppRoutes() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/template-center/*" element={<TemplateCenterPage />} />
           <Route path="/paid-features" element={<PaidFeaturesPage />} />
+          <Route path="/devices" element={<DevicesPage />} />
           <Route path="/users/:uid" element={<UserProfilePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
