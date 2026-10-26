@@ -98,8 +98,14 @@ test('rejects client-supplied identity, financial, settlement and verification f
     assert.equal(validateIngestInput({ ...validBody, [field]: 0 }).error,
       'client_financial_field_forbidden', field);
   }
+  // Unrecognized aliases are rejected too, rather than silently ignored.
+  for (const field of ['net_amount', 'grossAmount', 'commission_rate', 'amountRiyalGuess']) {
+    assert.equal(validateIngestInput({ ...validBody, [field]: 1 }).error, 'client_financial_field_forbidden',
+      field in { amount: 1 } ? field : field);
+  }
   // Diagnostics can include payloadHash, but it is recomputed and checked server-side.
   assert.equal(validateIngestInput({ ...validBody, payloadHash: 'ignored-unless-mismatched-by-handler' }).ok, true);
+
 });
 
 test('rejects malformed sale ids, amounts, currency, and timestamps', () => {
