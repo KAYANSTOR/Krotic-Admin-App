@@ -35,6 +35,24 @@ const MAX_AMOUNT_MINOR = MAX_AMOUNT_RIYAL * MINOR_UNITS_PER_RIYAL;
 const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 
+// These fields are server-owned. Presence is rejected even when the client
+// sends a zero/false value; silently ignoring such fields hides contract bugs.
+const CLIENT_IDENTITY_FIELDS = [
+  'uid', 'userId', 'accountId', 'owner_uid', 'networkId', 'network_id',
+];
+const CLIENT_FINANCIAL_FIELDS = [
+  'amount', 'amountRiyal', 'faceValue', 'face_value',
+  'commission', 'commissionAmount', 'commissionMinor', 'commissionRiyal',
+  'commissionRate', 'commissionRateBps', 'commission_rate', 'commission_rate_bps',
+  'netAmount', 'netAmountMinor', 'paidMinor', 'paidRiyal',
+  'settlement_status', 'settlementStatus', 'is_settled', 'settled',
+  'settlementId', 'settledAt', 'settledBy',
+  'moneyPolicyVersion', 'payloadPolicyVersion', 'verified',
+  'verificationReceipt', 'verification_receipt',
+  'status', 'source', 'outstandingBalance', 'totalSalesAmount',
+  'totalCommissionDue', 'totalPaidAmount',
+];
+
 function normalizeBody(body) {
   if (typeof body === 'string') {
     try {
@@ -106,6 +124,12 @@ export function verifyInternalReceipt({ token, payload, secret, now = Date.now()
 
 export function validateIngestInput(body) {
   const input = normalizeBody(body);
+  if (CLIENT_IDENTITY_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
+    return { ok: false, error: 'client_identity_field_forbidden' };
+  }
+  if (CLIENT_FINANCIAL_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
+    return { ok: false, error: 'client_financial_field_forbidden' };
+  }
   // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
   const saleUuid = typeof input.saleUuid === 'string' ? input.saleUuid.trim()
     : (typeof input.saleId === 'string' ? input.saleId.trim() : '');
