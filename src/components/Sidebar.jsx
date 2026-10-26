@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
-  ArrowDownToLine, Send, Wallet, Archive, ListChecks, Sparkles,
+  ArrowDownToLine, Send, Wallet, Archive, ListChecks, Sparkles, Smartphone,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 
@@ -37,6 +37,7 @@ const navGroups = [
       { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
       { path: '/template-center', label: 'مركز القوالب الشامل', icon: Layers3 },
       { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
+      { path: '/devices', label: 'الأجهزة ومراقبة المزامنة', icon: Smartphone },
     ],
   },
 ];
