@@ -29,13 +29,14 @@ function responseMock() {
   };
 }
 
-function fakeDb({ admin = false, user = { networkId: 'NET-10001' }, network = { owner_uid: 'user-1' } } = {}) {
+function fakeDb({ admin = false, legacyAdmin = false, user = { networkId: 'NET-10001' }, network = { owner_uid: 'user-1' } } = {}) {
   const stored = new Map();
   const snapshot = (value) => ({ exists: value !== undefined && value !== null, data: () => value });
   const collection = (name) => ({
     doc: (id) => ({
       get: async () => {
         if (name === 'Admins') return snapshot(admin ? { uid: id } : undefined);
+        if (name === 'admins') return snapshot(legacyAdmin ? { uid: id } : undefined);
         if (name === 'users') return snapshot(user);
         if (name === 'networks') return snapshot(network);
         return snapshot(undefined);
@@ -102,6 +103,12 @@ test('rejects identity mismatch and admin accounts', async () => {
     adminRes, dependencies(fakeDb({ admin: true }).db));
   assert.equal(adminRes.statusCode, 403);
   assert.equal(adminRes.body.error, 'not_client_account');
+
+  const legacyAdminRes = responseMock();
+  await handler({ method: 'POST', headers: { authorization: 'Bearer valid-token' }, body: valid },
+    legacyAdminRes, dependencies(fakeDb({ legacyAdmin: true }).db));
+  assert.equal(legacyAdminRes.statusCode, 403);
+  assert.equal(legacyAdminRes.body.error, 'not_client_account');
 });
 
 test('rejects a network ID not bound to the authenticated account', async () => {
