@@ -137,15 +137,26 @@ export function validateIngestInput(body) {
   if (Object.keys(input).some((field) => !CLIENT_ALLOWED_FIELDS.has(field))) {
     return { ok: false, error: 'client_field_forbidden' };
   }
+  if (Object.prototype.hasOwnProperty.call(input, 'saleId')
+      && Object.prototype.hasOwnProperty.call(input, 'saleUuid')
+      && (typeof input.saleId !== 'string'
+        || typeof input.saleUuid !== 'string'
+        || input.saleId.trim() !== input.saleUuid.trim())) {
+    return { ok: false, error: 'sale_id_mismatch' };
+  }
+  if (input.payloadHash != null && typeof input.payloadHash !== 'string') {
+    return { ok: false, error: 'payload_hash_invalid' };
+  }
   // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
   const saleUuid = typeof input.saleUuid === 'string' ? input.saleUuid.trim()
     : (typeof input.saleId === 'string' ? input.saleId.trim() : '');
   if (!saleUuid) return { ok: false, error: 'sale_id_required' };
   if (saleUuid.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleUuid)) return { ok: false, error: 'sale_id_invalid' };
 
-  // Money.minorUnits is scaled by 100; YER values must be whole Riyals.
-  const amountMinor = Number(input.amountMinor);
-  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
+  // The actual Android payload uses a JSON integer; do not coerce strings or booleans.
+  const amountMinor = input.amountMinor;
+  if (typeof amountMinor !== 'number' || !Number.isSafeInteger(amountMinor)
+      || amountMinor <= 0 || amountMinor > MAX_AMOUNT_MINOR) {
     return { ok: false, error: 'amount_invalid' };
   }
   const currencyCode = typeof input.currencyCode === 'string' ? input.currencyCode.trim().toUpperCase() : '';
@@ -159,9 +170,17 @@ export function validateIngestInput(body) {
   }
 
 
-  const createdMs = Number(input.createdMs);
-  if (!Number.isFinite(createdMs) || createdMs <= 0) return { ok: false, error: 'created_at_invalid' };
+  const createdMs = input.createdMs;
+  if (typeof createdMs !== 'number' || !Number.isSafeInteger(createdMs) || createdMs <= 0) {
+    return { ok: false, error: 'created_at_invalid' };
+  }
 
+  if (input.customerId != null && typeof input.customerId !== 'string') {
+    return { ok: false, error: 'customer_id_invalid' };
+  }
+  if (input.cardId != null && typeof input.cardId !== 'string') {
+    return { ok: false, error: 'card_id_invalid' };
+  }
   const customerId = typeof input.customerId === 'string' ? input.customerId.slice(0, 128) : '';
   const cardId = typeof input.cardId === 'string' ? input.cardId.slice(0, 128) : '';
 
