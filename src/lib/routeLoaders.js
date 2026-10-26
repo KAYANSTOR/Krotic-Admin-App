@@ -14,6 +14,7 @@ const routeLoaders = {
   '/template-center/releases': () => import('../pages/TemplateCenterPage'),
   '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
   '/paid-features': () => import('../pages/PaidFeaturesPage'),
+  '/devices': () => import('../pages/DevicesPage'),
 };
 
 const loadedRoutes = new Map();
