@@ -115,7 +115,10 @@ export default async function handler(req, res, dependencies = {}) {
   const db = dependencies.db || getFirestore();
   try {
     const adminSnap = await db.collection('Admins').doc(uid).get();
-    if (adminSnap.exists) return res.status(403).json({ success: false, error: 'not_client_account' });
+    const legacyAdminSnap = adminSnap.exists ? null : await db.collection('admins').doc(uid).get();
+    if (adminSnap.exists || legacyAdminSnap?.exists) {
+      return res.status(403).json({ success: false, error: 'not_client_account' });
+    }
 
     const userSnap = await db.collection('users').doc(uid).get();
     if (!userSnap.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
