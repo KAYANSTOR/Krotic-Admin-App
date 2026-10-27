@@ -25,6 +25,11 @@
 | `package.json` | `dexie`, `dexie-react-hooks` | ✅ تلقائي في بناء Vercel |
 | عدد دوال Vercel | **بلا زيادة** (لا ملف `api/*.js` جديد) | — |
 
+> **تحديث 2026-10-27:** أُضيف مسار المخزون `POST /api/inventory/snapshot`
+> (`api/inventory/snapshot.js`)، ولإخلاء خانة له نُقل مسار `/api/migrate` الإداري
+> إلى موزّع `api/settings` (`__apiRoute=migrate`). العدد الإجمالي بقي 12. النشر
+> يحتاج تحديث `firestore.rules` (قراءة إدارية لوثيقة `inventory_snapshot`).
+
 ---
 
 ## 1) Firestore Rules (الأولوية 1 — بدونها الشاشات فارغة)

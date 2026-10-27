@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Layers3,
   ListChecks,
+  MessageSquare,
   Plus,
   ScrollText,
   Send,
@@ -15,10 +16,10 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
-  Wallet,
   X,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
+import { TEMPLATE_CENTER_ROOT, TEMPLATE_CENTER_TITLES } from '../lib/templateCenterRoutes';
 import useBodyScrollLock from '../lib/useBodyScrollLock';
 
 const primaryItems = [
@@ -29,12 +30,12 @@ const primaryItems = [
 ];
 
 const quickItems = [
-  { path: '/template-center/inbound', label: 'قوالب التحويل الواردة', icon: ArrowDownToLine },
-  { path: '/template-center/outbound', label: 'الرسائل الصادرة (SMS)', icon: Send },
-  { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
-  { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
-  { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
-  { path: '/template-center', label: 'مركز القوالب والمحافظ', icon: Layers3 },
+  { path: '/template-center/inbound', label: TEMPLATE_CENTER_TITLES['/template-center/inbound'], icon: ArrowDownToLine },
+  { path: '/template-center/outbound', label: TEMPLATE_CENTER_TITLES['/template-center/outbound'], icon: Send },
+  { path: '/template-center/wallets', label: TEMPLATE_CENTER_TITLES['/template-center/wallets'], icon: MessageSquare },
+  { path: '/template-center/releases', label: TEMPLATE_CENTER_TITLES['/template-center/releases'], icon: Archive },
+  { path: '/template-center/reconciliation', label: TEMPLATE_CENTER_TITLES['/template-center/reconciliation'], icon: ListChecks },
+  { path: '/template-center', label: TEMPLATE_CENTER_ROOT.label, icon: Layers3 },
   { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
   { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
   { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },

@@ -1,5 +1,23 @@
 # تسليم إلى الوكيل التالي — لوحة إدارة كروتك برو
 
+> **تحديث 2026-10-27 (مصطلحات القوالب):** وُحّد معجم مركز القوالب والنشر:
+> جدول `wallets` يُعرض «مصادر الرسائل»، والتسميات تُقرأ من
+> `src/lib/templateCenterRoutes.js`، وحُذفت كتل التعليمات الثابتة، وعُرّبت رموز
+> ACK/أسباب الرفض، وصارت المعرّفات التي ينشئها المدير `wallet-admin-*` /
+> `tpl-admin-*` للقراءة فقط. التفاصيل والأدلة في
+> `docs/TEMPLATE_CENTER_STYLE_AUDIT_AR.md` و`docs/REVIEW_AND_CHANGELOG_AR.md`.
+> لا تغيير في عقود الحمولة أو مجموعات Firestore.
+
+> **تحديث 2026-10-27 (توحيد الفروع + المخزون):** المستودع الآن على فرعين فقط:
+> `main` (لم يُلمس) و`development` (فرع التطوير الموحّد؛ حُذفت الفروع المتبعثرة
+> `cline/*` و`security/*` بعد أرشفتها). أُضيف مسار `POST /api/inventory/snapshot`
+> لعرض ملخص مخزون الكروت من Android في ملف العميل، مع عقد قابل للاختبار
+> (`contracts/schemas/inventory-snapshot.schema.json`). أُخلِيت خانة دوال Vercel بنقل
+> `/api/migrate` إلى موزّع `api/settings`. الحالة: `npm test` 378/378،
+> `npm run test:rules` 23/23، build وlint ناجحان. التفاصيل في
+> `ANDROID_ADMIN_INTEGRATION_CONTRACT_AR.md` §8 و`docs/REVIEW_AND_CHANGELOG_AR.md`.
+> **مستودع `Krotak-Pro` لم يُلمس إطلاقاً.**
+
 > **تحديث الإغلاق 2026-10-23:** التدقيق الكامل وحالة «ما تبقّى للإغلاق» صار في
 > `docs/ADMIN_PANEL_CLOSURE_AUDIT_AR.md`. أُصلحت فيه عيوب `device-acks`، و`updatedAtMs`
 > لسجل الإشعار العام وسجل التدقيق، ونطاق backfill، وحذف الإشعار الخادمي، وأُضيف زر

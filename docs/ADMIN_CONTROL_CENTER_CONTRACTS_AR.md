@@ -27,6 +27,7 @@
 | ACK من Android (مقترح) | `contracts/schemas/android-ack.schema.json` | `test/contracts.test.js` |
 | حالة التطبيق على Android | `contracts/schemas/android-application-state.schema.json` | `test/contracts.test.js` |
 | خريطة المزايا المدفوعة | `contracts/schemas/feature-entitlements.schema.json` | `test/contracts.test.js` |
+| ملخص مخزون الكروت (من Android) | `contracts/schemas/inventory-snapshot.schema.json` | `test/contracts.test.js` |
 
 الأمثلة في `contracts/fixtures/` مطابقة للمخططات، ويُتحقَّق منها في الاختبارات.
 كما يجري الاختبار مطابقة **حقيقية** لحمولة الإصدار مقابل التحقق الخادمي الفعلي
@@ -134,9 +135,11 @@
 - **معرّف قالب التحويل الوارد** = `tpl-default-<senderCode-lowercased-hyphenated>-<variant>`
   وهو نفسه الذي يزرعه Android حرفيًا، فلا يُنشئ الاستيراد/النشر نسخة مكررة.
 - **مفتاح القالب الصادر** = مفتاح الإعداد في Android (`SettingKeys.*`).
-- أُضيفت إلى كتالوج الخادم خمسة مفاتيح صادر كان Android يزرعها ولا يعرفها الخادم
-  بعد: `card_delivery_{cash,credit,gift}_template`, `salafni_card_delivery_template`,
-  `deposit_no_stock_template` (`OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG`).
+- أُضيفت إلى كتالوج الخادم خمسة مفاتيح صادر كان Android يطابقها ولا يعرفها الخادم
+  سابقًا: `card_delivery_{cash,credit,gift}_template`, `salafni_card_delivery_template`,
+  `deposit_no_stock_template`. صارت الآن **مطلوبة الوجود** ويحميها الاختبار باسم
+  `ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION` (كان الاسم القديم
+  `OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG` يصف حالة لم تعد قائمة).
 - أُصلح خطأ مطابقة حقيقي في الخادم: `{phone}` في قالب **صادر** كان يُطابَق كنص حر
   بدل الاسم البديل `customer_phone`، فكان يرفض النص الافتراضي الفعلي
   (`pos_instant_charge_confirm_template`). الآن تُطبَّق العناصر النائبة الواردة
@@ -146,12 +149,13 @@
   **تصادم المرادفات فقط** (مثل `{code}` مع `{secret}`)، مطابقةً
   `TemplateVariableRegistry.synonymCollisionsIn` في Android.
 
-**فجوة عقد معرّف المحفظة (موثّقة، `needs_decision`):** Android يزرع صفوف
-`wallets` بمعرّف **وقت تشغيل** (`wallet-N`/عشوائي) وليس ثابتًا؛ المفتاح الثابت
-الوحيد هو `WalletSpec.key`. اللوحة تستخدم slug آمنًا (`WALLET_ID_CONTRACT`).
-قرار مطلوب من المالك + وكيل Android: اعتماد الـslug معرّفًا ثابتًا، أو مطابقة
-الصفوف عبر `senderId`/`name`/`packageName` عند تفعيل الحمولة — وإلا فقد يُنشئ
-التفعيل محفظة مكررة عند وجود صف مزروع مسبقًا. لا يُدّعى تطابق غير مثبت.
+**هوية مصدر الرسائل (جدول `wallets`):** هوية الكتالوج الجديدة محسومة لصالح
+`WalletSpec.catalogId` بصيغة `wallet-default-*` (كتالوج Android v1 + تحقق
+`templateCenter.js`). ما يبقى غير متحقق منه من مستودع الإدارة هو ترحيل صفوف
+التثبيتات القديمة التي تحمل `wallet-N`/معرّفات عشوائية؛ يعلن الكود
+`WALLET_ID_CONTRACT.legacyRowMigration = 'unverified_from_admin_repo'`. أما
+المصادر التي ينشئها المدير من اللوحة فتُولَّد ببادئة مستقلة `wallet-admin-<hex>`
+ولا تُكتب يدويًا. التفاصيل والمعجم في `docs/TEMPLATE_CENTER_STYLE_AUDIT_AR.md`.
 
 ## 5. الاستحقاق المدفوع: ثلاث طبقات منفصلة
 

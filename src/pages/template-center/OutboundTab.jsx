@@ -8,13 +8,10 @@ import EmptyState from '../../components/ui/EmptyState';
 import { Field, Select, Textarea } from '../../components/ui/Field';
 import DraftScopePanel from './DraftScopePanel';
 import { useTemplateCenter } from './TemplateCenterContext';
-import { collectReleaseEntryIds, describeEntrySource, validateOutboundTemplate } from '../../lib/templateCenterView';
-
-const SCOPE_LABELS = {
-  outboundCustomer: 'رسائل العملاء',
-  outboundPos: 'نقاط البيع',
-  outboundSystem: 'رسائل النظام',
-};
+import {
+  OUTBOUND_PREVIEW_REASON_LABELS, OUTBOUND_SCOPE_LABELS,
+  collectReleaseEntryIds, describeEntrySource, labelReason, validateOutboundTemplate,
+} from '../../lib/templateCenterView';
 
 /**
  * تبويب الرسائل الصادرة (SMS). منفصل تمامًا عن `/notifications` (إشعارات FCM).
@@ -93,30 +90,9 @@ export default function OutboundTab() {
   return (
     <Section
       title="الرسائل الصادرة (SMS)"
-      description="قوالب نصية يرسلها تطبيق Android للعملاء ونقاط البيع. مسار منفصل عن إشعارات FCM في صفحة /notifications."
+      description="قوالب نصية يرسلها تطبيق Android للعملاء ونقاط البيع عبر شريحة الهاتف. مسار منفصل تمامًا عن إشعارات FCM في صفحة /notifications."
     >
       <DraftScopePanel />
-
-      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
-        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
-          <Send className="h-4 w-4 text-brand-600" aria-hidden="true" />
-          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة الرسائل الصادرة (SMS)؟</span>
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">١. تخصيص رسائل SMS</strong>
-            تحدد صيغ الرسائل النصية القصيرة التي يرسلها هاتف نقطة البيع أو التطبيق (مثل إشعار تسليم الكرت أو تنبيه الرصيد) عبر شريحة SIM الخاصة بالهاتف.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٢. المعاينة الآمنة</strong>
-            أداة المعاينة أدناه تتيح لك اختبار دمج المتغيرات النصية لمعاينة شكل الرسالة النهائي قبل الاعتماد. لا تُرسَل أي رسالة ولا تستهلك أي رصيد.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٣. مسار منفصل تماماً</strong>
-            هذا القسم منفصل كلياً عن إشعارات التطبيق (FCM) في صفحة /notifications؛ فهنا نتحكم بقوالب SMS الهاتفية فقط.
-          </div>
-        </div>
-      </div>
 
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
@@ -134,7 +110,7 @@ export default function OutboundTab() {
               >
                 {catalogDefinitions.map((item) => (
                   <option key={item.key} value={item.key} disabled={usedKeys.has(item.key) && item.key !== entry.key}>
-                    {item.key} — {SCOPE_LABELS[item.scope] || item.scope}
+                    {item.key} — {OUTBOUND_SCOPE_LABELS[item.scope] || 'نطاق غير معروف'}
                   </option>
                 ))}
               </Select>
@@ -155,7 +131,7 @@ export default function OutboundTab() {
         )}
 
         {templates.length === 0 ? (
-          <EmptyState icon={Send} title="لا توجد رسائل صادرة في المسودة" description="أضف قوالب، أو استورد كتالوج زرع Android. القائمة الفارغة لا تعني عدم وجود قوالب على الأجهزة." />
+          <EmptyState icon={Send} title="لا توجد رسائل صادرة في المسودة" description="أضف قالبًا، أو استورد الكتالوج الافتراضي المضمّن في Android. القائمة الفارغة لا تعني عدم وجود قوالب على الأجهزة." />
         ) : (
           <ul className="mt-4 divide-y divide-stone-100">
             {templates.map((template) => {
@@ -165,7 +141,7 @@ export default function OutboundTab() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-mono text-sm font-bold text-stone-900" dir="ltr">{template.key}</p>
-                      <Badge tone="brand">{SCOPE_LABELS[scopeOf(template.key)] || 'غير معروف'}</Badge>
+                      <Badge tone="brand">{OUTBOUND_SCOPE_LABELS[scopeOf(template.key)] || 'نطاق غير معروف'}</Badge>
                       <Badge tone={source.kind === 'release' ? 'brand' : 'neutral'}>{source.label}</Badge>
                     </div>
                     <p className="mt-1 break-words text-sm text-stone-600" dir="auto">{template.body}</p>
@@ -198,7 +174,7 @@ export default function OutboundTab() {
             <div className={`rounded-xl border p-4 ${previewResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} role="status">
               <div className="flex items-center gap-2 font-bold">
                 {previewResult.ok ? <Check className="h-4 w-4" aria-hidden="true" /> : <AlertCircle className="h-4 w-4" aria-hidden="true" />}
-                {previewResult.ok ? 'معاينة الرسالة' : `تعذرت المعاينة: ${previewResult.reason}`}
+                {previewResult.ok ? 'معاينة الرسالة' : `تعذرت المعاينة: ${labelReason(OUTBOUND_PREVIEW_REASON_LABELS, previewResult.reason)}`}
               </div>
               {previewResult.preview && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-white/70 p-3" dir="auto">{previewResult.preview}</p>}
               {previewResult.variables?.length > 0 && <p className="mt-2 text-sm">القيم المطلوبة: {previewResult.variables.join('، ')}</p>}

@@ -9,30 +9,22 @@ import { Field, Input, Select, Textarea } from '../../components/ui/Field';
 import DraftScopePanel from './DraftScopePanel';
 import { useTemplateCenter } from './TemplateCenterContext';
 import { BUNDLED_TEMPLATE_PACK } from '../../lib/bundledTemplatePack';
-import { collectReleaseEntryIds, describeEntrySource } from '../../lib/templateCenterView';
-
-const IDENTIFIER_LABELS = {
-  phone: 'رقم هاتف',
-  alternativeNumber: 'رقم بديل',
-  account: 'رقم حساب',
-  senderNameOnly: 'اسم المرسل فقط',
-  balanceRequestCode: 'كود طلب رصيد',
-};
-
-function makeId() {
-  return `template-${Math.random().toString(36).slice(2, 10)}`;
-}
+import { createInboundTemplateId } from '../../lib/templateCenterIds';
+import {
+  INBOUND_IDENTIFIER_LABELS, INBOUND_SIMULATION_REASON_LABELS,
+  collectReleaseEntryIds, describeEntrySource, labelReason,
+} from '../../lib/templateCenterView';
 
 function emptyTemplate() {
   return {
-    id: makeId(), name: '', pattern: '', sampleBody: '', senderCode: '', walletId: '',
+    id: createInboundTemplateId(), name: '', pattern: '', sampleBody: '', senderCode: '', walletId: '',
     posId: '', identifierKind: 'phone', priority: 100, isActive: true, requireReference: false,
   };
 }
 
 /**
- * تبويب قوالب التحويل الواردة (تحليل الرسائل). منفصل تمامًا عن الرسائل الصادرة
- * وعن إشعارات FCM. يتضمن محاكاة مطابقة على الخادم بلا أي أثر مالي.
+ * تبويب قوالب تحليل الرسائل الواردة (التحويلات). منفصل تمامًا عن الرسائل
+ * الصادرة وعن إشعارات FCM. يتضمن محاكاة مطابقة على الخادم بلا أي أثر مالي.
  */
 export default function InboundTab() {
   const { payload, setSection, releases, working, simulateInbound } = useTemplateCenter();
@@ -82,31 +74,10 @@ export default function InboundTab() {
 
   return (
     <Section
-      title="قوالب التحويل الواردة"
-      description="قوالب تحليل رسائل التحويل الواردة، مربوطة بمحفظة و/أو نقطة بيع. قالب تحليل نصي محلي — ليس قالب SMS صادر وليس إشعار FCM."
+      title="قوالب الرسائل الواردة"
+      description="أنماط تحليل رسائل التحويل الواردة، مربوطة بمصدر رسائل و/أو نقطة بيع. قالب تحليل نصي محلي — ليس قالب SMS صادرًا وليس إشعار FCM."
     >
       <DraftScopePanel />
-
-      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
-        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
-          <ArrowDownToLine className="h-4 w-4 text-brand-600" aria-hidden="true" />
-          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة قوالب التحويل الواردة؟</span>
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">١. تحليل الرسائل الواردة</strong>
-            تحدد هذه القوالب النصوص والأنماط التي يطابقها تطبيق Android عند استلام حوالة (مثل الكريمي، النجم، جيب، جوالي) لاستخراج المبلغ ورقم الهاتف والرقم المرجعي آلياً.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٢. محاكاة المطابقة والتجربة</strong>
-            صندوق الاختبار أدناه يتيح لك تجربة نص رسالة حقيقية والتحقق من صحة القالب فورياً في المتصفح. المحاكاة تجريبية بالكامل وبدون أي أثر مالي.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٣. التطبيق على الهواتف</strong>
-            القوالب المضافة تبقى داخل المسودة؛ وعند الضغط على «حفظ المسودة» ثم «نشر إصدار»، تستلمها هواتف Android عند اتصالها ليقوم محرك التحليل بالعمل بها.
-          </div>
-        </div>
-      </div>
 
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between gap-3">
@@ -116,8 +87,8 @@ export default function InboundTab() {
 
         {entry && (
           <form onSubmit={save} className="mb-5 mt-4 grid gap-4 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:grid-cols-2">
-            <Field label="معرّف القالب" htmlFor="inbound-id" required>
-              <Input id="inbound-id" value={entry.id} onChange={(event) => update('id', event.target.value)} required maxLength={128} disabled={templates.some((item) => item.id === entry.id)} />
+            <Field label="معرّف القالب" htmlFor="inbound-id" hint="هوية ثابتة تُولَّد تلقائيًا ولا تتغيّر بعد الحفظ.">
+              <Input id="inbound-id" value={entry.id} readOnly disabled dir="ltr" />
             </Field>
             <Field label="الاسم" htmlFor="inbound-name" required>
               <Input id="inbound-name" value={entry.name} onChange={(event) => update('name', event.target.value)} required maxLength={120} />
@@ -133,10 +104,10 @@ export default function InboundTab() {
             <Field label="نص عينة للاختبار" htmlFor="inbound-sample">
               <Input id="inbound-sample" value={entry.sampleBody || ''} onChange={(event) => update('sampleBody', event.target.value)} maxLength={2000} />
             </Field>
-            <Field label="المحفظة" htmlFor="inbound-wallet">
+            <Field label="مصدر الرسائل" htmlFor="inbound-wallet">
               <Select id="inbound-wallet" value={entry.walletId || ''} onChange={(event) => update('walletId', event.target.value)}>
                 <option value="">بدون تحديد</option>
-                {payload.wallets.map((wallet) => <option value={wallet.id} key={wallet.id}>{wallet.name}</option>)}
+                {payload.wallets.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}
               </Select>
             </Field>
             <Field label="رمز المرسل" htmlFor="inbound-sender">
@@ -164,7 +135,7 @@ export default function InboundTab() {
         )}
 
         {templates.length === 0 ? (
-          <EmptyState icon={ArrowDownToLine} title="لا توجد قوالب تحويل واردة في المسودة" description="أضف قوالب، أو استورد كتالوج زرع Android إلى المسودة. القائمة الفارغة هنا لا تعني عدم وجود قوالب على الأجهزة." />
+          <EmptyState icon={ArrowDownToLine} title="لا توجد قوالب رسائل واردة في المسودة" description="أضف قالبًا، أو استورد الكتالوج الافتراضي المضمّن في Android. القائمة الفارغة هنا لا تعني عدم وجود قوالب على الأجهزة." />
         ) : (
           <ul className="mt-4 divide-y divide-stone-100">
             {templates.map((template) => {
@@ -174,13 +145,13 @@ export default function InboundTab() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold text-stone-900" dir="auto">{template.name || template.id}</p>
-                      <Badge tone="neutral">{IDENTIFIER_LABELS[template.identifierKind] || template.identifierKind}</Badge>
+                      <Badge tone="neutral">{INBOUND_IDENTIFIER_LABELS[template.identifierKind] || 'نوع غير معروف'}</Badge>
                       <Badge tone={template.isActive ? 'success' : 'warning'}>{template.isActive ? 'نشط' : 'معطل'}</Badge>
                       <Badge tone={source.kind === 'bundled' ? 'info' : source.kind === 'release' ? 'brand' : 'neutral'}>{source.label}</Badge>
                     </div>
                     <p className="mt-1 break-words text-sm text-stone-600" dir="auto">{template.pattern}</p>
                     <p className="mt-1 text-xs text-stone-500">
-                      أولوية {template.priority}{template.walletId ? ` · محفظة ${template.walletId}` : ''}{template.posId ? ` · نقطة بيع ${template.posId}` : ''}
+                      أولوية {template.priority}{template.walletId ? ` · مصدر رسائل ${template.walletId}` : ''}{template.posId ? ` · نقطة بيع ${template.posId}` : ''}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -208,7 +179,7 @@ export default function InboundTab() {
             <div className={`rounded-xl border p-4 ${simulationResult.matched ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} role="status">
               <div className="flex items-center gap-2 font-bold">
                 {simulationResult.matched ? <Check className="h-4 w-4" aria-hidden="true" /> : <AlertCircle className="h-4 w-4" aria-hidden="true" />}
-                {simulationResult.matched ? `تطابق مع ${simulationResult.templateName}` : `لم تتم المطابقة: ${simulationResult.reason || 'لا يوجد قالب مطابق'}`}
+                {simulationResult.matched ? `تطابق مع ${simulationResult.templateName}` : `لم تتم المطابقة: ${labelReason(INBOUND_SIMULATION_REASON_LABELS, simulationResult.reason)}`}
               </div>
               {simulationResult.extracted && (
                 <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

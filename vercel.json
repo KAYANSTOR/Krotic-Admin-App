@@ -1,14 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/device-heartbeat",
-      "destination": "/api/networks?__apiRoute=device-heartbeat"
-    },
-    {
-      "source": "/api/device-heartbeats",
-      "destination": "/api/networks?__apiRoute=device-heartbeats"
-    },
-    {
       "source": "/api/entitlements/activate",
       "destination": "/api/settings?__apiRoute=entitlement-activate"
     },
@@ -27,6 +19,18 @@
     {
       "source": "/api/admin/account-features",
       "destination": "/api/settings?__apiRoute=account-features"
+    },
+    {
+      "source": "/api/network-secret",
+      "destination": "/api/settings?__apiRoute=network-secret"
+    },
+    {
+      "source": "/api/migrate",
+      "destination": "/api/settings?__apiRoute=migrate"
+    },
+    {
+      "source": "/api/device-heartbeats",
+      "destination": "/api/device-heartbeat?__apiRoute=list"
     },
     {
       "source": "/api/request-otp",

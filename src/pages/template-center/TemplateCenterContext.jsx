@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import toast from 'react-hot-toast';
 import { callAdminApi, adminApiError } from '../../lib/adminApi';
 import { EMPTY_PAYLOAD, cloneBundledPack } from '../../lib/bundledTemplatePack';
-import { scopeKeyFor, selectVerifiedAck } from '../../lib/templateCenterView';
+import { scopeKeyFor, selectVerifiedAck, summarizeTemplateValidationErrors } from '../../lib/templateCenterView';
 
 const TemplateCenterContext = createContext(null);
 
@@ -52,7 +52,9 @@ export function TemplateCenterProvider({ children }) {
   const request = useCallback(async (action, rest = {}) => {
     const response = await callAdminApi('/api/template-center', { action, ...rest });
     if (!response.ok) {
-      const details = Array.isArray(response.data?.details) ? response.data.details.join('، ') : '';
+      const rawDetails = Array.isArray(response.data?.details) ? response.data.details : [];
+      if (rawDetails.length) console.error('Template center rejected the request:', response.error, rawDetails);
+      const details = summarizeTemplateValidationErrors(rawDetails);
       throw new Error([
         adminApiError(response.error, 'تعذر الاتصال بمركز القوالب'),
         details,
@@ -130,15 +132,15 @@ export function TemplateCenterProvider({ children }) {
     });
   }, [drafts]);
 
-  /** استيراد كتالوج الزرع الافتراضي في Android إلى المسودة (إجراء محلي — ليس «زرعًا» على أي جهاز). */
+  /** استيراد الكتالوج الافتراضي المضمّن في Android إلى المسودة (إجراء محلي — ليس زرعًا على أي جهاز). */
   const loadBundledPack = useCallback(() => {
-    if (draftIsDirty && !window.confirm('سيتم استبدال محتوى المسودة الحالية بكتالوج زرع Android. هل تريد المتابعة؟')) {
+    if (draftIsDirty && !window.confirm('سيتم استبدال محتوى المسودة الحالية بالكتالوج الافتراضي المضمّن في Android. هل تريد المتابعة؟')) {
       return;
     }
     setPayload(cloneBundledPack());
-    if (!title.trim()) setTitle('كتالوج الزرع الافتراضي في Android');
+    if (!title.trim()) setTitle('الكتالوج الافتراضي المضمّن في Android');
     setDraftIsDirty(true);
-    toast.success('استُورد كتالوج زرع Android إلى المسودة (محليًا فقط — لم تُحفظ أو تُنشر)');
+    toast.success('استُورد الكتالوج الافتراضي إلى المسودة (محليًا فقط — لم تُحفظ أو تُنشر)');
   }, [draftIsDirty, title]);
 
   const saveDraft = useCallback(async () => {

@@ -1,27 +1,27 @@
 // ============================================================
-// كتالوج الزرع الافتراضي المطابق لتطبيق Android (مرجع فقط).
+// الكتالوج الافتراضي المطابق لتطبيق Android (مرجع فقط).
 // ------------------------------------------------------------
 // ⚠️ هذه القيم مطابقة لكتالوج Android الرسمي في مستودع `KAYANSTOR/Krotak-Pro`
 // (الفرع cline/aj82wjsy؛ assets/template_catalog/krotak_default_catalog_v1.json)
 // لتكون مرجعًا واحدًا للوحة الإدارة. ليست بيانات إنتاج، ولا تُكتب على أي جهاز مباشرة.
 //
-// الغرض: تضمن أن عناصر اللوحة تستخدم **نفس المعرّفات** التي يزرعها Android،
+// الغرض: تضمن أن عناصر اللوحة تستخدم **نفس المعرّفات** التي يطابقها Android،
 // حتى يطابق الاستيراد/النشر العنصر نفسه بدل إنشاء نسخة مكررة.
 //
 // المصادر (Android، قراءة فقط):
-//   - lib/domain/services/default_wallet_specs.dart          (المحافظ)
-//   - lib/domain/services/default_wallet_templates_seeder.dart (قوالب التحويل الواردة)
+//   - lib/domain/services/default_wallet_specs.dart          (مصادر الرسائل / جدول wallets)
+//   - lib/domain/services/default_wallet_templates_seeder.dart (قوالب الرسائل الواردة)
 //   - lib/domain/services/default_pos_templates_seeder.dart  (قوالب POS الواردة)
 //   - lib/domain/services/outbound_template_catalog.dart      (قوالب الرسائل الصادرة)
 //   - lib/domain/entities/setting.dart                        (النصوص الأولية)
 //
 // قواعد ثابتة:
-//   - معرّف قالب التحويل الوارد = `tpl-default-<senderCode-lowercase-hyphenated>-<variant>`
+//   - معرّف قالب الرسالة الواردة = `tpl-default-<senderCode-lowercase-hyphenated>-<variant>`
 //     وهو نفس المعرّف الذي يزرعه Android حرفيًا.
 //   - مفتاح القالب الصادر = مفتاح الإعداد (`SettingKeys.*`) نفسه.
-//   - معرّف المحفظة هو `WalletSpec.catalogId` الثابت بصيغة `wallet-default-*`.
-//     تُرسل الإدارة المعرّف نفسه الوارد في manifest، وتُرحّل نسخة Android الجديدة
-//     الصفوف المحلية القديمة عبر هوية الكتالوج دون تكرار المحفظة.
+//   - معرّف مصدر الرسائل هو `WalletSpec.catalogId` الثابت بصيغة `wallet-default-*`.
+//     تُرسل الإدارة المعرّف نفسه الوارد في manifest. ترحيل صفوف التثبيتات القديمة
+//     مسؤولية Android ولم يُتحقق منه من هذا المستودع (انظر legacyRowMigration).
 // ============================================================
 
 /** رمز الهوية المستخرجة من نص القالب (يطابق TemplateIdentifierKind في Android). */
@@ -39,15 +39,16 @@ export const IDENTIFIER_KINDS = Object.freeze({
  * - Android catalog v1 يعرّف `wallet-default-*` كمعرّف ثابت عبر `WalletSpec.catalogId`.
  * - تستخدم الإدارة المعرّف نفسه حرفيًا، كما تستخدمه قوالب التحويل الواردة في
  *   `walletId`؛ لا تُنشأ IDs مستقلة بصيغة slug.
- * - قد تحمل التثبيتات الأقدم IDs محلية مولدة. إصدار Android الذي يطبّق الكتالوج
- *   يربطها بهوية الكتالوج المحلية، ثم يحمي تعديلات المستخدم من الاستبدال.
+ * - قد تحمل التثبيتات الأقدم IDs محلية مولدة. ربطها بهوية الكتالوج مسؤولية
+ *   Android ولم يُتحقق منه من هذا المستودع؛ لا يُدّعى اكتماله هنا.
  */
 export const WALLET_ID_CONTRACT = Object.freeze({
   androidStableKey: 'WalletSpec.catalogId',
   androidRowId: 'wallet-default-* — stable catalog ID',
   adminId: 'same WalletSpec.catalogId as the Android manifest',
   status: 'resolved',
-  note: 'التثبيتات القديمة تُرحّل محليًا بواسطة Android catalog identity map؛ الإصدارات الجديدة تستخدم المعرّف الثابت نفسه.',
+  legacyRowMigration: 'unverified_from_admin_repo',
+  note: 'هوية الكتالوج v1 محسومة من manifest الأندرويد. ترحيل صفوف التثبيتات القديمة (wallet-N) يتم داخل Android ولم يُتحقق منه من هذا المستودع، فلا يُدّعى أنه مكتمل.',
 });
 
 /** يبني معرّفًا مطابقًا لصيغة Android الرسمية: wallet-default-<key-slug>. */
@@ -168,8 +169,10 @@ export const ANDROID_DEFAULT_OUTBOUND_TEMPLATES = Object.freeze([
   { key: 'deposit_no_stock_template', body: 'عزيزي {اسم_الزبون_الاول}\nتم استلام {المبلغ}﷼\nسوف يتم مشاركة الكرت آلياً فور توفره' },
 ]);
 
-/** مفاتيح الصادر التي يزرعها Android ولا يقبلها كتالوج الخادم الحالي بعد. */
-export const OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG = Object.freeze([
+/** مفاتيح الصادر التي يزرعها Android وكانت غير مسجّلة في كتالوج الخادم ثم أُضيفت.
+ * الاسم يعبّر عن الحالة الحالية: هذه المفاتيح **موجودة الآن** ويجب أن تبقى؛
+ * الاختبار يمنع حذفها من الخادم بأثر رجعي. */
+export const ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION = Object.freeze([
   'card_delivery_cash_template',
   'card_delivery_credit_template',
   'card_delivery_gift_template',

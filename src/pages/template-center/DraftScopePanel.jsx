@@ -1,4 +1,4 @@
-import { Archive, Cloud, Package, Save, Trash2, AlertTriangle } from 'lucide-react';
+import { Cloud, Package, Save, Trash2, AlertTriangle } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -111,7 +111,7 @@ export default function DraftScopePanel() {
           variant="secondary"
           icon={Package}
           onClick={loadBundledPack}
-          title="نسخ كتالوج الزرع الافتراضي في Android (بنفس المعرّفات) إلى المسودة (محليًا فقط)"
+          title="نسخ الكتالوج الافتراضي المضمّن في Android (بنفس المعرّفات) إلى المسودة (محليًا فقط)"
         >
           استيراد كتالوج Android
         </Button>
@@ -136,31 +136,6 @@ export default function DraftScopePanel() {
         {currentPointer && (
           <Badge tone="success" dot>الإصدار النشط: {currentPointer.version || currentPointer.releaseId}</Badge>
         )}
-      </div>
-
-      <div className="rounded-xl border border-stone-200 bg-stone-50/80 p-3.5 text-xs text-stone-700 space-y-2">
-        <p className="font-bold text-stone-900 flex items-center gap-1.5 text-xs">
-          <Archive className="h-4 w-4 text-stone-600" aria-hidden="true" />
-          <span>إرشادات الاستخدام: ماذا سوف يحدث عند تنفيذ كل إجراء؟</span>
-        </p>
-        <ul className="grid gap-2 sm:grid-cols-2 text-[11px] leading-5 text-stone-600">
-          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
-            <strong className="text-stone-900 block font-bold mb-0.5">١. حفظ المسودة</strong>
-            يحفظ التعديلات في السحابة كمسودة عمل خاصة بك. لا يتم إرسالها للأجهزة ولا تؤثر على الإصدار النشط مطلقاً.
-          </li>
-          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
-            <strong className="text-stone-900 block font-bold mb-0.5">٢. استيراد كتالوج Android</strong>
-            ينسخ القوالب والمحافظ الافتراضية المعرفة في كود Android إلى المسودة للبدء منها وتخصيصها بنفس المعرفات، دون تكرار أو مساس بالأجهزة.
-          </li>
-          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
-            <strong className="text-stone-900 block font-bold mb-0.5">٣. نشر إصدار</strong>
-            ينشئ إصداراً مركزياً غير قابل للتعديل ويحدّث مؤشر النطاق النشط؛ تستلمه الأجهزة عند اتصالها، ولن تظهر مطبقة إلا بعد ورود تأكيد ACK موثوق.
-          </li>
-          <li className="rounded-lg bg-white p-2.5 border border-stone-100 shadow-xs">
-            <strong className="text-stone-900 block font-bold mb-0.5">٤. حذف المسودة</strong>
-            يحذف مسودة العمل الحالية فقط؛ لا يؤثر ذلك على الإصدارات المنشورة سابقاً ولا يمس سجل العمليات أو الأجهزة.
-          </li>
-        </ul>
       </div>
     </Card>
   );

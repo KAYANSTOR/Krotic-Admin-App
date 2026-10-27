@@ -7,7 +7,7 @@ import {
   ANDROID_DEFAULT_OUTBOUND_TEMPLATES,
   ANDROID_DEFAULT_WALLET_IDS,
   ANDROID_DEFAULT_WALLETS,
-  OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG,
+  ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION,
   WALLET_ID_CONTRACT,
   inboundTemplateId,
   walletIdFromKey,
@@ -44,6 +44,8 @@ test('the wallet id contract is resolved to the Android catalog identity', () =>
   assert.equal(WALLET_ID_CONTRACT.status, 'resolved');
   assert.match(WALLET_ID_CONTRACT.androidRowId, /wallet-default-/);
   assert.match(WALLET_ID_CONTRACT.adminId, /same WalletSpec\.catalogId/);
+  // هوية الكتالوج محسومة، لكن ترحيل صفوف التثبيتات القديمة لا يُدّعى إنجازه من هنا.
+  assert.equal(WALLET_ID_CONTRACT.legacyRowMigration, 'unverified_from_admin_repo');
 });
 
 test('inbound template ids use the exact Android formula and stay unique', () => {
@@ -73,8 +75,8 @@ test('outbound keys are unique and the Android-only keys exist in the server cat
   for (const key of ANDROID_DEFAULT_OUTBOUND_KEYS) {
     assert.ok(catalogKeys.has(key), `outbound key ${key} must exist in the server catalog`);
   }
-  for (const key of OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG) {
-    assert.ok(catalogKeys.has(key), `newly added key ${key} must be registered`);
+  for (const key of ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION) {
+    assert.ok(catalogKeys.has(key), `Android-seeded key ${key} must stay registered on the server`);
   }
 });
 

@@ -2,7 +2,7 @@
 // Helpers عرض مركز القوالب — دوال نقية قابلة للاختبار (بلا React/شبكة).
 // ------------------------------------------------------------
 // تفصل بوضوح بين:
-//   - كتالوج زرع Android الافتراضي (bundled pack)
+//   - كتالوج Android الافتراضي المضمّن (bundled pack)
 //   - المسودة المحفوظة (draft)
 //   - الإصدار المنشور (release) والمؤشر النشط (pointer)
 //   - حالة تطبيق الأجهزة (application state) — Unknown افتراضيًا
@@ -14,16 +14,6 @@ export function scopeKeyFor(scope) {
   if (!scope || scope.type === 'global') return 'global';
   return `network:${scope.networkId}`;
 }
-
-/**
- * مصدر كتالوج الزرع الافتراضي في Android — ليست بيانات إنتاج ولا مسودة محفوظة.
- * تُعرض دائمًا على أنها «مضمّنة في المصدر» لا «مزروعة».
- */
-export const BUNDLED_PACK_SOURCE = Object.freeze({
-  kind: 'bundled',
-  label: 'حزمة مضمّنة في المصدر',
-  detail: 'قيم افتراضية في كود لوحة الإدارة — ليست بيانات إنتاج ولا تأتي من Firestore.',
-});
 
 /**
  * حالات مسار تطبيق الإصدار المركزي على الجهاز.
@@ -46,6 +36,159 @@ export const APPLICATION_STATE_LABELS = Object.freeze({
   AppliedLocally: 'مطبَّق محليًا — بتأكيد ACK',
   ParserRefreshed: 'أُعيد بناء المحلل — بتأكيد ACK',
 });
+
+// ------------------------------------------------------------
+// معجم التسميات الظاهرة — مصدر واحد لكل الشاشات.
+// السبب: كانت الخرائط مكررة داخل التبويبات، فتظهر التسمية نفسها بصيغتين.
+// القاعدة: «مصدر الرسائل» هو المصطلح الظاهر لمفهوم جدول Android `wallets`؛
+// لا يُستخدم «محفظة» في الواجهة لأنه يوحي برصيد مالي غير موجود في هذا النموذج.
+// ------------------------------------------------------------
+
+export const MESSAGE_SOURCE_MODE_LABELS = Object.freeze({
+  sms: 'SMS',
+  notification: 'إشعار تطبيق',
+});
+
+export const MESSAGE_SOURCE_STATUS_LABELS = Object.freeze({
+  active: 'نشط',
+  suspended: 'موقوف مؤقتًا',
+  archived: 'مؤرشف',
+});
+
+export const INBOUND_IDENTIFIER_LABELS = Object.freeze({
+  phone: 'رقم هاتف',
+  alternativeNumber: 'رقم بديل',
+  account: 'رقم حساب',
+  senderNameOnly: 'اسم المرسل فقط',
+  balanceRequestCode: 'كود طلب رصيد',
+});
+
+export const OUTBOUND_SCOPE_LABELS = Object.freeze({
+  outboundCustomer: 'رسائل العملاء',
+  outboundPos: 'نقاط البيع',
+  outboundSystem: 'رسائل النظام',
+});
+
+/** حالة التطبيق كما يبلّغها الجهاز؛ تُعرض عربية دائمًا لا كرمز خام. */
+export const ACK_OUTCOME_LABELS = Object.freeze({
+  applied: 'مطبَّق',
+  partially_applied: 'مطبَّق جزئيًا',
+  failed: 'فشل',
+  rejected: 'مرفوض',
+  unknown: 'غير معروف',
+});
+
+/** تسمية عربية لقيمة ACK، مع إظهار القيمة الخام فقط عند جهل المعجم. */
+export function labelAckOutcome(outcome) {
+  return ACK_OUTCOME_LABELS[outcome] || (outcome ? `غير معروف (${outcome})` : 'غير معروف');
+}
+
+/** أسباب رفض/فشل المحاكاة الواردة كما يعيدها الخادم — بلا رموز إنجليزية خام. */
+export const INBOUND_SIMULATION_REASON_LABELS = Object.freeze({
+  no_template_matched: 'لا يوجد قالب مطابق',
+  template_pattern_invalid: 'نمط القالب غير صالح',
+  template_not_found: 'القالب غير موجود',
+  body_required: 'نص الرسالة مطلوب',
+  message_empty: 'نص الرسالة فارغ',
+});
+
+/** أسباب رفض معاينة الرسالة الصادرة كما يعيدها الخادم. */
+export const OUTBOUND_PREVIEW_REASON_LABELS = Object.freeze({
+  template_unknown: 'القالب غير معروف في الكتالوج',
+  variable_unknown: 'النص يحتوي متغيرًا غير معروف',
+  variable_scope_invalid: 'المتغير خارج نطاق هذا القالب',
+  required_variable_missing: 'متغير مطلوب مفقود',
+  variable_value_missing: 'لم تُدخل قيمة لكل متغير',
+  rendered_message_empty: 'الرسالة الناتجة فارغة',
+});
+
+/** تسمية سبب خادمي، مع إبقاء الرمز بين قوسين عند عدم وجود ترجمة. */
+export function labelReason(map, code) {
+  if (!code) return 'غير معروف';
+  return map[code] || `سبب غير مترجم (${code})`;
+}
+
+// ------------------------------------------------------------
+// ترجمة أخطاء تحقق الحمولة (snake_case) إلى جملة عربية.
+// الخادم يعيد رموزًا مثل wallets[0]_created_at_invalid؛ عرضها كما هي في
+// الواجهة يجعل رسالة الخطأ بلا معنى للمدير. تُسجل الرموز الأصلية في console
+// للتشخيص، ويُعرض هنا ملخص عربي فقط.
+// ------------------------------------------------------------
+
+const PAYLOAD_ENTRY_LABELS = Object.freeze({
+  wallets: 'مصدر رسائل',
+  transferTemplates: 'قالب وارد',
+  outboundTemplates: 'قالب صادر',
+});
+
+const FIELD_ERROR_LABELS = Object.freeze({
+  invalid: 'عنصر غير صالح',
+  id_invalid: 'المعرّف غير صالح',
+  id_duplicate: 'المعرّف مكرر',
+  name_invalid: 'الاسم مطلوب أو طويل جدًا',
+  status_invalid: 'الحالة غير معروفة',
+  source_mode_invalid: 'وضع القراءة غير معروف',
+  sender_id_invalid: 'معرّف المرسل غير صالح',
+  package_name_invalid: 'اسم الحزمة غير صالح',
+  package_name_required_for_notification: 'اسم الحزمة مطلوب لوضع الإشعارات',
+  created_at_invalid: 'تاريخ الإنشاء مفقود أو غير صالح',
+  pattern_invalid: 'نمط المطابقة مطلوب أو طويل جدًا',
+  wallet_id_invalid: 'مصدر الرسائل المرتبط غير موجود',
+  wallet_not_active: 'مصدر الرسائل المرتبط غير نشط',
+  pos_id_invalid: 'نقطة البيع غير صالحة',
+  priority_invalid: 'الأولوية يجب أن تكون عددًا بين 0 و9999',
+  identifier_kind_invalid: 'نوع المعرّف غير معروف',
+  is_active_invalid: 'قيمة التفعيل غير صالحة',
+  require_reference_invalid: 'قيمة اشتراط المرجع غير صالحة',
+  sender_code_invalid: 'مرشّح المرسل غير صالح',
+  sample_body_invalid: 'نص العينة غير صالح',
+  sender_name_label_invalid: 'تسمية اسم المرسل غير صالحة',
+  note_label_invalid: 'تسمية الملاحظة غير صالحة',
+  active_scope_required: 'القالب المفعّل يحتاج مصدر رسائل أو نقطة بيع',
+  required_amount_missing: 'النمط يجب أن يحتوي {amount}',
+  required_identifier_missing: 'النمط لا يحتوي المعرّف المطلوب',
+  required_reference_missing: 'النمط يجب أن يحتوي {ref}',
+  required_variable_missing: 'متغير مطلوب مفقود',
+  placeholder_unknown: 'النمط يحتوي عنصرًا نائبًا غير معروف',
+  key_invalid: 'مفتاح القالب غير صالح',
+  key_unknown: 'مفتاح القالب غير معروف في الكتالوج',
+  key_duplicate: 'مفتاح القالب مكرر',
+  body_invalid: 'نص القالب مطلوب أو طويل جدًا',
+  variable_unknown: 'نص القالب يحتوي متغيرًا غير معروف',
+  variable_scope_invalid: 'المتغير خارج نطاق هذا القالب',
+  variable_duplicate: 'النص يستخدم اسمين مختلفين للمتغير نفسه',
+});
+
+const PAYLOAD_ERROR_LABELS = Object.freeze({
+  payload_invalid: 'حمولة المسودة غير صالحة',
+  scope_invalid: 'نطاق النشر غير صالح',
+  draft_invalid: 'بيانات المسودة غير صالحة',
+  payload_too_large: 'حجم الحمولة يتجاوز الحد المسموح',
+  wallets_invalid: 'قائمة مصادر الرسائل غير صالحة',
+  transferTemplates_invalid: 'قائمة قوالب الرسائل الواردة غير صالحة',
+  outboundTemplates_invalid: 'قائمة الرسائل الصادرة غير صالحة',
+});
+
+/** يترجم رمز تحقق واحدًا؛ لا يعيد رموزًا إنجليزية خامًا أبدًا. */
+export function describeTemplateValidationError(code) {
+  if (typeof code !== 'string' || !code) return 'خطأ تحقق غير معروف';
+  if (PAYLOAD_ERROR_LABELS[code]) return PAYLOAD_ERROR_LABELS[code];
+  const match = code.match(/^(wallets|transferTemplates|outboundTemplates)\[(\d+)\]_(\w+)$/);
+  if (!match) return 'خطأ تحقق غير معروف';
+  const [, collection, index, field] = match;
+  const entry = PAYLOAD_ENTRY_LABELS[collection];
+  return `${entry} #${Number(index) + 1}: ${FIELD_ERROR_LABELS[field] || 'حقل غير صالح'}`;
+}
+
+/** ملخص عربي قصير لأخطاء الخادم: أول ثلاثة أخطاء + عدد الباقي. */
+export function summarizeTemplateValidationErrors(details = [], max = 3) {
+  if (!Array.isArray(details) || details.length === 0) return '';
+  const messages = [...new Set(details.map(describeTemplateValidationError))];
+  const shown = messages.slice(0, max);
+  const rest = messages.length - shown.length;
+  return rest > 0 ? `${shown.join('، ')}، و${rest} خطأ آخر` : shown.join('، ');
+}
+
 
 /**
  * اشتقاق حالة التطبيق من إشارات حقيقية.
@@ -109,19 +252,19 @@ export function deriveApplicationState({ pointer = null, ack = null } = {}) {
 }
 
 /**
- * توصيف مصدر عنصر مسودة: هل هو من كتالوج زرع Android، أو محرَّر يدويًا،
- * أو وارد ضمن مسودة محمَّلة من إصدار سابق؟
+ * توصيف مصدر عنصر مسودة: هل هو من الكتالوج الافتراضي المضمّن في Android، أو
+ * محرَّر يدويًا، أو وارد ضمن مسودة محمَّلة من إصدار سابق؟
  *
  * لا يمكن الجزم بأن عنصرًا «مزروع سابقًا» في الإنتاج؛ نكتفي بوسم ما هو
- * مطابق للحزمة المضمّنة أو موجود في إصدار منشور.
+ * مطابق للكتالوج المضمّن أو موجود في إصدار منشور.
  */
 export function describeEntrySource(entry, { bundledIds = new Set(), releaseIds = new Set() } = {}) {
   const id = entry?.key ?? entry?.id;
   if (id != null && bundledIds.has(id)) {
-    return { kind: 'bundled', label: 'مطابق لكتالوج زرع Android' };
+    return { kind: 'bundled', label: 'مضمّن في كتالوج Android' };
   }
   if (id != null && releaseIds.has(id)) {
-    return { kind: 'release', label: 'موجود في إصدار منشور' };
+    return { kind: 'release', label: 'من إصدار منشور' };
   }
   return { kind: 'draft', label: 'محرَّر في المسودة' };
 }
@@ -156,8 +299,8 @@ export function reconcileLegacy({ releases = [], networks = [] } = {}) {
     };
   }
   const rows = [
-    { kind: 'wallets', label: 'المحافظ', count: ids.wallets.size },
-    { kind: 'transferTemplates', label: 'قوالب التحويل الواردة', count: ids.transferTemplates.size },
+    { kind: 'wallets', label: 'مصادر الرسائل', count: ids.wallets.size },
+    { kind: 'transferTemplates', label: 'قوالب الرسائل الواردة', count: ids.transferTemplates.size },
     { kind: 'outboundTemplates', label: 'الرسائل الصادرة', count: ids.outboundTemplates.size },
     { kind: 'networks', label: 'الشبكات', count: networks.length },
   ];

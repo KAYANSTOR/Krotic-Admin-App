@@ -1,5 +1,60 @@
 # تدقيق كروتك برو وسجل التنفيذ
 
+## تحديث توحيد الأسلوب والمصطلحات — 2026-10-27
+
+هذا التحديث خاص بمستودع لوحة الإدارة `KAYANSTOR/Krotic-Admin-App`، ولم يمس
+مستودع Flutter (`Krotak-Pro`) ولا عقود الحمولة ولا مجموعات Firestore.
+
+- **مصطلح واحد:** جدول `wallets` يُعرض باسم **«مصادر الرسائل»** في كل الواجهة
+  (التبويب، عنوان الصفحة، الشريط الجانبي، شريط الهاتف، الرئيسية، التسوية)، بعد أن
+  كان يظهر باسم «المحافظ» الذي يوحي برصيد مالي غير موجود في العقد.
+- **سجل مسارات واحد:** `src/lib/templateCenterRoutes.js` يغذي Sidebar/BottomNav/
+  Layout/تبويبات المركز، فاختفت أربع صيغ متضاربة لاسم المركز والتبويبات.
+- **حذف التعليمات الثابتة:** أُزيلت خمس كتل «دليل الاستخدام/إرشادات الاستخدام»
+  (نحو 250 سطرًا) كانت تكرر وظائف الأزرار وتتقادم مع كل تغيير. بقي وصف سطر واحد
+  لكل قسم + تلميحات الحقول + جملة أمان واحدة لحالة ACK.
+- **تعريب الرموز التقنية:** نتائج ACK وأسباب رفض المحاكاة/المعاينة تُعرض عربية
+  (`labelAckOutcome`, `labelReason`, `summarizeTemplateValidationErrors`)، ولم تعد
+  `ack.outcome` أو `no_template_matched` أو `wallets[0]_..._invalid` تظهر خامًا. أُزيلت مسارات Firestore من نص شاشة المزايا.
+- **هوية العناصر التي ينشئها المدير:** مولّد موحد `templateCenterIds.js`:
+  `wallet-admin-<hex16>` و`tpl-admin-<hex16>` بدل `wallet-<base36>` القابل
+  للالتباس مع معرّفات Android وقت التشغيل، والمعرّف يُعرض للقراءة فقط.
+- **قاموس أخطاء بلا تكرار:** أُزيلت 12 تعريفًا مكررًا في `ADMIN_API_ERRORS` كانت تجعل آخر رسالة تفوز بصمت (مثل وصف خطأ قائمة المركز بأنه خطأ قراءة إصدار)، مع اختبار يمنع التكرار.
+- **تصحيح مسمّى كاذب:** `OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG` أصبح
+  `ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION`؛ المفاتيح الخمسة موجودة
+  فعلًا والاختبار يمنع حذفها.
+- **حسم تناقض وثائقي:** هوية الكتالوج `wallet-default-*` محسومة، وترحيل صفوف
+  التثبيتات القديمة معلن كغير متحقق منه من مستودع الإدارة
+  (`WALLET_ID_CONTRACT.legacyRowMigration`) بدل ادّعاء اكتماله.
+- **التوثيق:** `docs/TEMPLATE_CENTER_STYLE_AUDIT_AR.md` (التحليل والمعجم وسياسة
+  النصوص)، وتحديث عقد المركز وسجل قرار المصدر ووثيقة عقود لوحة التحكم.
+- **التحقق:** `test/templateCenterTerminology.test.js` (12 اختبارًا) + الاختبارات
+  القائمة للمركز والكتالوج والرئيسية؛ `npm test` 390/390، و`npm run lint`
+  و`npm run build` ناجحان محليًا. لا نشر ولا دمج إلى `main`.
+
+## تحديث فرع التطوير الموحّد — 2026-10-27
+
+هذا التحديث خاص بمستودع لوحة الإدارة `KAYANSTOR/Krotic-Admin-App` وفرعه الوحيد
+للتطوير `development`. لا يتضمن أي ملف من مستودع Flutter (`Krotak-Pro`) — وهو
+مرجع قراءة فقط ولم يُلمس.
+
+- **توحيد الفروع:** كل العمل صار على `development` فقط (رأس `main` + التزام إغلاق
+  الأمان). حُذفت الفروع المتبعثرة `cline/4xdamfpg` و`cline/f0d32hzt` و`cline/wh0pneww`
+  و`security/closure-followup-2026-10-27` بعد التأكد من احتواء `main` لعملها، مع
+  إنشاء وسوم أرشيف قبل الحذف. بقي فرعان: `development` و`main` (لم يُلمس).
+- **ميزة ملخص مخزون الكروت:** مسار `POST /api/inventory/snapshot` بنفس مصادقة
+  `sales/ingest` و`device-heartbeat` (UID من Firebase ID Token فقط)، يقبل أعداداً
+  فقط ويرفض أي حقل سرّي، مع idempotency/revision على
+  `networks/{networkId}/inventory_snapshot/current`. تعرضه شاشة ملف العميل في قسم
+  «المخزون المزامَن». التفاصيل في `ANDROID_ADMIN_INTEGRATION_CONTRACT_AR.md` §8.
+- **حد دوال Vercel:** أُخلِيت خانة بنقل مسار `/api/migrate` الإداري إلى موزّع
+  `api/settings` (`__apiRoute=migrate`)، فبقي العدد 12 (حد الخطة).
+- **العقد القابل للاختبار:** `contracts/schemas/inventory-snapshot.schema.json` +
+  `contracts/fixtures/inventory-snapshot.sample.json` + اختبارات في
+  `test/contracts.test.js` و`test/inventorySnapshot.test.js`.
+- **التحقق المحلي:** `npm test` 378/378، `npm run test:rules` 23/23، `npm run build`
+  و`npm run lint` ناجحان. لم يُنشر شيء ولم يُدمج إلى `main`.
+
 ## تحديث فرع لوحة الإدارة — 2026-10-19
 
 هذا التحديث خاص بمستودع لوحة الإدارة وفرع

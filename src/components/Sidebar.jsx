@@ -1,9 +1,18 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
-  ArrowDownToLine, Send, Wallet, Archive, ListChecks, Sparkles, Smartphone,
+  ArrowDownToLine, Send, MessageSquare, Archive, ListChecks, Sparkles, Smartphone,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
+import { TEMPLATE_CENTER_NAV, TEMPLATE_CENTER_ROOT } from '../lib/templateCenterRoutes';
+
+const TEMPLATE_CENTER_ICONS = {
+  '/template-center/wallets': MessageSquare,
+  '/template-center/inbound': ArrowDownToLine,
+  '/template-center/outbound': Send,
+  '/template-center/releases': Archive,
+  '/template-center/reconciliation': ListChecks,
+};
 
 /** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي مع شاشات مخصصة لكل وظيفة. */
 const navGroups = [
@@ -22,11 +31,7 @@ const navGroups = [
   {
     label: 'القوالب والرسائل والنشر',
     items: [
-      { path: '/template-center/inbound', label: 'قوالب التحويل الواردة', icon: ArrowDownToLine },
-      { path: '/template-center/outbound', label: 'الرسائل الصادرة (SMS)', icon: Send },
-      { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
-      { path: '/template-center/releases', label: 'الإصدارات والنشر', icon: Archive },
-      { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
+      ...TEMPLATE_CENTER_NAV.map((item) => ({ ...item, icon: TEMPLATE_CENTER_ICONS[item.path] || Layers3 })),
       { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
     ],
   },
@@ -35,7 +40,7 @@ const navGroups = [
     items: [
       { path: '/settings', label: 'الإعدادات العامة', icon: Settings },
       { path: '/admins', label: 'إدارة المدراء', icon: ShieldCheck },
-      { path: '/template-center', label: 'مركز القوالب الشامل', icon: Layers3 },
+      { path: TEMPLATE_CENTER_ROOT.path, label: TEMPLATE_CENTER_ROOT.label, icon: Layers3 },
       { path: '/audit', label: 'سجل العمليات', icon: ScrollText },
       { path: '/devices', label: 'الأجهزة ومراقبة المزامنة', icon: Smartphone },
     ],

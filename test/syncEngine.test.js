@@ -38,7 +38,7 @@ test('first sync downloads every document and stores the cursors', async () => {
   assert.equal(cursor.cursorMs, 20);
 });
 
-test('second sync without changes reads only the check query', async () => {
+test('second sync at the same cursor reprocesses the inclusive row safely', async () => {
   const localDb = createMemoryDb();
   const source = createFakeSource('sales', 'sales', [
     { networkId: 'NET-1', id: 's1', updatedAtMs: 10 },
@@ -58,8 +58,8 @@ test('second sync without changes reads only the check query', async () => {
     },
   });
 
-  assert.equal(result.changed, 0);
-  assert.equal(pullCalls, 0, 'the incremental pull must be skipped when nothing changed');
+  assert.equal(result.changed, 1);
+  assert.equal(pullCalls, 1, 'the inclusive cursor pull rechecks rows at the saved timestamp');
 });
 
 test('sync fetches newly added rows when latest timestamp equals the saved cursor', async () => {

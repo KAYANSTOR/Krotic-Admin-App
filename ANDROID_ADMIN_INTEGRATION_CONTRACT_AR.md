@@ -91,3 +91,49 @@
 - لم يُعدّل مستودع Android. كشف الفحص أن `syncCompletedSales()` الحالي يرفع/يعمل upsert للسجلات المكتملة القديمة عند بدء الجلسة/فتح شاشة العمولة؛ إصلاح لوحة الإدارة وحدها لا يوقف كتابات Android المتكررة.
 - يتضمن التغيير تنبيهاً مرئياً بأن الأرقام الحالية غير متحققة خادمياً، وإعادة مصالحة كاملة يدوية لسجل الفوترة لاكتشاف تغييرات/حذوفات السجلات القديمة.
 - لا يُعتبر هذا العقد موافقة على حساب عمولة أو تنفيذ تسوية أو تشغيل backfill مكلف. يلزم اعتماد القرارات أعلاه وتصميم مهاجرة آمن قبل نشر أي Cloud Function أو تعديل قواعد الإنتاج.
+
+## 8. مسار ملخص مخزون الكروت (من Android) — منفَّذ في لوحة الإدارة
+
+> هذه الإضافة تخص خادم Vercel في مستودع لوحة الإدارة. لا تعني أن تطبيق Android
+> يرسل اللقطة فعلاً؛ المستقبل جاهز ومختبر، والمُرسل في Android يبقى بنداً مستقلاً
+> بموافقة المالك (كما في ACK القوالب).
+
+المسار الفعلي: **`POST /api/inventory/snapshot`** في `api/inventory/snapshot.js`.
+
+### الطلب المقبول
+
+- مصادقة Firebase ID Token مطابقة لـ`POST /api/sales/ingest` و`POST /api/device-heartbeat`:
+  `uid` يُستخرج من الرمز في الخادم ولا يُقبل من الجسم، ويُرفض حساب الإدارة.
+- قائمة الحقول الوحيدة المقبولة: `schemaVersion` (يساوي `1`)، `networkId`،
+  `snapshotId`، `inventoryRevision`، `generatedAt`،
+  `totalAvailableCards`، `totalReservedCards`، `totalSoldCards`،
+  `totalInvalidCards`، و`breakdown` (مصفوفة أعداد لكل فئة).
+- أي حقل غير موجود في قائمة السماح يُرفض (`400 unknown_field`). أي مفتاح — في أي
+  عمق — يُطبَّع إلى `pin`/`password`/`cardnumber`/`secret`/`code`/`rawcard`
+  يُرفض (`400 secret_field_forbidden`). لا تُقبل أي بيانات كرت سرية إطلاقاً.
+- كل الأعداد صحيحة غير سالبة. `generatedAt` إما RFC3339 أو مللي ثانية UTC.
+- يجب أن يطابق `networkId` في الجسم الشبكة الموثّقة للحساب
+  (`users/{uid}.networkId` أو `uid`) وأن يكون `uid` مالك `networks/{networkId}.owner_uid`،
+  وإلا يُرفض (`403 network_identity_mismatch` / `network_owner_mismatch`).
+
+### نتيجة الخادم (Idempotency/Revision)
+
+- التخزين في `networks/{networkId}/inventory_snapshot/current` (وثيقة واحدة، أعداد فقط)
+  عبر Firebase Admin فقط — لا كتابة عميل.
+- نفس `snapshotId` => `200 { status: "already_acked" }` بلا كتابة.
+- `inventoryRevision` أقدم من المحفوظ => `409 { error: "STALE_REVISION", currentRevision }`.
+- أحدث => حفظ + `serverTimestamp` + `200 { status: "acked" }`.
+
+### العرض في اللوحة
+
+- `src/lib/inventorySnapshot.js` يقرأ وثيقة واحدة صغيرة (`getDoc`) ويُمرّرها إلى قسم
+  «المخزون المزامَن» في `src/pages/UserProfilePage.jsx` (متاح/محجوز/مباع/تالف + جدول الفئات).
+- قبل وصول أول لقطة تظهر «غير متاح (بانتظار المزامنة)».
+- قواعد Firestore: قراءة إدارية فقط لوثيقة `inventory_snapshot`، والكتابة مقفلة على الخادم.
+
+### العقد القابل للاختبار
+
+- المخطط: `contracts/schemas/inventory-snapshot.schema.json`.
+- المثال الاصطناعي: `contracts/fixtures/inventory-snapshot.sample.json`.
+- الاختبارات: `test/contracts.test.js` و`test/inventorySnapshot.test.js`
+  و`security-tests/firestore-rules.test.js`.

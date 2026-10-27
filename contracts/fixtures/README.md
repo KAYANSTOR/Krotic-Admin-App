@@ -14,3 +14,4 @@
 | `account-features.sample.json` | `account-features.schema.json` | خريطة مفاتيح account_features فقط. |
 | `account-features-catalog.sample.json` | `account-features-catalog.schema.json` | الكتالوج المغلق افتراضياً بمفاتيح المزايا الأربعة. |
 | `android-default-catalog-v1.json` | `default-template-catalog.schema.json` | كتالوج الاختبار المضمن في Android. |
+| `inventory-snapshot.sample.json` | `inventory-snapshot.schema.json` | ملخص أعداد مخزون الكروت من Android؛ أعداد فقط بلا أسرار. |

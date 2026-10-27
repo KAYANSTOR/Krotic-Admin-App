@@ -79,6 +79,7 @@ const SCHEMA_FILES = [
   'account-features.schema.json',
   'account-features-catalog.schema.json',
   'default-template-catalog.schema.json',
+  'inventory-snapshot.schema.json',
 ];
 
 test('every contract schema is valid JSON and carries a schemaVersion', async () => {
@@ -103,6 +104,7 @@ const FIXTURE_SCHEMA_MAP = {
   'account-features.sample.json': 'account-features.schema.json',
   'account-features-catalog.sample.json': 'account-features-catalog.schema.json',
   'android-default-catalog-v1.json': 'default-template-catalog.schema.json',
+  'inventory-snapshot.sample.json': 'inventory-snapshot.schema.json',
 };
 
 test('every synthetic fixture validates against its schema', async () => {
@@ -160,6 +162,35 @@ test('ACK request matches the Android-to-Vercel contract and rejects extra ident
   assert.ok(validateSchema({ ...base, messageBody: 'secret text' }, schema).length > 0);
   assert.ok(validateSchema({ ...base, networkSecret: 'abc' }, schema).length > 0);
   assert.ok(validateSchema({ ...base, uid: 'spoofed' }, schema).length > 0, 'uid is derived from Firebase token');
+});
+
+test('inventory snapshot contract is counts-only and rejects identity or secret fields', async () => {
+  const schema = await loadSchema('inventory-snapshot.schema.json');
+  const base = {
+    schemaVersion: 1,
+    networkId: 'NET-10001',
+    snapshotId: 'snap-1',
+    inventoryRevision: 3,
+    generatedAt: '2026-10-27T05:00:00.000Z',
+    totalAvailableCards: 40,
+    totalReservedCards: 1,
+    totalSoldCards: 10,
+    totalInvalidCards: 0,
+    breakdown: [{ catalogId: 'c1', denomination: 100, currency: 'YER', availableCount: 40, reservedCount: 1, soldCount: 10 }],
+  };
+  assert.deepEqual(validateSchema(base, schema), []);
+  assert.ok(validateSchema({ ...base, uid: 'spoofed' }, schema).length > 0, 'uid is derived from the Firebase token');
+  assert.ok(validateSchema({ ...base, pin: '1234' }, schema).length > 0, 'secret card fields are not allowed');
+  assert.ok(validateSchema({ ...base, totalAvailableCards: -1 }, schema).length > 0);
+  assert.ok(validateSchema({ ...base, breakdown: [{ ...base.breakdown[0], extra: 1 }] }, schema).length > 0);
+  assert.ok(validateSchema({ ...base, generatedAt: 'yesterday' }, schema).length > 0);
+
+  // نفس القواعد مفروضة فعلياً في نقطة النهاية الخادمية.
+  const { validateInventorySnapshot } = await import('../api/inventory/snapshot.js');
+  assert.equal(validateInventorySnapshot(base).ok, true);
+  assert.equal(validateInventorySnapshot({ ...base, uid: 'spoofed' }).error, 'unknown_field');
+  assert.equal(validateInventorySnapshot({ ...base, cardNumber: '1234' }).error, 'secret_field_forbidden');
+  assert.equal(validateInventorySnapshot({ ...base, totalReservedCards: '1' }).error, 'counter_invalid');
 });
 
 test('application-state contract keeps applied states distinct from fetch/cache', async () => {

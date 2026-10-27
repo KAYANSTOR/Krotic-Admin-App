@@ -2,9 +2,9 @@ name: Admin CI
 
 on:
   push:
-    branches: [main, feature/krotak-admin-control-center]
+    branches: [main, development]
   pull_request:
-    branches: [main, feature/krotak-admin-control-center]
+    branches: [main, development]
   workflow_dispatch:
 
 concurrency:

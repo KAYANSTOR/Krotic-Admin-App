@@ -26,6 +26,7 @@ import {
   dispatchPhoneNotification,
   shouldAlertNewEvent,
 } from '../lib/phoneNotifications';
+import { TEMPLATE_CENTER_TITLES } from '../lib/templateCenterRoutes';
 
 /** عنوان الصفحة الحالية ليظهر في الشريط العلوي على الشاشات الصغيرة. */
 const PAGE_TITLES = {
@@ -36,12 +37,7 @@ const PAGE_TITLES = {
   '/notifications': 'الإشعارات',
   '/admins': 'إدارة المدراء',
   '/audit': 'سجل العمليات',
-  '/template-center': 'المحافظ والقوالب',
-  '/template-center/wallets': 'المحافظ ومصادر الرسائل',
-  '/template-center/inbound': 'قوالب التحويل الواردة',
-  '/template-center/outbound': 'الرسائل الصادرة',
-  '/template-center/releases': 'الإصدارات والمؤشرات',
-  '/template-center/reconciliation': 'التسوية والعناصر القديمة',
+  ...TEMPLATE_CENTER_TITLES,
   '/paid-features': 'مزايا الحساب',
 };
 

@@ -1,5 +1,5 @@
 // ============================================================
-// حزمة الزرع الافتراضي المضمّنة — مبنية من كتالوج Android المرجعي.
+// الكتالوج الافتراضي المضمّن — مبني من كتالوج Android المرجعي.
 // ------------------------------------------------------------
 // ⚠️ هذه القيم مستخرجة من الـseeders الرسمية في تطبيق Android (انظر
 // `androidSeedCatalog.js`) لتكون اللوحة والتطبيق متطابقين في **المعرّفات**
@@ -16,8 +16,8 @@ import {
   ANDROID_DEFAULT_WALLETS,
 } from './androidSeedCatalog.js';
 
-/** وسم المصدر: كتالوج الزرع الافتراضي في Android (مرجع قراءة). */
-export const BUNDLED_PACK_LABEL = 'كتالوج الزرع الافتراضي في Android (مرجع قراءة)';
+/** اسم المرجع الظاهر في الواجهة: «مضمّن في Android» لا «مزروع على جهاز». */
+export const BUNDLED_PACK_LABEL = 'الكتالوج الافتراضي المضمّن في Android (مرجع قراءة)';
 
 export const BUNDLED_TEMPLATE_PACK = Object.freeze({
   wallets: ANDROID_DEFAULT_WALLETS.map((wallet) => Object.freeze({
