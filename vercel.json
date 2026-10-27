@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/device-heartbeat",
+      "destination": "/api/networks?__apiRoute=device-heartbeat"
+    },
+    {
+      "source": "/api/device-heartbeats",
+      "destination": "/api/networks?__apiRoute=device-heartbeats"
+    },
+    {
       "source": "/api/entitlements/activate",
       "destination": "/api/settings?__apiRoute=entitlement-activate"
     },

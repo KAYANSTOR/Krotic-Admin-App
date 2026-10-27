@@ -20,6 +20,16 @@ test('Vercel Hobby deployment stays at or below 12 API functions', async () => {
   assert.ok((await countApiFunctions(path.join(root, 'api'))) <= 12);
 });
 
+test('device heartbeat endpoints reuse the existing networks API function', async () => {
+  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/device-heartbeat'
+    && rule.destination === '/api/networks?__apiRoute=device-heartbeat'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/device-heartbeats'
+    && rule.destination === '/api/networks?__apiRoute=device-heartbeats'));
+  assert.equal(await readFile(path.join(root, 'api', 'device-heartbeat.js')).then(() => true, () => false), false);
+  assert.equal(await readFile(path.join(root, 'api', 'device-heartbeats.js')).then(() => true, () => false), false);
+});
+
 test('template-center keeps its public API URL through the shared settings function', async () => {
   const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
   assert.ok(config.rewrites.some((rule) => rule.source === '/api/template-center'

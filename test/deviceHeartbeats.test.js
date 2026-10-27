@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../api/device-heartbeats.js';
+import handler from '../server/_lib/deviceHeartbeats.js';
 
 function responseMock() {
   return {

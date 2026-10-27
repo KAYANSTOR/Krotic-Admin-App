@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler, { validateHeartbeat } from '../api/device-heartbeat.js';
+import handler, { validateHeartbeat } from '../server/_lib/deviceHeartbeat.js';
 
 const valid = {
   schemaVersion: 1,

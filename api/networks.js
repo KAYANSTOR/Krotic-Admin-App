@@ -23,6 +23,8 @@ import { nextNetworkSequence, formatNetworkId, parseNetworkId } from '../server/
 import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 import { ensureNetworkSecret } from '../server/_lib/networkSecretStore.js';
 import { ACCESS_STATUSES, legacyAccessFields } from '../server/_lib/accessStatus.js';
+import deviceHeartbeatHandler from '../server/_lib/deviceHeartbeat.js';
+import deviceHeartbeatsHandler from '../server/_lib/deviceHeartbeats.js';
 
 export { ACCESS_STATUSES, legacyAccessFields };
 export const TRIAL_DAYS = 30;
@@ -662,6 +664,10 @@ export async function deleteAccount(db, { uid, actorUid, now, authService = getA
 }
 
 export default async function handler(req, res) {
+  const apiRoute = req.query?.__apiRoute;
+  if (apiRoute === 'device-heartbeat') return deviceHeartbeatHandler(req, res);
+  if (apiRoute === 'device-heartbeats') return deviceHeartbeatsHandler(req, res);
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
