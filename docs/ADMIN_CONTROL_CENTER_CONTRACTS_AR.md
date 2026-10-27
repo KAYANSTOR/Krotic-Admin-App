@@ -27,6 +27,7 @@
 | ACK من Android (مقترح) | `contracts/schemas/android-ack.schema.json` | `test/contracts.test.js` |
 | حالة التطبيق على Android | `contracts/schemas/android-application-state.schema.json` | `test/contracts.test.js` |
 | خريطة المزايا المدفوعة | `contracts/schemas/feature-entitlements.schema.json` | `test/contracts.test.js` |
+| ملخص مخزون الكروت (من Android) | `contracts/schemas/inventory-snapshot.schema.json` | `test/contracts.test.js` |
 
 الأمثلة في `contracts/fixtures/` مطابقة للمخططات، ويُتحقَّق منها في الاختبارات.
 كما يجري الاختبار مطابقة **حقيقية** لحمولة الإصدار مقابل التحقق الخادمي الفعلي

@@ -1,5 +1,28 @@
 # تدقيق كروتك برو وسجل التنفيذ
 
+## تحديث فرع التطوير الموحّد — 2026-10-27
+
+هذا التحديث خاص بمستودع لوحة الإدارة `KAYANSTOR/Krotic-Admin-App` وفرعه الوحيد
+للتطوير `development`. لا يتضمن أي ملف من مستودع Flutter (`Krotak-Pro`) — وهو
+مرجع قراءة فقط ولم يُلمس.
+
+- **توحيد الفروع:** كل العمل صار على `development` فقط (رأس `main` + التزام إغلاق
+  الأمان). حُذفت الفروع المتبعثرة `cline/4xdamfpg` و`cline/f0d32hzt` و`cline/wh0pneww`
+  و`security/closure-followup-2026-10-27` بعد التأكد من احتواء `main` لعملها، مع
+  إنشاء وسوم أرشيف قبل الحذف. بقي فرعان: `development` و`main` (لم يُلمس).
+- **ميزة ملخص مخزون الكروت:** مسار `POST /api/inventory/snapshot` بنفس مصادقة
+  `sales/ingest` و`device-heartbeat` (UID من Firebase ID Token فقط)، يقبل أعداداً
+  فقط ويرفض أي حقل سرّي، مع idempotency/revision على
+  `networks/{networkId}/inventory_snapshot/current`. تعرضه شاشة ملف العميل في قسم
+  «المخزون المزامَن». التفاصيل في `ANDROID_ADMIN_INTEGRATION_CONTRACT_AR.md` §8.
+- **حد دوال Vercel:** أُخلِيت خانة بنقل مسار `/api/migrate` الإداري إلى موزّع
+  `api/settings` (`__apiRoute=migrate`)، فبقي العدد 12 (حد الخطة).
+- **العقد القابل للاختبار:** `contracts/schemas/inventory-snapshot.schema.json` +
+  `contracts/fixtures/inventory-snapshot.sample.json` + اختبارات في
+  `test/contracts.test.js` و`test/inventorySnapshot.test.js`.
+- **التحقق المحلي:** `npm test` 378/378، `npm run test:rules` 23/23، `npm run build`
+  و`npm run lint` ناجحان. لم يُنشر شيء ولم يُدمج إلى `main`.
+
 ## تحديث فرع لوحة الإدارة — 2026-10-19
 
 هذا التحديث خاص بمستودع لوحة الإدارة وفرع
