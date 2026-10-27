@@ -1,4 +1,4 @@
-import { AlertTriangle, Database, HelpCircle, ListChecks, Upload } from 'lucide-react';
+import { AlertTriangle, Database, HelpCircle, ListChecks } from 'lucide-react';
 import Section from '../../components/ui/Section';
 import { Card } from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
@@ -20,7 +20,7 @@ export default function ReconciliationTab() {
   return (
     <Section
       title="التسوية والعناصر القديمة"
-      description="قراءة فقط. لا تُزرع العناصر القديمة ولا تُكرَّر تلقائيًا. المصدر المركزي هو الإصدارات المنشورة فقط."
+      description="قراءة فقط. لا تُزرع العناصر القديمة ولا تُكرَّر تلقائيًا. المصدر المركزي هو الإصدارات المنشورة فقط؛ ولإدراج عنصر قديم رسميًا أضفه إلى مسودة ثم انشر إصدارًا."
     >
       <Card className="space-y-4 p-4">
         <div className="flex items-start gap-3">
@@ -72,38 +72,6 @@ export default function ReconciliationTab() {
             description="لا توجد إصدارات مركزية للقراءة، والسجل المحلي لأجهزة Android غير متاح مركزيًا. لن تُزرع أي عناصر تلقائيًا."
           />
         )}
-
-        <div className="rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
-          <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
-            <ListChecks className="h-4 w-4 text-brand-600" aria-hidden="true" />
-            <span>دليل الاستخدام: ماذا سوف يحدث في شاشة التسوية وتدقيق العناصر؟</span>
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
-            <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-              <strong className="text-stone-900 block font-bold mb-1">١. فحص التوافق المركزي</strong>
-              تجري هذه الشاشة فحصاً للإصدارات المنشورة مركزياً للتأكد من عدم وجود تعارضات أو نقص في معرّفات القوالب والمحافظ.
-            </div>
-            <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-              <strong className="text-stone-900 block font-bold mb-1">٢. خصوصية السجل المحلي</strong>
-              بيانات الهواتف المحلية القديمة غير متاحة مركزياً ولن تُزرع تلقائياً بدون مصادقة مباشرة؛ وبذلك نحمي هواتف المستخدمين من الكتابة فوق تخصيصاتهم.
-            </div>
-            <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-              <strong className="text-stone-900 block font-bold mb-1">٣. نقل العناصر للاعتماد</strong>
-              لإدراج أي عنصر قديم رسمياً، يمكنك استيراد الكتالوج أو إضافته يدوياً في المسودة ثم نشره كإصدار مركزي موثق.
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-stone-50 p-4 text-sm leading-6 text-stone-700">
-          <p className="flex items-center gap-2 font-bold text-stone-900">
-            <Upload className="h-4 w-4" aria-hidden="true" /> كيف تُدار العناصر القديمة؟
-          </p>
-          <ul className="mt-2 list-disc space-y-1 ps-5">
-            <li>الاستيراد يتم يدويًا فقط: استورد كتالوج زرع Android إلى المسودة، أو أدخل العناصر يدويًا، ثم احفظ وانشر إصدارًا.</li>
-            <li>لا توجد مطابقة تلقائية بين سجل أجهزة Android واللوحة؛ هذا يحتاج عقد ACK وموافقة المالك.</li>
-            <li>عنصر موجود على جهاز ولم يُنشر مركزيًا يبقى «غير معروف» ولا يُعدّ «مزروعًا».</li>
-          </ul>
-        </div>
       </Card>
     </Section>
   );

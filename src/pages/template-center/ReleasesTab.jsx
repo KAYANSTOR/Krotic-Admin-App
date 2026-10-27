@@ -8,7 +8,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import { useTemplateCenter } from './TemplateCenterContext';
 import {
   ACK_HEALTH_LABELS, APPLICATION_STATE_LABELS, classifyAckHealth, countAcknowledgingDevices,
-  deriveApplicationState, describeScope, formatTimestamp, scopeKeyFor,
+  deriveApplicationState, describeScope, formatTimestamp, labelAckOutcome, scopeKeyFor,
 } from '../../lib/templateCenterView';
 import { BUNDLED_TEMPLATE_PACK } from '../../lib/bundledTemplatePack';
 
@@ -28,8 +28,8 @@ function StatusCard({ icon: Icon, title, badge = null, children }) {
 }
 
 /**
- * تبويب الإصدارات والمؤشرات: يفرّق بوضوح بين كتالوج زرع Android، والمسودة،
- * والإصدار المنشور، وحالة تطبيق الأجهزة (Unknown افتراضيًا).
+ * تبويب الإصدارات والنشر: يفرّق بوضوح بين الكتالوج الافتراضي المضمّن في Android،
+ * والمسودة، والإصدار المنشور، وحالة تطبيق الأجهزة (Unknown افتراضيًا).
  */
 export default function ReleasesTab() {
   const { releases, pointers, networks, drafts, acks, currentPointer, currentAck, working, rollback } = useTemplateCenter();
@@ -59,7 +59,8 @@ export default function ReleasesTab() {
     const pointer = pointers.find((item) => item.id === scope) || null;
     const scopeAcks = acks.filter((ack) => ack.verified === true && (ack.scopeKey || 'global') === scope);
     if (!scopeAcks.length) return { tone: 'warning', label: 'لا يوجد ACK' };
-    if (!pointer || pointer.releaseId !== release.id) return { tone: 'neutral', label: `${scopeAcks.length} ACK حديث — الإصدار سابق` };
+    if (!pointer) return { tone: 'warning', label: `${scopeAcks.length} ACK بلا مؤشر نشط` };
+    if (pointer.releaseId !== release.id) return { tone: 'neutral', label: `${scopeAcks.length} ACK لإصدار أحدث` };
     const counts = { matched: 0, conflict: 0, stale: 0, failed: 0, unknown: 0 };
     scopeAcks.forEach((ack) => {
       const state = classifyAckHealth(ack, { pointer, releases });
@@ -73,12 +74,12 @@ export default function ReleasesTab() {
 
   return (
     <Section
-      title="الإصدارات والمؤشرات"
+      title="الإصدارات والنشر"
       description="الإصدارات المنشورة غير قابلة للتعديل. التراجع ينشئ إصدارًا جديدًا بدل حذف التاريخ."
     >
       <div className="grid gap-3 lg:grid-cols-4">
-        <StatusCard icon={Package} title="كتالوج زرع Android الافتراضي">
-          <p>العناصر الافتراضية التي يزرعها التطبيق (بنفس المعرّفات): {bundledCounts.wallets} محفظة، {bundledCounts.transferTemplates} قالب وارد، {bundledCounts.outboundTemplates} رسالة صادرة.</p>
+        <StatusCard icon={Package} title="الكتالوج الافتراضي المضمّن في Android">
+          <p>عناصر يطابقها التطبيق افتراضيًا وبنفس المعرّفات: {bundledCounts.wallets} مصدر رسائل، {bundledCounts.transferTemplates} قالب وارد، {bundledCounts.outboundTemplates} رسالة صادرة.</p>
           <p className="mt-2 text-xs text-stone-500">ليست بيانات إنتاج، ولا مسودة محفوظة، ولا تعني أي شيء عن الأجهزة.</p>
         </StatusCard>
         <StatusCard icon={Archive} title="المسودة المحفوظة">
@@ -105,27 +106,6 @@ export default function ReleasesTab() {
             ? <p className="mt-2 text-xs text-stone-500">{acknowledgingDevices} جهاز أكّد هذا الإصدار.</p>
             : <p className="mt-2 text-xs text-stone-500">لا ACK موثوق بعد — الحالة «غير معروف» حتى يرسل تطبيق Android تأكيدًا.</p>}
         </StatusCard>
-      </div>
-
-      <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 shadow-xs">
-        <p className="font-bold text-stone-900 flex items-center gap-2 text-sm mb-2">
-          <Archive className="h-4 w-4 text-brand-600" aria-hidden="true" />
-          <span>دليل الاستخدام: ماذا سوف يحدث في شاشة الإصدارات والنشر؟</span>
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3 text-xs leading-5 text-stone-600">
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">١. استقرار الإصدارات وسجلها</strong>
-            كل إصدار يُنشر هو لقطة بيانات مركزية غير قابلة للتعديل أو الحذف، لحماية النظام من التناقضات ومتابعة تدقيق كل تحديث بدقة.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٢. إجراء التراجع (Rollback)</strong>
-            عند طلب تراجع إلى إصدار سابق، لا يتم مسح التاريخ، بل يُنشأ إصدار جديد يشير إلى محتوى الإصدار المختار مع تحديث المؤشر النشط لترجع الأجهزة إليه.
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3 border border-stone-200/60">
-            <strong className="text-stone-900 block font-bold mb-1">٣. تأكيد الأجهزة (ACK)</strong>
-            حالة تطبيق أي إصدار تظل «غير معروف» حتى يقوم هاتف الأندرويد بمطابقة البصمة وتأكيد التحديث بنجاح، مما يمنع الافتراضات الخاطئة عن جاهزية الأجهزة.
-          </div>
-        </div>
       </div>
 
       <Section title="المؤشرات النشطة" description="مؤشر واحد لكل نطاق (عام/شبكة) يشير إلى الإصدار النشط." className="mt-6">
@@ -185,7 +165,7 @@ export default function ReleasesTab() {
                         <span className="font-mono" dir="ltr">{ack.version || ack.releaseId || '—'}</span>
                         <span className="mt-1 block font-mono text-[11px] text-stone-500" dir="ltr">{ack.releaseId || '—'}</span>
                       </td>
-                      <td className="px-3 py-3">{ack.outcome} · {ack.insertedCount} أضيف · {ack.conflictCount} تعارض</td>
+                      <td className="px-3 py-3">{labelAckOutcome(ack.outcome)} · {ack.insertedCount} أضيف · {ack.conflictCount} تعارض</td>
                       <td className="px-3 py-3"><Badge tone={tone}>{ACK_HEALTH_LABELS[state]}</Badge></td>
                       <td className="px-3 py-3">{formatTimestamp(ack.appliedAt)}</td>
                     </tr>
@@ -247,7 +227,7 @@ export default function ReleasesTab() {
 
       <p className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
         <Send className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        النشر مركزي فقط؛ التطبيق على الجهاز لا يُثبت إلا بإقرار ACK موثوق. تعرض الجداول أعلاه الأجهزة التي أكدت كل إصدار؛ وما لم يصل ACK تبقى الحالة «غير معروف».
+        النشر مركزي فقط؛ لا تُعدّ الحالة مطبَّقة على أي جهاز قبل وصول ACK موثوق مطابق للإصدار والبصمة.
       </p>
     </Section>
   );

@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
-  Archive, ArrowDownToLine, Cloud, Layers3, ListChecks, Send, Wallet, ShieldAlert,
+  Archive, ArrowDownToLine, Cloud, Layers3, ListChecks, MessageSquare, Send, ShieldAlert,
 } from 'lucide-react';
 import PageHero from '../../components/ui/PageHero';
 import Section from '../../components/ui/Section';
@@ -11,14 +11,17 @@ import { useTemplateCenter } from './TemplateCenterContext';
 import {
   APPLICATION_STATE_LABELS, deriveApplicationState, describeScope, formatTimestamp,
 } from '../../lib/templateCenterView';
+import { TEMPLATE_CENTER_NAV, TEMPLATE_CENTER_ROOT } from '../../lib/templateCenterRoutes';
 
-const TABS = [
-  { path: '/template-center/wallets', label: 'المحافظ ومصادر الرسائل', icon: Wallet },
-  { path: '/template-center/inbound', label: 'قوالب التحويل الواردة', icon: ArrowDownToLine },
-  { path: '/template-center/outbound', label: 'الرسائل الصادرة (SMS)', icon: Send },
-  { path: '/template-center/releases', label: 'الإصدارات والمؤشرات', icon: Archive },
-  { path: '/template-center/reconciliation', label: 'التسوية والعناصر القديمة', icon: ListChecks },
-];
+const TAB_ICONS = {
+  '/template-center/wallets': MessageSquare,
+  '/template-center/inbound': ArrowDownToLine,
+  '/template-center/outbound': Send,
+  '/template-center/releases': Archive,
+  '/template-center/reconciliation': ListChecks,
+};
+
+const TABS = TEMPLATE_CENTER_NAV.map((item) => ({ ...item, icon: TAB_ICONS[item.path] || Layers3 }));
 
 function toneForState(tone) {
   return tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : tone === 'danger' ? 'danger' : 'neutral';
@@ -42,8 +45,8 @@ export default function TemplateCenterLayout() {
     <div className="space-y-6" dir="rtl">
       <PageHero
         icon={Layers3}
-        title="مركز المحافظ والقوالب"
-        subtitle="مساحات منفصلة للمحافظ ومصادر الرسائل، وقوالب التحويل الواردة، والرسائل الصادرة SMS، مع سجل الإصدارات المركزي."
+        title={TEMPLATE_CENTER_ROOT.label}
+        subtitle="مساحات مستقلة لمصادر الرسائل وقوالبها والرسائل الصادرة، مع سجل إصدارات مركزي وحالة تطبيق مشتقة من تأكيد الأجهزة."
         meta="النشر مركزي فقط. لا تُطبَّق أي بيانات على أجهزة Android قبل وصول ACK موثوق؛ الحالة الافتراضية «غير معروف»."
         actions={<Button variant="secondary" icon={Cloud} onClick={refresh} loading={loading}>تحديث</Button>}
       />

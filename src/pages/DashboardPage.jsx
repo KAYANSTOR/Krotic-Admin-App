@@ -370,7 +370,7 @@ export default function DashboardPage() {
             <div className="dash-services">
               <Link to="/template-center/inbound" className="dash-service">
                 <IconTile icon={ArrowDownToLine} tone="brand" />
-                <span className="dash-service__label">قوالب التحويل الواردة</span>
+                <span className="dash-service__label">قوالب الرسائل الواردة</span>
               </Link>
               <Link to="/template-center/outbound" className="dash-service">
                 <IconTile icon={Send} tone="brand" />
@@ -378,7 +378,7 @@ export default function DashboardPage() {
               </Link>
               <Link to="/template-center/wallets" className="dash-service">
                 <IconTile icon={Wallet} tone="gold" />
-                <span className="dash-service__label">المحافظ ومصادر الرسائل</span>
+                <span className="dash-service__label">مصادر الرسائل</span>
               </Link>
               <Link to="/template-center/releases" className="dash-service">
                 <IconTile icon={Archive} tone="neutral" />

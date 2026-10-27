@@ -105,7 +105,7 @@ export default function PaidFeaturesPage() {
       }
       setAccountFeatures(result.data?.accountFeatures || accountFeatures);
       setUpdatedAt(result.data?.updatedAtMs || Date.now());
-      toast.success('حُفظت account_features على الخادم');
+      toast.success('حُفظت مزايا الحساب على الخادم');
     } finally {
       setSaving(false);
     }
@@ -118,8 +118,8 @@ export default function PaidFeaturesPage() {
       <PageHero
         icon={Sparkles}
         title="مزايا الحساب"
-        subtitle="إدارة خريطة account_features لكل حساب. الكتابة تمر عبر نقطة الخادم ولا يكتب المتصفح مباشرة على Firestore."
-        meta="الكتالوج الافتراضي مغلق افتراضياً؛ قيمة true الصريحة وحدها تمنح الميزة."
+        subtitle="خريطة مزايا الحساب لكل حساب. الكتابة تمر عبر نقطة الخادم، ولا يكتب المتصفح مباشرة على قاعدة البيانات."
+        meta="الكتالوج الافتراضي مغلق؛ قيمة true الصريحة وحدها تمنح الميزة."
         actions={(
           <DataFreshness
             updatedAt={updatedAt}
@@ -160,8 +160,8 @@ export default function PaidFeaturesPage() {
               <CardHeader
                 title="الكتالوج النشط"
                 icon={Sparkles}
-                description="يُقرأ من app_settings/account_features_catalog؛ الافتراضي لكل مفتاح false."
-                action={<Badge tone="neutral">schema v{catalog?.schema_version || 1}</Badge>}
+                description="المزايا المعتمدة في كتالوج الخادم؛ كل مفتاح غير مفعّل يبقى مقفلًا."
+                action={<Badge tone="neutral">نسخة الكتالوج v{catalog?.schema_version || 1}</Badge>}
               />
               {activeFeatures.length === 0 ? (
                 <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">لا توجد مزايا نشطة في الكتالوج.</p>
@@ -198,7 +198,7 @@ export default function PaidFeaturesPage() {
               </div>
               <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-stone-500">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>يحفظ الخادم account_features_version وaccount_features_updated_at_ms وupdatedAtMs، ويسجل التغيير في users/{'{uid}'}/account_feature_audit.</span>
+                <span>يحفظ الخادم رقم نسخة الخريطة ووقت آخر تحديث، ويسجّل كل تغيير في سجل تدقيق الحساب.</span>
               </p>
             </Card>
           )}
