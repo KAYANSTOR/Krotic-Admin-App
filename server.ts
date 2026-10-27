@@ -14,12 +14,13 @@ import salesIngestHandler from './api/sales/ingest.js';
 import deviceHeartbeatHandler from './api/device-heartbeat.js';
 import sendFcmHandler from './api/send-fcm.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
-import migrateHandler from './api/migrate.js';
+import migrateHandler from './server/_lib/migrationApi.js';
 import networkSecretHandler from './server/_lib/networkSecretApi.js';
 import adminSessionHandler from './api/admin-session.js';
 import templateCenterHandler from './server/_lib/templateCenterApi.js';
 import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
 import rebindEntitlementDeviceHandler from './server/_lib/entitlementDeviceRebind.js';
+import inventorySnapshotHandler from './api/inventory/snapshot.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -54,6 +55,7 @@ async function startServer() {
   app.all('/api/send-fcm', (req, res) => sendFcmHandler(req, res));
   app.all('/api/dispatch-notifications', (req, res) => dispatchNotificationsHandler(req, res));
   app.all('/api/migrate', (req, res) => migrateHandler(req, res));
+  app.all('/api/inventory/snapshot', (req, res) => inventorySnapshotHandler(req, res));
   app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
   app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
   app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));

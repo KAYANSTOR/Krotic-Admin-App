@@ -54,6 +54,7 @@ import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
 import { getAppUpdateStatus } from '../lib/appVersion';
 import UserDevicesPanel from '../components/UserDevicesPanel';
+import { fetchInventorySnapshot } from '../lib/inventorySnapshot';
 
 const accessLabel = {
   TRIAL: { text: 'تجريبي', tone: 'warning' },
@@ -86,6 +87,8 @@ export default function UserProfilePage() {
   const [billing, setBilling] = useState(false);
   const [authModal, setAuthModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [inventorySnapshot, setInventorySnapshot] = useState(null);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
   const { runSync, syncing, lastSyncAt } = useLocalDb();
 
   // الملف والتاريخ المالي من القاعدة المحلية فقط.
@@ -112,6 +115,26 @@ export default function UserProfilePage() {
     const ready = usersQuery.data || historyQuery.data;
     if (ready) setLoading(false);
   }, [usersQuery.data, historyQuery.data]);
+
+  // ملخص المخزون المزامَن من Android يُقرأ من وثيقة صغيرة واحدة (أعداد فقط).
+  const networkId = user?.networkId || uid;
+  useEffect(() => {
+    if (!networkId) return undefined;
+    let active = true;
+    setInventoryLoading(true);
+    fetchInventorySnapshot(networkId)
+      .then((snapshot) => {
+        if (active) setInventorySnapshot(snapshot);
+      })
+      .catch((error) => {
+        console.warn('Inventory snapshot read failed:', error);
+        if (active) setInventorySnapshot(null);
+      })
+      .finally(() => {
+        if (active) setInventoryLoading(false);
+      });
+    return () => { active = false; };
+  }, [networkId]);
 
   const refresh = async () => {
     await runSync({ reason: 'manual' });
@@ -600,9 +623,9 @@ export default function UserProfilePage() {
       </div>
 
       <Section
-        eyebrow="المخزون المحلي"
+        eyebrow="المخزون المزامَن"
         title="الكروت لدى العميل"
-        description="المبيعات تُعرض من السجلات المالية المتزامنة؛ تفاصيل المخزون تبقى داخل SQLite في Android ولا تُرفع إلى Firestore."
+        description="ملخص أعداد المخزون المزامَن من تطبيق Android (متاح/محجوز/مباع) بدون أرقام الكروت السرية. تفاصيل الأرقام تبقى محلية في Android ولا تُرفع."
       >
         <div className="grid-kpi">
           <StatCard
@@ -614,12 +637,58 @@ export default function UserProfilePage() {
           />
           <StatCard
             title="الكروت غير المباعة"
-            value="غير متاح"
+            value={inventoryLoading
+              ? '...'
+              : (inventorySnapshot ? formatNumber(inventorySnapshot.totalAvailableCards) : 'غير متاح (بانتظار المزامنة)')}
             icon={Package}
             tone="neutral"
-            subtitle="المخزون محلي في Android؛ لا توجد بيانات سحابية لحسابه"
+            subtitle={inventorySnapshot
+              ? 'أعداد متاحة الآن من آخر مزامنة'
+              : 'لم تصل وثيقة مخزون من تطبيق Android بعد'}
           />
         </div>
+
+        {inventorySnapshot ? (
+          <div className="grid-kpi" style={{ marginTop: '0.75rem' }}>
+            <StatCard title="الكروت المتاحة" value={formatNumber(inventorySnapshot.totalAvailableCards)} icon={Package} tone="success" />
+            <StatCard title="الكروت المحجوزة" value={formatNumber(inventorySnapshot.totalReservedCards)} icon={Package} tone="warning" />
+            <StatCard title="الكروت المباعة محلياً" value={formatNumber(inventorySnapshot.totalSoldCards)} icon={Package} tone="brand" />
+            <StatCard title="الكروت التالفة" value={formatNumber(inventorySnapshot.totalInvalidCards)} icon={Package} tone="danger" />
+          </div>
+        ) : null}
+
+        <p className="text-xs text-muted" style={{ marginTop: '0.5rem' }}>
+          {inventorySnapshot
+            ? `آخر مزامنة للمخزون: ${formatDate(inventorySnapshot.generatedAtMs || inventorySnapshot.updatedAtMs, { withTime: true })} • المراجعة ${formatNumber(inventorySnapshot.inventoryRevision)}`
+            : 'لا تتوفر وثيقة مخزون بعد؛ ستظهر الأعداد هنا بعد أول مزامنة ناجحة من تطبيق Android.'}
+        </p>
+
+        {inventorySnapshot && inventorySnapshot.breakdown.length > 0 ? (
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full min-w-[520px] text-right text-sm">
+              <thead>
+                <tr className="border-b border-stone-200 text-stone-600">
+                  <th className="px-3 py-3 font-bold">الفئة</th>
+                  <th className="px-3 py-3 font-bold">العملة</th>
+                  <th className="px-3 py-3 font-bold">المتاح</th>
+                  <th className="px-3 py-3 font-bold">المحجوز</th>
+                  <th className="px-3 py-3 font-bold">المباع</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inventorySnapshot.breakdown.map((row, index) => (
+                  <tr key={`${row.catalogId}-${row.denomination}-${row.currency}-${index}`} className="border-b border-stone-100 last:border-0">
+                    <td className="px-3 py-3 font-semibold text-stone-800 tabular-nums">{formatNumber(row.denomination)}</td>
+                    <td className="px-3 py-3">{row.currency || '—'}</td>
+                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.availableCount)}</td>
+                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.reservedCount)}</td>
+                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.soldCount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </Section>
 
       {/* تفصيل الشهور والعمولات مع التوسيع وعرض عمليات كل شهر (ميزة مطلوبة خصيصاً) */}

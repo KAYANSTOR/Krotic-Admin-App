@@ -6,7 +6,7 @@ import {
   computeAggregate,
   planUserMigration,
 } from '../server/_lib/migration.js';
-import { mergeSalesPreferCurrent, validateMigrateInput, migrateLegacySalesForUser } from '../api/migrate.js';
+import { mergeSalesPreferCurrent, validateMigrateInput, migrateLegacySalesForUser } from '../server/_lib/migrationApi.js';
 
 const NOW = 1_700_000_000_000;
 const DAY = 86_400_000;

@@ -99,6 +99,16 @@ if (!emulatorAddress) {
       });
       await setDoc(doc(db, 'networks/NET-10001/sales/sale-1'), { saleId: 'sale-1', status: 'COMPLETED' });
       await setDoc(doc(db, 'networks/NET-10001/payments/payment-1'), { amount: 100 });
+      await setDoc(doc(db, 'networks/NET-10001/inventory_snapshot/current'), {
+        schemaVersion: 1,
+        snapshotId: 'snap-1',
+        inventoryRevision: 3,
+        totalAvailableCards: 40,
+        totalReservedCards: 1,
+        totalSoldCards: 10,
+        totalInvalidCards: 0,
+        breakdown: [],
+      });
       await setDoc(doc(db, 'sync_tombstones/tombstone-1'), {
         collection: 'sales', networkId: 'NET-10001', id: 'old-sale', updatedAtMs: 1,
       });
@@ -214,6 +224,19 @@ if (!emulatorAddress) {
     await assertFails(setDoc(doc(otherDb, 'networks/NET-10001/device_heartbeats/client-write'), {
       installationId: 'client-write',
     }));
+  });
+
+  test('inventory snapshots are admin-readable and server-write-only', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const otherDb = testEnv.authenticatedContext('user-2').firestore();
+    const snapshotPath = 'networks/NET-10001/inventory_snapshot/current';
+
+    await assertSucceeds(getDoc(doc(adminDb, snapshotPath)));
+    await assertFails(setDoc(doc(adminDb, 'networks/NET-10001/inventory_snapshot/client-write'), { totalAvailableCards: 1 }));
+    await assertFails(getDoc(doc(ownerDb, snapshotPath)));
+    await assertFails(setDoc(doc(ownerDb, 'networks/NET-10001/inventory_snapshot/client-write'), { totalAvailableCards: 1 }));
+    await assertFails(getDoc(doc(otherDb, snapshotPath)));
   });
 
   test('sync tombstones are admin-readable and server-write-only', async () => {

@@ -25,6 +25,10 @@
       "destination": "/api/settings?__apiRoute=network-secret"
     },
     {
+      "source": "/api/migrate",
+      "destination": "/api/settings?__apiRoute=migrate"
+    },
+    {
       "source": "/api/device-heartbeats",
       "destination": "/api/device-heartbeat?__apiRoute=list"
     },

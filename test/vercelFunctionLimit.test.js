@@ -33,3 +33,19 @@ test('account-features reuses the shared settings function without a new API fil
     && rule.destination === '/api/settings?__apiRoute=account-features'));
   assert.equal(await readFile(path.join(root, 'api', 'admin', 'account-features.js')).then(() => true, () => false), false);
 });
+
+test('migrate reuses the shared settings function without a top-level API file', async () => {
+  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/migrate'
+    && rule.destination === '/api/settings?__apiRoute=migrate'));
+  assert.equal(await readFile(path.join(root, 'api', 'migrate.js')).then(() => true, () => false), false);
+});
+
+test('the inventory snapshot endpoint stays a real nested API route', async () => {
+  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+  // لا نضيف rewrite للمسار: الملف نفسه يوفّر /api/inventory/snapshot.
+  assert.equal(config.rewrites.some((rule) => rule.source === '/api/inventory/snapshot'), false);
+  const source = await readFile(path.join(root, 'api', 'inventory', 'snapshot.js'), 'utf8');
+  assert.match(source, /inventory_snapshot/);
+  assert.match(source, /STALE_REVISION/);
+});

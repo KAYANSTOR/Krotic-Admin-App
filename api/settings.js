@@ -17,6 +17,7 @@ import templateCenterHandler from '../server/_lib/templateCenterApi.js';
 import activateEntitlement from '../server/_lib/entitlementActivation.js';
 import rebindEntitlementDevice from '../server/_lib/entitlementDeviceRebind.js';
 import accountFeaturesHandler from '../server/_lib/accountFeatures.js';
+import migrateHandler from '../server/_lib/migrationApi.js';
 import networkSecretHandler from '../server/_lib/networkSecretApi.js';
 
 export const SETTINGS_BOUNDS = {
@@ -121,6 +122,9 @@ export default async function handler(req, res) {
   }
   if (req.query?.__apiRoute === 'network-secret') {
     return networkSecretHandler(req, res);
+  }
+  if (req.query?.__apiRoute === 'migrate') {
+    return migrateHandler(req, res);
   }
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');

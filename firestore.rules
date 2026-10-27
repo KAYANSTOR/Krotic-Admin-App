@@ -252,6 +252,13 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // ملخص أعداد المخزون يُكتب من نقطة النهاية الخادمية POST /api/inventory/snapshot
+      // (Admin SDK، idempotent). قراءة لوحة الإدارة فقط؛ بلا أي بيانات كروت سرية.
+      match /inventory_snapshot/{documentId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+
       match /settlements/{settlementId} {
         allow read: if isAdmin() || isNetworkOwner(networkId);
         allow write: if false;
