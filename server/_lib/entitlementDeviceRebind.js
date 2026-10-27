@@ -30,14 +30,12 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
   const input = objectBody(req.body);
   if (!input) return response(res, 400, { success: false, error: 'invalid_json' });
   const uid = typeof input.uid === 'string' ? input.uid.trim() : '';
-  const installationId = typeof input.installationId === 'string'
-    ? input.installationId.trim()
-    : typeof input.deviceId === 'string'
-      ? input.deviceId.trim()
-      : '';
+  const installationCandidate = typeof input.installationId === 'string' ? input.installationId.trim() : '';
+  const deviceIdCandidate = typeof input.deviceId === 'string' ? input.deviceId.trim() : '';
+  const installationId = installationCandidate || deviceIdCandidate;
   const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
-  if (input.installationId && input.deviceId
-      && input.installationId !== input.deviceId) {
+  if (installationCandidate && deviceIdCandidate
+      && installationCandidate !== deviceIdCandidate) {
     return response(res, 400, { success: false, error: 'device_id_mismatch' });
   }
   if (!UID_PATTERN.test(uid)
@@ -71,11 +69,18 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
   const now = dependencies.now ?? Date.now();
   const userRef = db.collection('users').doc(uid);
   const auditRef = db.collection('admin_audit_logs').doc();
+  const bindingRef = db.collection('device_bindings').doc(installationId);
 
   try {
     const result = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(userRef);
       if (!snapshot.exists) return { error: 'account_not_found', status: 404 };
+      const bindingSnapshot = await transaction.get(bindingRef);
+      const binding = bindingSnapshot.exists ? (bindingSnapshot.data() || {}) : {};
+      const bindingUid = typeof binding.uid === 'string' ? binding.uid.trim() : '';
+      if (bindingUid && bindingUid !== uid) {
+        return { error: 'installation_bound_to_another_account', status: 409 };
+      }
       const user = snapshot.data() || {};
       const previousInstallationId = typeof user.entitlementInstallationId === 'string'
         && user.entitlementInstallationId.trim()
@@ -98,6 +103,13 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
         entitlementReboundAtMs: now,
         entitlementReboundBy: caller.callerUid,
         entitlementLeaseRevokedAtMs: now,
+      }, { merge: true });
+      transaction.set(bindingRef, {
+        uid,
+        installationId,
+        boundAt: serverTimestamp(),
+        updatedAtMs: now,
+        reboundBy: caller.callerUid,
       }, { merge: true });
       transaction.set(auditRef, {
         action: 'ENTITLEMENT_DEVICE_REBIND',

@@ -149,7 +149,8 @@ test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوق
 
   assert.equal(res.statusCode, 200);
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
-  assert.equal(writes.length, 1);
+  assert.equal(docs.get('device_bindings/install-a').uid, 'user-1');
+  assert.equal(writes.length, 2);
   assert.equal(res.body.payload.uid, 'user-1');
   assert.equal(res.body.payload.installationId, 'install-a');
   assert.equal(res.body.payload.userId, 'user-1');
@@ -196,6 +197,15 @@ test('يشتق الهوية من التوكن عندما لا يرسل العم�
     publicKey,
     Buffer.from(res.body.signature, 'base64'),
   ), false);
+
+  const emptyUserId = makeResponse();
+  await activateEntitlement(
+    request({ userId: '', installationId: 'install-a' }),
+    emptyUserId,
+    activationDependencies(db),
+  );
+  assert.equal(emptyUserId.statusCode, 200);
+  assert.equal(emptyUserId.body.payload.uid, 'user-1');
 });
 
 test('سياسة العمل دون اتصال لها سقف مستقل عن نهاية الاشتراك الطويلة', async () => {
@@ -229,6 +239,21 @@ test('يرفض التثبيت المختلف بعد الربط ولا يغير �
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.error, 'installation_mismatch');
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
+  assert.equal(writes.length, 0);
+});
+
+test('يرفض تثبيتاً مرتبطاً بحساب آخر قبل كتابة أي شيء', async () => {
+  const { db, docs, writes } = makeDb(baseUser());
+  docs.set('device_bindings/install-a', { uid: 'other-user', installationId: 'install-a' });
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ installationId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, 'installation_bound_to_another_account');
+  assert.equal(docs.get('users/user-1').entitlementInstallationId, undefined);
   assert.equal(writes.length, 0);
 });
 
@@ -277,6 +302,7 @@ test('إعادة ربط التثبيت تتطلب مديراً وتُسجّل ا
   assert.equal(docs.get('users/user-1').entitlementVersion, 2);
   assert.equal(docs.get('users/user-1').entitlementPreviousInstallationId, 'install-a');
   assert.equal(docs.get('users/user-1').entitlementLeaseRevokedAtMs, NOW);
+  assert.equal(docs.get('device_bindings/install-b').uid, 'user-1');
   const audit = writes.find((write) => write.ref.collection === 'admin_audit_logs');
   assert.equal(audit.data.action, 'ENTITLEMENT_DEVICE_REBIND');
   assert.equal(audit.data.actorUid, 'admin-1');
@@ -285,4 +311,25 @@ test('إعادة ربط التثبيت تتطلب مديراً وتُسجّل ا
   assert.equal(audit.data.details.installationId, 'install-b');
   assert.equal(audit.data.details.previousVersion, 1);
   assert.equal(audit.data.details.version, 2);
+});
+
+test('إعادة الربط لا تسرق جهازاً مرتبطاً بحساب آخر', async () => {
+  const { db, docs, writes } = makeDb(baseUser({ entitlementInstallationId: 'install-a' }));
+  docs.set('device_bindings/install-b', { uid: 'other-user', installationId: 'install-b' });
+  const res = makeResponse();
+  await rebindEntitlementDevice(
+    request({ uid: 'user-1', installationId: 'install-b', reason: 'جهاز بديل' }),
+    res,
+    {
+      ensureFirebaseAdmin: () => ({ ok: true }),
+      db,
+      authenticateAdmin: async () => ({ ok: true, callerUid: 'admin-1' }),
+      serverTimestamp: () => 'SERVER_TIMESTAMP',
+      now: NOW,
+    },
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, 'installation_bound_to_another_account');
+  assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
+  assert.equal(writes.length, 0);
 });

@@ -60,6 +60,7 @@ export const ADMIN_API_ERRORS = {
   action_invalid: 'إجراء مفتاح الشبكة غير معروف.',
   uid_or_network_id_required: 'حدد الحساب أو الشبكة المطلوبة لتدوير المفتاح.',
   installation_id_required: 'معرّف تثبيت الجهاز مطلوب.',
+  installation_bound_to_another_account: 'هذا التثبيت مرتبط بحساب آخر. يلزم جهاز مختلف أو مراجعة إدارية.',
   payload_conflict: 'معرّف البيع مستخدم سابقاً بحمولة مختلفة. لم يُسجَّل البيع الجديد.',
   created_at_in_future: 'وقت إنشاء البيع متقدم عن وقت الخادم بما يتجاوز الحد المسموح. صحّح ساعة الجهاز ثم أعد المحاولة.',
   entitlement_signing_not_configured: 'توقيع عقود الاستحقاق غير مهيّأ على الخادم.',

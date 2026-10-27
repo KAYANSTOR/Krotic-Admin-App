@@ -18,7 +18,7 @@
 {"userId":"<Firebase UID>","deviceId":"<installation ID>"}
 ```
 
-الخادم يطابق UID مع الرمز الموثّق، ويصدر العقد فقط إذا كانت `accessStatus` تساوي `TRIAL` أو `ACTIVE_PAID` وكان `subscriptionEndsAt` أو `subscription_end_date` في المستقبل. أول تثبيت يُحجز ذرياً في `users/{uid}.entitlementInstallationId`. أي تثبيت مختلف يُرفض بـ `409 installation_mismatch`.
+الخادم يطابق UID مع الرمز الموثّق، ويصدر العقد فقط إذا كانت `accessStatus` تساوي `TRIAL` أو `ACTIVE_PAID` وكان `subscriptionEndsAt` أو `subscription_end_date` في المستقبل. أول تثبيت يُحجز ذرياً في `users/{uid}.entitlementInstallationId` وسجل `device_bindings/{installationId}`. أي تثبيت مختلف يُرفض بـ `409 installation_mismatch`، وأي تثبيت مرتبط بحساب آخر يُرفض بـ `409 installation_bound_to_another_account`.
 
 الرد `{payload, signature}`؛ التوقيع Ed25519 يغطي كامل JSON payload، ويحتوي العقد على `uid` و`installationId` و`issuedAt` و`notBefore` و`version` و`keyId` و`operations` و`commercialUntil` و`maxOfflineUntil` و`serverTime`. لا يصدر الخادم عقداً بعد انتهاء الاستحقاق أو لحالة غير معروفة.
 

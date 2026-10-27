@@ -98,19 +98,19 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
   const input = objectBody(req.body);
   if (!input) return response(res, 400, { error: 'invalid_json' });
   const claimedUid = typeof input.userId === 'string' ? input.userId.trim() : '';
-  if (input.userId !== undefined && (!claimedUid || !UID_PATTERN.test(claimedUid))) {
+  if (input.userId != null && typeof input.userId !== 'string') {
     return response(res, 400, { error: 'user_id_invalid' });
   }
-  const installationId = typeof input.deviceId === 'string'
-    ? input.deviceId.trim()
-    : typeof input.installationId === 'string'
-      ? input.installationId.trim()
-      : '';
+  if (claimedUid && !UID_PATTERN.test(claimedUid)) {
+    return response(res, 400, { error: 'user_id_invalid' });
+  }
+  const deviceIdCandidate = typeof input.deviceId === 'string' ? input.deviceId.trim() : '';
+  const installationCandidate = typeof input.installationId === 'string' ? input.installationId.trim() : '';
+  const installationId = deviceIdCandidate || installationCandidate;
   if (!installationId || !INSTALLATION_ID_PATTERN.test(installationId)) {
     return response(res, 400, { error: 'installation_id_required' });
   }
-  if (input.deviceId && input.installationId
-      && input.deviceId !== input.installationId) {
+  if (deviceIdCandidate && installationCandidate && deviceIdCandidate !== installationCandidate) {
     return response(res, 400, { error: 'device_id_mismatch' });
   }
 
@@ -151,11 +151,18 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
   const serverTimestamp = dependencies.serverTimestamp || (() => FieldValue.serverTimestamp());
   const now = dependencies.now ?? Date.now();
   const userRef = db.collection('users').doc(uid);
+  const bindingRef = db.collection('device_bindings').doc(installationId);
 
   try {
     const issued = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(userRef);
       if (!snapshot.exists) return { error: 'account_not_found', status: 404 };
+      const bindingSnapshot = await transaction.get(bindingRef);
+      const binding = bindingSnapshot.exists ? (bindingSnapshot.data() || {}) : {};
+      const bindingUid = typeof binding.uid === 'string' ? binding.uid.trim() : '';
+      if (bindingUid && bindingUid !== uid) {
+        return { error: 'installation_bound_to_another_account', status: 409 };
+      }
       const user = snapshot.data() || {};
       const accessStatus = typeof user.accessStatus === 'string'
         ? user.accessStatus.trim().toUpperCase()
@@ -181,6 +188,14 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
           entitlementInstallationId: installationId,
           entitlementInstallationBoundAt: serverTimestamp(),
           entitlementVersion: leaseVersion,
+        }, { merge: true });
+      }
+      if (!bindingSnapshot.exists) {
+        transaction.set(bindingRef, {
+          uid,
+          installationId,
+          boundAt: serverTimestamp(),
+          updatedAtMs: now,
         }, { merge: true });
       }
 

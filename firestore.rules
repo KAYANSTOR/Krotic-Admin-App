@@ -175,6 +175,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ربط التثبيت بالحساب سجل خادمي مستقل يمنع استخدام الجهاز نفسه لحسابين.
+    // لا يقرأه العميل ولا يكتبه؛ يمر عبر مساري التفعيل/إعادة الربط فقط.
+    match /device_bindings/{installationId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /network_registration_phone_index/{phoneHash} {
       allow read, write: if false;
     }

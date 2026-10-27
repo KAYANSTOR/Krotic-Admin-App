@@ -8,7 +8,7 @@
 
 | الملف | السبب |
 |---|---|
-| `server/_lib/entitlementActivation.js` | إضافة `commercialUntil` و`maxOfflineUntil` دائماً، فصل سياسة العمل دون اتصال عن الانتهاء التجاري، إصدار `version` لكل حساب، جعل `userId` اختيارياً والهوية من التوكن فقط، وتثبيت ترتيب حقول الحمولة قبل توقيع Ed25519. |
+| `server/_lib/entitlementActivation.js` | إضافة `commercialUntil` و`maxOfflineUntil` دائماً، فصل سياسة العمل دون اتصال عن الانتهاء التجاري، إصدار `version` لكل حساب، جعل `userId` اختيارياً والهوية من التوكن فقط، سجل `device_bindings` لمنع ربط التثبيت بحسابين، وتثبيت ترتيب حقول الحمولة قبل توقيع Ed25519. |
 | `server/_lib/entitlementDeviceRebind.js` | إعادة الربط تزيد `entitlementVersion` وتُبطل العقد السابق (`entitlementLeaseRevokedAtMs`)، تسجل الجهاز السابق والمدير والسبب، وتدعم `deviceId` كمرادف. |
 | `server/_lib/networkSecretStore.js` | إضافة تدوير صريح مع `previousNetworkSecretEncrypted` ومهلة انتقال، وقائمة مفاتيح مقبولة (`networkSecretCandidates`)، ومنع الاستبدال الصامت عند فشل الفك. |
 | `server/_lib/networkSecretApi.js` | فصل `get` عن `rotate`: `get` لمالك الشبكة فقط، و`rotate` للمدير فقط مع تدقيق، و`Cache-Control: no-store`، ورفض الإرجاع الفارغ/البديل. |
@@ -29,9 +29,9 @@
 
 | الأمر | النتيجة |
 |---|---|
-| `npm test` | **404/404 ناجح** |
+| `npm test` | **406/406 ناجح** |
 | `npm run test:rules:static` | ناجح |
-| `npm run test:rules` (محاكي Firestore محلي، JDK 21 محلي) | **23/23 ناجح** |
+| `npm run test:rules` (محاكي Firestore محلي، JDK 21 محلي) | **24/24 ناجح** |
 | `npm run build` | ناجح (تحذير حجم حزمة Firebase فقط) |
 | `npm run lint` | ناجح |
 
@@ -50,7 +50,7 @@
 | 7 | منع السر البديل عند تعذر الجلب | `test/networkSecretApi.test.js` (503 بلا سر) | لم يُنفّذ |
 | 8 | صلاحيات الميزات بعد تغييرها | `test/accountFeatures.test.js` | لم يُنفّذ |
 | 9 | تكرار ACK دون تكرار التسجيل | `test/templateCenterApi.test.js` | لم يُنفّذ |
-| 10 | منع كتابة العميل على Firestore | محاكي القواعد 23/23 | لم يُنفّذ على المشروع المنشور |
+| 10 | منع كتابة العميل على Firestore | محاكي القواعد 24/24 | لم يُنفّذ على المشروع المنشور |
 | 11 | انتهاء الاستحقاق مع السماح بالمزامنة/الدعم/القراءة | `isSaleAllowedForAccount` لمبيعات outbox السابقة للانتهاء + `maxOfflineUntil` | لم يُنفّذ |
 | 12 | اختلاف توقيت الجهاز | `serverTime` من الخادم، رفض HMAC بعد 6 دقائق، ورفض `createdMs` المستقبلي | لم يُنفّذ على جهاز فعلي |
 
