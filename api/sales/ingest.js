@@ -25,7 +25,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, isAdminUid } from '../../server/_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../../server/_lib/money.js';
-import { decryptNetworkSecret } from '../../server/_lib/networkSecret.js';
+import { networkSecretCandidates } from '../../server/_lib/networkSecretStore.js';
 import { expiryMillis, shouldLockExpiredAccount } from '../../server/_lib/subscriptionExpiry.js';
 
 const MAX_SALE_ID_LENGTH = 128;
@@ -34,6 +34,7 @@ const MAX_AMOUNT_RIYAL = 1_000_000_000_000;
 const MAX_AMOUNT_MINOR = MAX_AMOUNT_RIYAL * MINOR_UNITS_PER_RIYAL;
 const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
+const SALE_CREATED_MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
 // These fields are server-owned. Presence is rejected even when the client
 // sends a zero/false value; silently ignoring such fields hides contract bugs.
@@ -126,6 +127,28 @@ export function verifyInternalReceipt({ token, payload, secret, now = Date.now()
   return { ok: true, timestamp };
 }
 
+/**
+ * Tries the current network key first and the previous key only while the
+ * server-defined rotation grace window still includes it. Returning the key
+ * version lets the sale record document which key proved the upload.
+ */
+export function verifyReceiptWithCandidates({ token, payload, candidates, now = Date.now() }) {
+  let lastError = 'hmac_invalid';
+  for (const candidate of candidates || []) {
+    const attempt = verifyInternalReceipt({
+      token,
+      payload,
+      secret: candidate.secret,
+      now,
+    });
+    if (attempt.ok) {
+      return { ...attempt, secretVersion: candidate.version, usedPrevious: candidate.current === false };
+    }
+    if (attempt.error !== 'hmac_invalid') lastError = attempt.error;
+  }
+  return { ok: false, error: lastError };
+}
+
 export function validateIngestInput(body) {
   const input = normalizeBody(body);
   if (CLIENT_IDENTITY_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
@@ -205,7 +228,7 @@ export function ackForExistingSale(existingData, payloadHash) {
  * Persists a verified sale idempotently.
  * Returns { status: 'created' | 'duplicate' | 'conflict', ... }.
  */
-export async function ingestSale({ db, uid, networkId = uid, payload, payloadHash, receipt, commissionRateBps = 500, now = Date.now() }) {
+export async function ingestSale({ db, uid, networkId = uid, payload, payloadHash, receipt, commissionRateBps = 500, secretVersion = null, now = Date.now() }) {
   // الشبكات الجديدة تستخدم NET-xxxxx كمفتاح المستند، بينما الحسابات القديمة
   // تستخدم UID مباشرة؛ يمرر المستدعي المعرّف المحسوب من users/{uid}.networkId.
   const networkRef = db.collection('networks').doc(networkId);
@@ -225,7 +248,7 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
       if (ack.status !== 'ALREADY_EXISTS_ACKED' || !currentMoneyPolicy) {
         const conflictCode = ack.samePayload
           ? 'legacy_sale_schema_requires_reconciliation'
-          : 'sale_id_payload_conflict';
+          : 'payload_conflict';
         transaction.set(registryRef, {
           uid,
           saleUuid: payload.saleUuid,
@@ -256,9 +279,12 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
       commissionRateBps, status: 'COMPLETED', settlement_status: 'PENDING_SETTLEMENT',
       paidMinor: 0, paidRiyal: 0, verified: true, source: 'admin_api',
       verificationReceipt: receipt, payloadHash, payloadPolicyVersion: 2, moneyPolicyVersion: 2,
+      ...(secretVersion ? { networkSecretVersion: secretVersion } : {}),
       createdAt: new Date(payload.createdMs), created_at: new Date(payload.createdMs),
       createdAtMs: payload.createdMs, updatedAtMs: now,
       verifiedAt: FieldValue.serverTimestamp(), ingestedAtMs: now,
+      serverReceivedAt: new Date(now).toISOString(), serverReceivedAtMs: now,
+      serverReceivedAtTimestamp: FieldValue.serverTimestamp(),
     }, { merge: false });
 
     const network = networkSnap.exists ? networkSnap.data() : {};
@@ -280,21 +306,24 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
   });
 }
 
-async function resolveClientUid(req) {
+async function resolveClientUid(req, dependencies = {}) {
   const authHeader = String(req.headers.authorization || '');
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   if (!idToken) return { ok: false, status: 401, error: 'missing_token' };
 
+  const getAuthFn = dependencies.getAuth || getAuth;
   let uid;
   try {
-    uid = (await getAuth().verifyIdToken(idToken)).uid;
+    uid = (await getAuthFn().verifyIdToken(idToken)).uid;
   } catch {
     return { ok: false, status: 401, error: 'invalid_token' };
   }
 
   // Ingest is for client accounts only: an Admins/{uid} document is rejected.
+  const getFirestoreFn = dependencies.getFirestore || getFirestore;
+  const adminCheck = dependencies.isAdminUid || isAdminUid;
   try {
-    if (await isAdminUid(uid, getFirestore)) return { ok: false, status: 403, error: 'not_client_account' };
+    if (await adminCheck(uid, getFirestoreFn)) return { ok: false, status: 403, error: 'not_client_account' };
   } catch (error) {
     console.error('sales/ingest: admin lookup failed', { code: error?.code, message: error?.message });
     if (error?.code === 8 || error?.code === 'RESOURCE_EXHAUSTED') {
@@ -316,14 +345,22 @@ export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now()) {
     return { ok: false, status: 404, error: 'account_not_found' };
   }
 
+  const accessStatus = typeof user.accessStatus === 'string'
+    ? user.accessStatus.trim().toUpperCase()
+    : '';
+
   // 1. Manually suspended account
-  if (user.accessStatus === 'SUSPENDED_GRACE' || (user.is_active === false && user.accessStatus !== 'TRIAL' && user.accessStatus !== 'LOCKED_EXPIRED')) {
+  if (accessStatus === 'SUSPENDED_GRACE'
+      || accessStatus === 'SUSPENDED_MANUAL'
+      || accessStatus === 'SUSPENDED'
+      || user.blocked === true
+      || (user.is_active === false && accessStatus !== 'TRIAL' && accessStatus !== 'LOCKED_EXPIRED')) {
     return { ok: false, status: 403, error: 'account_suspended' };
   }
 
   // 2. Subscription Expiry
   const endMs = expiryMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-  const isExpired = shouldLockExpiredAccount(user, now) || (user.accessStatus === 'LOCKED_EXPIRED');
+  const isExpired = shouldLockExpiredAccount(user, now) || accessStatus === 'LOCKED_EXPIRED';
 
   if (isExpired && endMs > 0 && typeof saleCreatedMs === 'number' && saleCreatedMs > endMs) {
     return {
@@ -338,16 +375,16 @@ export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now()) {
   return { ok: true };
 }
 
-export default async function handler(req, res) {
+export default async function handler(req, res, dependencies = {}) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
   }
 
-  const init = ensureFirebaseAdmin();
+  const init = (dependencies.ensureFirebaseAdmin || ensureFirebaseAdmin)();
   if (!init.ok) return res.status(503).json({ success: false, error: init.error });
 
-  const caller = await resolveClientUid(req);
+  const caller = await resolveClientUid(req, dependencies);
   if (!caller.ok) return res.status(caller.status).json({ success: false, error: caller.error });
   const uid = caller.uid;
 
@@ -363,15 +400,23 @@ export default async function handler(req, res) {
   }
 
   const receipt = String(req.headers['x-verification-receipt'] || '').trim();
-  const db = getFirestore();
+  const db = (dependencies.getFirestore || getFirestore)();
+  const serverNow = dependencies.now ?? Date.now();
+  if (payload.createdMs > serverNow + SALE_CREATED_MAX_FUTURE_MS) {
+    return res.status(400).json({
+      success: false,
+      error: 'created_at_in_future',
+      serverTime: new Date(serverNow).toISOString(),
+    });
+  }
   let userSnapshot;
-  let networkSecret;
+  let secretCandidates;
   let networkId;
   try {
     userSnapshot = await db.collection('users').doc(uid).get();
     if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
         const user = userSnapshot.data() || {};
-    const accessCheck = isSaleAllowedForAccount(user, payload.createdMs);
+    const accessCheck = isSaleAllowedForAccount(user, payload.createdMs, serverNow);
     if (!accessCheck.ok) {
       return res.status(accessCheck.status).json({
         success: false,
@@ -379,7 +424,9 @@ export default async function handler(req, res) {
         ...(accessCheck.subscriptionEndsAtMs ? { subscriptionEndsAtMs: accessCheck.subscriptionEndsAtMs, saleCreatedMs: accessCheck.saleCreatedMs } : {}),
       });
     }
-    networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim() : uid;
+    networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim()
+      : typeof user.network_id === 'string' && user.network_id.trim() ? user.network_id.trim()
+        : uid;
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(networkId)) {
       return res.status(409).json({ success: false, error: 'network_mapping_invalid' });
     }
@@ -389,10 +436,10 @@ export default async function handler(req, res) {
     if ((network.owner_uid && network.owner_uid !== uid) || (!network.owner_uid && networkId !== uid)) {
       return res.status(403).json({ success: false, error: 'network_owner_mismatch' });
     }
-    if (!network.networkSecretEncrypted) {
+    secretCandidates = networkSecretCandidates(network, { now: serverNow });
+    if (secretCandidates.length === 0) {
       return res.status(409).json({ success: false, error: 'network_secret_not_provisioned' });
     }
-    networkSecret = decryptNetworkSecret(network.networkSecretEncrypted);
   } catch (error) {
     if (error?.message === 'network_secret_master_not_configured') {
       return res.status(503).json({ success: false, error: 'hmac_not_configured' });
@@ -401,11 +448,29 @@ export default async function handler(req, res) {
       console.error('sales/ingest: network key unavailable', { uid });
       return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
     }
-    console.error('sales/ingest: network key lookup failed', { uid, error });
+    console.error('sales/ingest: network key lookup failed', {
+      uid,
+      code: error?.code,
+      message: error?.message,
+    });
     return res.status(500).json({ success: false, error: 'network_secret_lookup_failed' });
   }
-  const receiptCheck = verifyInternalReceipt({ token: receipt, payload, secret: networkSecret });
-  if (!receiptCheck.ok) return res.status(401).json({ success: false, error: receiptCheck.error });
+  // Accept the current key first; a previous key is only tried during the
+  // server-defined rotation grace window.
+  const receiptCheck = verifyReceiptWithCandidates({
+    token: receipt,
+    payload,
+    candidates: secretCandidates,
+    now: serverNow,
+  });
+  if (!receiptCheck.ok) {
+    return res.status(401).json({
+      success: false,
+      error: receiptCheck.error,
+      serverTime: new Date(serverNow).toISOString(),
+    });
+  }
+  const matchedSecretVersion = receiptCheck.secretVersion ?? null;
 
   let commissionRateBps = 500;
   try {
@@ -417,16 +482,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const result = await ingestSale({ db, uid, networkId, payload, payloadHash, receipt, commissionRateBps });
+    const result = await ingestSale({ db, uid, networkId, payload, payloadHash, receipt, commissionRateBps, secretVersion: matchedSecretVersion, now: serverNow });
     if (result.status === 'created') {
-      return res.status(201).json({ success: true, status: 'CREATED', policyVersion: 2, ...result });
+      return res.status(201).json({ success: true, ...result, status: 'CREATED', policyVersion: 2 });
     }
     if (result.status === 'conflict') {
-      return res.status(409).json({ success: false, error: result.error, ...result });
+      return res.status(409).json({ success: false, ...result, error: result.error });
     }
-    return res.status(200).json({ success: true, status: 'ALREADY_EXISTS_ACKED', ack: true, policyVersion: 2, ...result });
+    return res.status(200).json({ success: true, ...result, status: 'ALREADY_EXISTS_ACKED', ack: true, policyVersion: 2 });
   } catch (error) {
-    console.error('sales/ingest failed', error);
+    console.error('sales/ingest failed', { uid, code: error?.code, message: error?.message });
     return res.status(500).json({ success: false, error: 'ingest_failed' });
   }
 }

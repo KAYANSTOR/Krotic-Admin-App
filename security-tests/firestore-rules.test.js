@@ -97,6 +97,10 @@ if (!emulatorAddress) {
         accountId: 'user-1',
         serverReceivedAtMs: 1792992600000,
       });
+      await setDoc(doc(db, 'device_bindings/install-1'), {
+        uid: 'user-1',
+        installationId: 'install-1',
+      });
       await setDoc(doc(db, 'networks/NET-10001/sales/sale-1'), { saleId: 'sale-1', status: 'COMPLETED' });
       await setDoc(doc(db, 'networks/NET-10001/payments/payment-1'), { amount: 100 });
       await setDoc(doc(db, 'networks/NET-10001/inventory_snapshot/current'), {
@@ -224,6 +228,22 @@ if (!emulatorAddress) {
     await assertFails(setDoc(doc(otherDb, 'networks/NET-10001/device_heartbeats/client-write'), {
       installationId: 'client-write',
     }));
+  });
+
+  test('device bindings are server-write-only and never readable by the device owner', async () => {
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const otherDb = testEnv.authenticatedContext('user-2').firestore();
+
+    await assertSucceeds(getDoc(doc(adminDb, 'device_bindings/install-1')));
+    await assertFails(setDoc(doc(adminDb, 'device_bindings/install-2'), {
+      uid: 'user-1', installationId: 'install-2',
+    }));
+    await assertFails(getDoc(doc(ownerDb, 'device_bindings/install-1')));
+    await assertFails(setDoc(doc(ownerDb, 'device_bindings/install-1'), {
+      uid: 'user-2', installationId: 'install-1',
+    }));
+    await assertFails(getDoc(doc(otherDb, 'device_bindings/install-1')));
   });
 
   test('inventory snapshots are admin-readable and server-write-only', async () => {
@@ -355,6 +375,13 @@ if (!emulatorAddress) {
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features: { sms_auto_parser: true } }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_version: 1 }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_updated_at_ms: Date.now() }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_updated_by: 'admin-1' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_source: 'admin_api' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementInstallationId: 'attacker-device' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementVersion: 99 }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementReboundBy: 'admin-1' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { networkId: 'NET-99999' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { network_id: 'NET-99999' }));
     await assertSucceeds(updateDoc(doc(adminDb, 'users/user-1'), { network_name: 'Renamed' }));
 
     const ownerDb = testEnv.authenticatedContext('user-1').firestore();
@@ -371,6 +398,8 @@ if (!emulatorAddress) {
     await assertSucceeds(getDoc(doc(adminDb, auditPath)));
     await assertFails(setDoc(doc(adminDb, 'users/user-1/template_acks/device-87654321'), { writer: 'client' }));
     await assertFails(setDoc(doc(adminDb, 'users/user-1/account_feature_audit/audit-2'), { actor_uid: 'admin-1' }));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/account_features/current'), { hotspot_template_editor: true }));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/feature_entitlements/current'), { hotspot_template_editor: true }));
     await assertFails(updateDoc(doc(adminDb, ackPath), { outcome: 'applied' }));
     await assertFails(updateDoc(doc(adminDb, auditPath), { action: 'tampered' }));
 

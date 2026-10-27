@@ -41,6 +41,15 @@ test('migrate reuses the shared settings function without a top-level API file',
   assert.equal(await readFile(path.join(root, 'api', 'migrate.js')).then(() => true, () => false), false);
 });
 
+test('entitlement endpoints keep their public URLs through the shared settings function', async () => {
+  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/entitlements/activate'
+    && rule.destination === '/api/settings?__apiRoute=entitlement-activate'));
+  assert.ok(config.rewrites.some((rule) => rule.source === '/api/entitlements/device-rebind'
+    && rule.destination === '/api/settings?__apiRoute=entitlement-device-rebind'));
+  assert.equal(await readFile(path.join(root, 'api', 'entitlements', 'activate.js')).then(() => true, () => false), false);
+});
+
 test('the inventory snapshot endpoint stays a real nested API route', async () => {
   const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
   // لا نضيف rewrite للمسار: الملف نفسه يوفّر /api/inventory/snapshot.

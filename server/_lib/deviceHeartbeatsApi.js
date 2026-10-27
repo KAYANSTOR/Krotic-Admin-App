@@ -22,6 +22,7 @@ function publicHeartbeat(snapshot) {
     accountId: typeof data.accountId === 'string' ? data.accountId : '',
     networkId,
     schemaVersion: Number.isSafeInteger(data.schemaVersion) ? data.schemaVersion : null,
+    installationBound: data.installationBound === true,
     appVersion: typeof data.appVersion === 'string' ? data.appVersion : '',
     releaseId: typeof data.releaseId === 'string' ? data.releaseId : '',
     serverReceivedAt: typeof data.serverReceivedAt === 'string' ? data.serverReceivedAt : null,

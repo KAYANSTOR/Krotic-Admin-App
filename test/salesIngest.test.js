@@ -8,6 +8,7 @@ import {
   canonicalReceiptPayload,
   createInternalReceipt,
   verifyInternalReceipt,
+  verifyReceiptWithCandidates,
   isSaleAllowedForAccount,
 } from '../api/sales/ingest.js';
 
@@ -66,9 +67,9 @@ test('same current-version sale gets ACK without changing totals; changed payloa
  const dup=await ingestSale(ingestArgs(db));assert.equal(dup.status,'ALREADY_EXISTS_ACKED');assert.equal(dup.samePayload,true);
  const orig=ingestArgs(db);
  const conflict=await ingestSale(ingestArgs(db,{payloadHash:'hash-b',payload:{...orig.payload,amountMinor:60000,amountRiyal:600}}));
- assert.equal(conflict.status,'conflict');assert.equal(conflict.error,'sale_id_payload_conflict');
+ assert.equal(conflict.status,'conflict');assert.equal(conflict.error,'payload_conflict');
  assert.equal(db.docs.get('networks/NET-10001').totalSalesAmount,500);
- assert.equal(db.docs.get('sale_ingest_registry/user-1_sale-1').reason,'sale_id_payload_conflict');
+ assert.equal(db.docs.get('sale_ingest_registry/user-1_sale-1').reason,'payload_conflict');
 });
 test('legacy sale with matching hash needs reconciliation and is not falsely ACKed',async()=>{
  const db=new FakeFirestore();db.docs.set('networks/NET-10001/sales/sale-1',{saleId:'sale-1',payloadHash:'hash-a',payloadPolicyVersion:1,amount:500});
@@ -179,6 +180,41 @@ test('an HMAC receipt from another network key is rejected', () => {
   assert.equal(verifyInternalReceipt({ token: receipt, payload, secret: 'network-secret-two', now: timestamp }).error, 'hmac_invalid');
 });
 
+test('rotation grace accepts the previous key only while it is still listed', () => {
+  const payload = { ...validBody, uid: 'user-1', currencyCode: 'YER' };
+  const timestamp = 1_700_000_000_000;
+  const oldSecret = 'previous-network-secret';
+  const newSecret = 'current-network-secret';
+  const receipt = createInternalReceipt({ payload, timestamp, secret: oldSecret });
+  const candidates = [
+    { secret: newSecret, version: 2, current: true },
+    { secret: oldSecret, version: 1, current: false },
+  ];
+
+  const accepted = verifyReceiptWithCandidates({ token: receipt, payload, candidates, now: timestamp });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.secretVersion, 1);
+  assert.equal(accepted.usedPrevious, true);
+
+  const afterGrace = verifyReceiptWithCandidates({
+    token: receipt,
+    payload,
+    candidates: [candidates[0]],
+    now: timestamp,
+  });
+  assert.equal(afterGrace.ok, false);
+  assert.equal(afterGrace.error, 'hmac_invalid');
+
+  const expired = verifyReceiptWithCandidates({
+    token: receipt,
+    payload,
+    candidates,
+    now: timestamp + 6 * 60 * 1000,
+  });
+  assert.equal(expired.ok, false);
+  assert.equal(expired.error, 'hmac_expired_or_malformed');
+});
+
 test('isSaleAllowedForAccount allows sales for active trial or active paid accounts', () => {
   const now = 1_700_000_000_000;
   const trialUser = { accessStatus: 'TRIAL', subscriptionEndsAt: now + 86400000 };
@@ -220,12 +256,16 @@ test('isSaleAllowedForAccount blocks new commercial sales created after expirati
 });
 
 test('isSaleAllowedForAccount blocks manually suspended accounts', () => {
-  const suspendedUser = {
-    accessStatus: 'SUSPENDED_GRACE',
-    is_active: false,
-  };
-  const result = isSaleAllowedForAccount(suspendedUser, Date.now());
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 403);
-  assert.equal(result.error, 'account_suspended');
+  for (const accessStatus of ['SUSPENDED_GRACE', 'SUSPENDED_MANUAL', 'SUSPENDED']) {
+    const suspendedUser = {
+      accessStatus,
+      is_active: false,
+    };
+    const result = isSaleAllowedForAccount(suspendedUser, Date.now());
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 403);
+    assert.equal(result.error, 'account_suspended');
+  }
+  assert.equal(isSaleAllowedForAccount({ accessStatus: 'ACTIVE_PAID', blocked: true }, Date.now()).error,
+    'account_suspended');
 });

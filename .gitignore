@@ -23,4 +23,5 @@ firestore-debug.log
 ui-debug.log
 functions/package-lock.json
 .jdk/
+.tools/
 firebase.local-ci.json
