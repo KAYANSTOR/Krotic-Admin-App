@@ -1,5 +1,5 @@
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, getAppFirestore, isAdminUid } from '../server/_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin, getAppFirestore, isAdminUid } from './firebaseAdmin.js';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;

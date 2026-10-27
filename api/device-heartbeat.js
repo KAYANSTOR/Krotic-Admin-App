@@ -1,6 +1,7 @@
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from '../server/_lib/firebaseAdmin.js';
+import deviceHeartbeatsAdminHandler from '../server/_lib/deviceHeartbeatsApi.js';
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const MAX_SIGNALS = 32;
@@ -88,6 +89,9 @@ export function validateHeartbeat(body) {
 }
 
 export default async function handler(req, res, dependencies = {}) {
+  if (req.query?.__apiRoute === 'list') {
+    return deviceHeartbeatsAdminHandler(req, res, dependencies);
+  }
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });

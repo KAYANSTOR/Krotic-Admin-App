@@ -21,6 +21,14 @@
       "destination": "/api/settings?__apiRoute=account-features"
     },
     {
+      "source": "/api/network-secret",
+      "destination": "/api/settings?__apiRoute=network-secret"
+    },
+    {
+      "source": "/api/device-heartbeats",
+      "destination": "/api/device-heartbeat?__apiRoute=list"
+    },
+    {
       "source": "/api/request-otp",
       "destination": "/api/manage-user-auth?__apiRoute=request-otp"
     },
