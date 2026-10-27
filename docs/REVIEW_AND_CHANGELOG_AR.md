@@ -19,6 +19,7 @@
 - **هوية العناصر التي ينشئها المدير:** مولّد موحد `templateCenterIds.js`:
   `wallet-admin-<hex16>` و`tpl-admin-<hex16>` بدل `wallet-<base36>` القابل
   للالتباس مع معرّفات Android وقت التشغيل، والمعرّف يُعرض للقراءة فقط.
+- **قاموس أخطاء بلا تكرار:** أُزيلت 12 تعريفًا مكررًا في `ADMIN_API_ERRORS` كانت تجعل آخر رسالة تفوز بصمت (مثل وصف خطأ قائمة المركز بأنه خطأ قراءة إصدار)، مع اختبار يمنع التكرار.
 - **تصحيح مسمّى كاذب:** `OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG` أصبح
   `ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION`؛ المفاتيح الخمسة موجودة
   فعلًا والاختبار يمنع حذفها.
@@ -27,8 +28,8 @@
   (`WALLET_ID_CONTRACT.legacyRowMigration`) بدل ادّعاء اكتماله.
 - **التوثيق:** `docs/TEMPLATE_CENTER_STYLE_AUDIT_AR.md` (التحليل والمعجم وسياسة
   النصوص)، وتحديث عقد المركز وسجل قرار المصدر ووثيقة عقود لوحة التحكم.
-- **التحقق:** `test/templateCenterTerminology.test.js` (11 اختبارًا) + الاختبارات
-  القائمة للمركز والكتالوج والرئيسية؛ `npm test` 389/389، و`npm run lint`
+- **التحقق:** `test/templateCenterTerminology.test.js` (12 اختبارًا) + الاختبارات
+  القائمة للمركز والكتالوج والرئيسية؛ `npm test` 390/390، و`npm run lint`
   و`npm run build` ناجحان محليًا. لا نشر ولا دمج إلى `main`.
 
 ## تحديث فرع التطوير الموحّد — 2026-10-27

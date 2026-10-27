@@ -205,6 +205,21 @@ test('server validation codes are summarized in Arabic, never dumped raw', () =>
   assert.equal(summarizeTemplateValidationErrors([]), '');
 });
 
+test('admin API error glossary has no duplicate keys (last-wins bugs)', async () => {
+  const source = await read('src/lib/adminApi.js');
+  const start = source.indexOf('export const ADMIN_API_ERRORS');
+  const block = source.slice(start, source.indexOf('};', start) + 2);
+  const keys = [...block.matchAll(/^\s{2}([a-z0-9_]+):/gm)].map((match) => match[1]);
+  assert.ok(keys.length > 50);
+  assert.equal(new Set(keys).size, keys.length, 'duplicate error keys silently override each other');
+  for (const key of [
+    'template_center_read_failed', 'simulation_input_invalid', 'release_conflict',
+    'draft_id_invalid', 'app_version_invalid',
+  ]) {
+    assert.ok(keys.includes(key), `missing template-center error key ${key}`);
+  }
+});
+
 test('account features UI keeps server collection paths out of primary copy', async () => {
   const page = await read('src/pages/PaidFeaturesPage.jsx');
   assert.doesNotMatch(page, /account_feature_audit|account_features_catalog|account_features_version/);

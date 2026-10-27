@@ -58,6 +58,7 @@
 | N5 | مسميات معرّفات ملتبسة | اللوحة كانت تولّد `wallet-<8 base36>` وتسمح بكتابته يدويًا، و`template-<8 base36>` للوارد | تشابه مع معرّفات Android وقت التشغيل (`wallet-N`)، واختيار بشري لهوية يجب أن تكون ثابتة | مولّد مركزي `templateCenterIds.js`: `wallet-admin-<hex16>` و`tpl-admin-<hex16>`، ويُعرض المعرّف **للقراءة فقط** |
 | N6 | اسم تصدير يكذب | `OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG` بقيت تسمي خمسة مفاتيح «مفقودة» بعد إضافتها فعليًا | اسم يمنع فهم الحالة الحقيقية ويوحي بعمل غير مكتمل | أُعيدت التسمية إلى `ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION` مع اختبار يمنع حذفها |
 | N7 | تناقض وثائقي | الكود يقول `status: 'resolved'` بينما `NEEDS_DECISION_WALLET_KEY_AR.md` و`ADMIN_CONTROL_CENTER_CONTRACTS_AR.md` يصفان المسألة كمعلّقة | قراران متضاربان في المستودع نفسه | فُصل الأمر: هوية الكتالوج `wallet-default-*` محسومة؛ **ترحيل صفوف التثبيتات القديمة** غير متحقق منه من هذا المستودع (`legacyRowMigration`) |
+| N9 | تكرار صامت في قاموس الأخطاء | `src/lib/adminApi.js` كان يعرّف 12 مفتاحًا مرتين (مثل `template_center_read_failed` و`simulation_input_invalid`)، وآخر تعريف يفوز بصمت | رسالة خطأ قد تصف إجراءً آخر (قراءة الإصدار بدل قائمة المركز) | أُزيلت التعريفات المكررة، وبقي قاموس واحد بلا تكرار، مع اختبار يمنع عودته |
 | N8 | خلط «زرع» و«مضمّن» | النص يقول «كتالوج زرع Android» بينما `templateCenterView` يمنع صياغة «تم الزرع» | مفردات متعارضة حول الحدث نفسه | صار الظاهر «الكتالوج الافتراضي المضمّن في Android»؛ «زرع» باقٍ فقط في وصف مصدر Android الداخلي |
 
 ## 5. المعجم المعتمد
@@ -107,7 +108,7 @@
 ## 8. التحقق
 
 ```bash
-node --test test/templateCenterTerminology.test.js   # 11/11
+node --test test/templateCenterTerminology.test.js   # 12/12
 node --test test/templateCenterView.test.js test/templateCenterUi.test.js \
   test/androidSeedCatalog.test.js test/dashboardLayout.test.js
 ```
