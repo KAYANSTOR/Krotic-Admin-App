@@ -78,7 +78,8 @@
 
 ## 7) حالة الالتزام والدفع
 
-- **الالتزام:** `ecdb152` — `fix(integration): align lease contract, sales ingest, key rotation and rules`
-- **الدفع:** `origin/development` من `f645643` إلى `ecdb152` (نجح).
+- **آخر التزام وظيفي:** `070a310` — `fix(entitlements): prevent cross-account installation reuse`
+- **التزام الإصلاح الأساسي:** `ecdb152` — `fix(integration): align lease contract, sales ingest, key rotation and rules`
+- **الدفع:** `origin/development` حتى `070a310` (نجح).
 - **main:** لم يُلمس. **فرع جديد:** لم يُنشأ.
 - **النشر:** لم يُنفّذ. حالة Vercel `Unknown` لغياب بيانات الاعتماد/الرابط. الالتزام وحده لا يُثبت نشراً.
