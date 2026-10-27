@@ -8,6 +8,43 @@ const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const ACTIVE_STATUSES = new Set(['TRIAL', 'ACTIVE_PAID']);
 const OPERATIONS = Object.freeze(['sell', 'settle', 'sync', 'support', 'readOnly']);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// سياسة العمل دون اتصال منفصلة عن نهاية الاستحقاق التجاري:
+// - commercialUntil: آخر لحظة يُسمح فيها بالعمليات التجارية (sell/settle).
+// - maxOfflineUntil: آخر لحظة يبقى فيها العقد صالحاً للعمل دون اتصال،
+//   وتمنح مهلة قصيرة بعد الانتهاء التجاري كي يستطيع الجهاز مزامنة ما تبقّى
+//   وطلب الدعم والقراءة، مع سقف أقصى يجبر الجهاز على العودة للخادم.
+export const ENTITLEMENT_OFFLINE_GRACE_MS = 7 * DAY_MS;
+export const ENTITLEMENT_MAX_OFFLINE_MS = 30 * DAY_MS;
+
+function policyMs(name, fallback) {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw >= 0 && raw <= 365 * DAY_MS ? raw : fallback;
+}
+
+/** Returns ISO boundaries so the lease can carry both policies explicitly. */
+export function entitlementLeaseWindow({
+  issuedAtMs,
+  commercialUntilMs,
+  offlineGraceMs = policyMs('ENTITLEMENT_OFFLINE_GRACE_MS', ENTITLEMENT_OFFLINE_GRACE_MS),
+  maxOfflineMs = policyMs('ENTITLEMENT_MAX_OFFLINE_MS', ENTITLEMENT_MAX_OFFLINE_MS),
+}) {
+  if (!Number.isFinite(issuedAtMs) || !Number.isFinite(commercialUntilMs)) return null;
+  const commercial = Math.max(issuedAtMs, commercialUntilMs);
+  const offline = Math.min(commercial + offlineGraceMs, issuedAtMs + maxOfflineMs);
+  return {
+    commercialUntilMs: commercial,
+    maxOfflineUntilMs: offline,
+    commercialUntil: new Date(commercial).toISOString(),
+    maxOfflineUntil: new Date(offline).toISOString(),
+  };
+}
+
+function leaseVersionFor(user) {
+  const raw = Number(user?.entitlementVersion);
+  return Number.isSafeInteger(raw) && raw >= 1 ? raw : 1;
+}
 
 function objectBody(body) {
   if (typeof body === 'string') {
@@ -61,14 +98,16 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
   const input = objectBody(req.body);
   if (!input) return response(res, 400, { error: 'invalid_json' });
   const claimedUid = typeof input.userId === 'string' ? input.userId.trim() : '';
+  if (input.userId !== undefined && (!claimedUid || !UID_PATTERN.test(claimedUid))) {
+    return response(res, 400, { error: 'user_id_invalid' });
+  }
   const installationId = typeof input.deviceId === 'string'
     ? input.deviceId.trim()
     : typeof input.installationId === 'string'
       ? input.installationId.trim()
       : '';
-  if (!claimedUid || !UID_PATTERN.test(claimedUid)
-      || !installationId || !INSTALLATION_ID_PATTERN.test(installationId)) {
-    return response(res, 400, { error: 'userId_and_deviceId_required' });
+  if (!installationId || !INSTALLATION_ID_PATTERN.test(installationId)) {
+    return response(res, 400, { error: 'installation_id_required' });
   }
   if (input.deviceId && input.installationId
       && input.deviceId !== input.installationId) {
@@ -99,7 +138,7 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
   if (!uid || !UID_PATTERN.test(uid)) {
     return response(res, 401, { error: 'invalid_token' });
   }
-  if (claimedUid !== uid) return response(res, 403, { error: 'user_identity_mismatch' });
+  if (claimedUid && claimedUid !== uid) return response(res, 403, { error: 'user_identity_mismatch' });
 
   const privateKey = configuredPrivateKey(
     dependencies.privateKey ?? process.env.ENTITLEMENT_PRIVATE_KEY,
@@ -136,28 +175,40 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
       if (boundInstallationId && boundInstallationId !== installationId) {
         return { error: 'installation_mismatch', status: 409 };
       }
+      const leaseVersion = leaseVersionFor(user);
       if (!boundInstallationId) {
         transaction.set(userRef, {
           entitlementInstallationId: installationId,
           entitlementInstallationBoundAt: serverTimestamp(),
+          entitlementVersion: leaseVersion,
         }, { merge: true });
       }
 
+      const window = entitlementLeaseWindow({
+        issuedAtMs: now,
+        commercialUntilMs: endMillis,
+      });
+      if (!window) return { error: 'account_not_eligible', status: 403 };
+
       const issuedAt = new Date(now).toISOString();
-      const expiry = new Date(endMillis).toISOString();
+      // Keep this declaration order stable: the client verifies the Ed25519
+      // signature over this exact serialized payload, so reordering changes
+      // the signed bytes. Required contract fields stay first.
       const payload = {
         uid,
         installationId,
         issuedAt,
         notBefore: issuedAt,
-        version: 1,
+        version: leaseVersion,
         keyId: ENTITLEMENT_KEY_ID,
         operations: [...OPERATIONS],
-        ...(accessStatus === 'TRIAL'
-          ? { trialEndsAt: expiry }
-          : { commercialUntil: expiry }),
+        commercialUntil: window.commercialUntil,
+        maxOfflineUntil: window.maxOfflineUntil,
         serverTime: issuedAt,
-        expiry,
+        ...(accessStatus === 'TRIAL' ? { trialEndsAt: window.commercialUntil } : {}),
+        // Legacy alias keeps its previous meaning (commercial end) for older
+        // clients; the dedicated offline deadline is maxOfflineUntil.
+        expiry: window.commercialUntil,
         userId: uid,
         deviceId: installationId,
       };

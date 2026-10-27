@@ -175,3 +175,45 @@ test('stores heartbeat with server receipt time and acknowledges it', async () =
   assert.equal(stored.value.accountId, 'user-1');
   assert.equal(stored.value.pendingCount, 2);
 });
+
+test('rejects a device that is not the account-bound installation or a suspended account', async () => {
+  const mismatch = responseMock();
+  await handler(
+    { method: 'POST', headers: { authorization: 'Bearer valid-token' }, body: valid },
+    mismatch,
+    dependencies(fakeDb({
+      user: { networkId: 'NET-10001', entitlementInstallationId: 'install-other' },
+    }).db),
+  );
+  assert.equal(mismatch.statusCode, 403);
+  assert.equal(mismatch.body.error, 'installation_mismatch');
+
+  const suspended = responseMock();
+  await handler(
+    { method: 'POST', headers: { authorization: 'Bearer valid-token' }, body: valid },
+    suspended,
+    dependencies(fakeDb({
+      user: { networkId: 'NET-10001', accessStatus: 'SUSPENDED_GRACE' },
+    }).db),
+  );
+  assert.equal(suspended.statusCode, 403);
+  assert.equal(suspended.body.error, 'account_suspended');
+});
+
+test('stores the server-bound installation flag without granting anything', async () => {
+  const fake = fakeDb({
+    user: { networkId: 'NET-10001', entitlementInstallationId: 'install-12345678' },
+  });
+  const res = responseMock();
+  await handler(
+    { method: 'POST', headers: { authorization: 'Bearer valid-token' }, body: valid },
+    res,
+    dependencies(fake.db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.schemaVersion, 1);
+  const stored = fake.stored.get('networks/NET-10001/device_heartbeats/install-12345678');
+  assert.equal(stored.value.installationBound, true);
+  assert.equal(stored.value.serverReceivedAtMs, Date.parse('2026-10-26T05:30:00.000Z'));
+});

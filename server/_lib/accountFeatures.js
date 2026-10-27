@@ -176,6 +176,8 @@ export default async function accountFeaturesHandler(req, res, dependencies = {}
         schemaVersion: ACCOUNT_FEATURES_VERSION,
         accountFeatures: normalizeAccountFeatures(user.account_features, catalog.features),
         updatedAtMs: Number.isSafeInteger(user.account_features_updated_at_ms) ? user.account_features_updated_at_ms : null,
+        updatedBy: typeof user.account_features_updated_by === 'string' ? user.account_features_updated_by : null,
+        source: typeof user.account_features_source === 'string' ? user.account_features_source : null,
       });
     }
 
@@ -188,6 +190,7 @@ export default async function accountFeaturesHandler(req, res, dependencies = {}
       const previousUser = snapshot.data() || {};
       const previous = normalizeAccountFeatures(previousUser.account_features, catalog.features);
       const next = { ...previous, ...parsed.value };
+      const changedKeys = Object.keys(parsed.value).filter((key) => previous[key] !== parsed.value[key]);
       const oldUpdatedAtMs = Number(previousUser.updatedAtMs);
       const oldFeatureUpdatedAtMs = Number(previousUser.account_features_updated_at_ms);
       const syncUpdatedAtMs = Math.max(now, Number.isSafeInteger(oldUpdatedAtMs) ? oldUpdatedAtMs + 1 : now);
@@ -196,6 +199,8 @@ export default async function accountFeaturesHandler(req, res, dependencies = {}
         account_features: next,
         account_features_version: ACCOUNT_FEATURES_VERSION,
         account_features_updated_at_ms: featureUpdatedAtMs,
+        account_features_updated_by: caller.callerUid,
+        account_features_source: 'admin_api',
         updatedAt: serverTimestamp(),
         updatedAtMs: syncUpdatedAtMs,
       }, { merge: true });
@@ -206,7 +211,7 @@ export default async function accountFeaturesHandler(req, res, dependencies = {}
         account_uid: uid,
         previous,
         next,
-        changed_keys: Object.keys(parsed.value),
+        changed_keys: changedKeys,
         created_at: serverTimestamp(),
         created_at_ms: now,
       }, { merge: false });

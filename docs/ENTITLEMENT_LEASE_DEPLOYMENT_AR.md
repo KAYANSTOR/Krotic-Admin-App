@@ -20,7 +20,20 @@
 
 الخادم يطابق UID مع الرمز الموثّق، ويصدر العقد فقط إذا كانت `accessStatus` تساوي `TRIAL` أو `ACTIVE_PAID` وكان `subscriptionEndsAt` أو `subscription_end_date` في المستقبل. أول تثبيت يُحجز ذرياً في `users/{uid}.entitlementInstallationId`. أي تثبيت مختلف يُرفض بـ `409 installation_mismatch`.
 
-الرد `{payload, signature}`؛ التوقيع Ed25519 يغطي كامل JSON payload، ويحتوي العقد على `serverTime` و`expiry` وحقول Lease المتوافقة مع تطبيق Android. لا يصدر الخادم عقداً بعد انتهاء الاستحقاق أو لحالة غير معروفة.
+الرد `{payload, signature}`؛ التوقيع Ed25519 يغطي كامل JSON payload، ويحتوي العقد على `uid` و`installationId` و`issuedAt` و`notBefore` و`version` و`keyId` و`operations` و`commercialUntil` و`maxOfflineUntil` و`serverTime`. لا يصدر الخادم عقداً بعد انتهاء الاستحقاق أو لحالة غير معروفة.
+
+### سياسة الاستحقاق التجاري والعمل دون اتصال
+
+- `commercialUntil`: نهاية الاشتراك/التجربة، وهي آخر لحظة للعمليات التجارية (`sell`/`settle`).
+- `maxOfflineUntil`: نهاية صلاحية العقد للعمل دون اتصال، وتُحسب كـ`commercialUntil + 7 أيام`
+  مع سقف أقصى `30 يوماً` من وقت الإصدار. المهلة تسمح للجهاز بمزامنة ما تبقّى وطلب
+  الدعم والقراءة بعد الانتهاء التجاري، ثم تجبره على العودة للخادم.
+- القيم قابلة للضبط الخادمي عبر `ENTITLEMENT_OFFLINE_GRACE_MS` و`ENTITLEMENT_MAX_OFFLINE_MS`
+  (بالمللي ثانية)، والقيم الافتراضية أعلاه هي المعتمدة.
+- `serverTime` و`issuedAt` من ساعة الخادم؛ يستخدمهما العميل لتصحيح فرق ساعة الجهاز.
+- `version` هو إصدار عقد الحساب، ويبدأ بـ`1` ويزيد عند كل إعادة ربط جهاز معتمد.
+- ترتيب الحقول أعلاه ثابت لأن التوقيع يُحسب على `JSON.stringify(payload)` كما يُعاد للعميل.
+
 
 ### موافقة مدير على جهاز بديل
 
@@ -32,7 +45,8 @@
 {"uid":"<account UID>","installationId":"<new installation ID>","reason":"سبب الموافقة"}
 ```
 
-يحدّث الخادم الربط داخل transaction ويسجل المدير والجهاز السابق والجديد والسبب في `admin_audit_logs`. لا توجد عملية إعادة ربط عامة للمستخدم.
+يحدّث الخادم الربط داخل transaction ويسجل المدير والجهاز السابق والجديد والسبب في `admin_audit_logs`. لا توجد عملية إعادة ربط عامة للمستخدم. إتمام المعاملة هو موافقة المدير؛ تبقى الوثيقة على الربط السابق حتى تنجح، ثم يزيد `entitlementVersion` بمقدار 1 كي تصبح عقود الجهاز السابق قديمة، ويُسجَّل `entitlementPreviousInstallationId` و`entitlementReboundBy`.
+
 
 ## تطبيق Android
 

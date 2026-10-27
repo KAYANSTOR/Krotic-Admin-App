@@ -155,7 +155,14 @@ test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوق
   assert.equal(res.body.payload.userId, 'user-1');
   assert.equal(res.body.payload.deviceId, 'install-a');
   assert.equal(res.body.payload.keyId, 'ed25519-krotak-2026-10-v1');
+  assert.equal(res.body.payload.version, 1);
   assert.equal(res.body.payload.trialEndsAt, new Date(NOW + 20 * 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(res.body.payload.commercialUntil, res.body.payload.trialEndsAt);
+  assert.equal(res.body.payload.expiry, res.body.payload.commercialUntil);
+  assert.equal(res.body.payload.maxOfflineUntil,
+    new Date(NOW + 27 * 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(res.body.payload.serverTime, res.body.payload.issuedAt);
+  assert.equal(res.body.payload.notBefore, res.body.payload.issuedAt);
   assert.deepEqual(res.body.payload.operations, ['sell', 'settle', 'sync', 'support', 'readOnly']);
   assert.equal(verify(
     null,
@@ -163,6 +170,52 @@ test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوق
     publicKey,
     Buffer.from(res.body.signature, 'base64'),
   ), true);
+});
+
+test('يشتق الهوية من التوكن عندما لا يرسل العميل userId', async () => {
+  const { db } = makeDb(baseUser({ accessStatus: 'ACTIVE_PAID' }));
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ installationId: 'install-a', serverTime: '2000-01-01T00:00:00.000Z', now: 1 }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.uid, 'user-1');
+  assert.equal(res.body.payload.trialEndsAt, undefined);
+  assert.equal(res.body.payload.serverTime, new Date(NOW).toISOString());
+  assert.equal(res.body.payload.issuedAt, new Date(NOW).toISOString());
+  assert.equal(res.body.payload.commercialUntil,
+    new Date(NOW + 20 * 24 * 60 * 60 * 1000).toISOString());
+
+  // A modified payload no longer verifies against the issued signature.
+  const tampered = { ...res.body.payload, commercialUntil: '2099-01-01T00:00:00.000Z' };
+  assert.equal(verify(
+    null,
+    Buffer.from(JSON.stringify(tampered), 'utf8'),
+    publicKey,
+    Buffer.from(res.body.signature, 'base64'),
+  ), false);
+});
+
+test('سياسة العمل دون اتصال لها سقف مستقل عن نهاية الاشتراك الطويلة', async () => {
+  const longSubscription = baseUser({
+    accessStatus: 'ACTIVE_PAID',
+    subscriptionEndsAt: new Date(NOW + 120 * 24 * 60 * 60 * 1000),
+  });
+  const { db } = makeDb(longSubscription);
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ installationId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.commercialUntil,
+    new Date(NOW + 120 * 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(res.body.payload.maxOfflineUntil,
+    new Date(NOW + 30 * 24 * 60 * 60 * 1000).toISOString());
+  assert.ok(Date.parse(res.body.payload.maxOfflineUntil) < Date.parse(res.body.payload.commercialUntil));
 });
 
 test('يرفض التثبيت المختلف بعد الربط ولا يغير الوثيقة', async () => {
@@ -221,10 +274,15 @@ test('إعادة ربط التثبيت تتطلب مديراً وتُسجّل ا
   );
   assert.equal(allowed.statusCode, 200);
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-b');
+  assert.equal(docs.get('users/user-1').entitlementVersion, 2);
+  assert.equal(docs.get('users/user-1').entitlementPreviousInstallationId, 'install-a');
+  assert.equal(docs.get('users/user-1').entitlementLeaseRevokedAtMs, NOW);
   const audit = writes.find((write) => write.ref.collection === 'admin_audit_logs');
   assert.equal(audit.data.action, 'ENTITLEMENT_DEVICE_REBIND');
   assert.equal(audit.data.actorUid, 'admin-1');
   assert.equal(audit.data.targetId, 'user-1');
   assert.equal(audit.data.details.previousInstallationId, 'install-a');
   assert.equal(audit.data.details.installationId, 'install-b');
+  assert.equal(audit.data.details.previousVersion, 1);
+  assert.equal(audit.data.details.version, 2);
 });

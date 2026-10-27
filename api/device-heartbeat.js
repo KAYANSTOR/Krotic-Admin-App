@@ -133,8 +133,25 @@ export default async function handler(req, res, dependencies = {}) {
     const userSnap = await db.collection('users').doc(uid).get();
     if (!userSnap.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
     const user = userSnap.data() || {};
+    const accessStatus = typeof user.accessStatus === 'string'
+      ? user.accessStatus.trim().toUpperCase()
+      : '';
+    if (accessStatus === 'SUSPENDED_GRACE' || accessStatus === 'SUSPENDED_MANUAL' || accessStatus === 'SUSPENDED') {
+      return res.status(403).json({ success: false, error: 'account_suspended' });
+    }
+    const boundInstallationId = typeof user.entitlementInstallationId === 'string'
+      ? user.entitlementInstallationId.trim()
+      : '';
+    if (boundInstallationId && boundInstallationId !== validated.value.installationId) {
+      // Heartbeat never proves ownership; only the server-bound installation
+      // may report telemetry for this account.
+      return res.status(403).json({ success: false, error: 'installation_mismatch' });
+    }
     const networkId = typeof user.networkId === 'string' && user.networkId.trim()
-      ? user.networkId.trim() : uid;
+      ? user.networkId.trim()
+      : typeof user.network_id === 'string' && user.network_id.trim()
+        ? user.network_id.trim()
+        : uid;
     if (validated.value.networkId !== networkId) {
       return res.status(403).json({ success: false, error: 'network_identity_mismatch' });
     }
@@ -151,6 +168,7 @@ export default async function handler(req, res, dependencies = {}) {
       ...validated.value,
       accountId: uid,
       networkId,
+      installationBound: Boolean(boundInstallationId),
       serverReceivedAt: new Date(now).toISOString(),
       serverReceivedAtMs: now,
       // Client telemetry is observational only; never use it to grant entitlement or validate money.

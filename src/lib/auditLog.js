@@ -35,6 +35,8 @@ export const AUDIT_ACTIONS = {
   NETWORK_RENEW: { label: 'تجديد اشتراك شبكة (خادمي)', tone: 'brand' },
   NETWORK_ACCESS_UPDATE: { label: 'تعديل صلاحيات شبكة (خادمي)', tone: 'neutral' },
   NETWORK_DELETE: { label: 'حذف شبكة وبياناتها', tone: 'danger' },
+  NETWORK_SECRET_ROTATE: { label: 'تدوير مفتاح شبكة (خادمي)', tone: 'warning' },
+  ENTITLEMENT_DEVICE_REBIND: { label: 'موافقة إدارية على استبدال جهاز الاستحقاق', tone: 'brand' },
   SUBSCRIPTION_EXPIRY_CRON: { label: 'فحص انتهاء الاشتراكات (Cron خادمي)', tone: 'warning' },
   TEMPLATE_DRAFT_CREATE: { label: 'إنشاء مسودة قوالب', tone: 'brand' },
   TEMPLATE_DRAFT_UPDATE: { label: 'تعديل مسودة قوالب', tone: 'neutral' },

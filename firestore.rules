@@ -27,7 +27,16 @@ service cloud.firestore {
               'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning',
               'feature_entitlements', 'feature_entitlements_updated_at',
               'feature_entitlements_updated_by', 'account_features',
-              'account_features_version', 'account_features_updated_at_ms'];
+              'account_features_version', 'account_features_updated_at_ms',
+              'account_features_updated_by', 'account_features_source',
+              'networkId', 'network_id', 'entitlementInstallationId', 'entitlementInstallationBoundAt',
+              'entitlementVersion', 'entitlementPreviousInstallationId',
+              'entitlementReboundAt', 'entitlementReboundAtMs', 'entitlementReboundBy',
+              'entitlementLeaseRevokedAtMs',
+              'phone_verified', 'phoneVerified', 'phone_verification_required',
+              'phone_verified_at', 'phone_verified_sms', 'phone_verified_manual',
+              'verified_by_admin', 'verified_by_admin_uid',
+              'phone_unverified_at', 'phone_unverified_by'];
     }
     function touchesAccessFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());
@@ -223,7 +232,9 @@ service cloud.firestore {
         // لا يكتبها مباشرة من المتصفح، منعاً لتجاوز التحقق والتدقيق الخادمي.
         allow write: if isAdmin()
           && subcollection != 'template_acks'
-          && subcollection != 'account_feature_audit';
+          && subcollection != 'account_feature_audit'
+          && subcollection != 'account_features'
+          && subcollection != 'feature_entitlements';
       }
     }
 

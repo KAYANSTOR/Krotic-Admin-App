@@ -268,12 +268,12 @@ test('CONTRACT: Sale UUID conflict with altered payload is rejected and recorded
   });
 
   assert.equal(conflictResult.status, 'conflict');
-  assert.equal(conflictResult.error, 'sale_id_payload_conflict');
+  assert.equal(conflictResult.error, 'payload_conflict');
 
   // Conflict is audited in registry
   const registryEntry = db.docs.get('sale_ingest_registry/user-c_sale-conflict-test');
   assert.ok(registryEntry);
-  assert.equal(registryEntry.reason, 'sale_id_payload_conflict');
+  assert.equal(registryEntry.reason, 'payload_conflict');
   assert.equal(registryEntry.previousHash, payloadHashOriginal);
   assert.equal(registryEntry.incomingHash, payloadHashAltered);
 });

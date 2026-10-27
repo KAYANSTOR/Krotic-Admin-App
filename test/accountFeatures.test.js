@@ -91,12 +91,15 @@ test('set merges catalog keys, stamps sync versions and appends per-user audit t
   assert.deepEqual(user.account_features, result.body.accountFeatures);
   assert.equal(user.account_features_version, 1);
   assert.equal(user.account_features_updated_at_ms, 1_798_000_000_000);
+  assert.equal(user.account_features_updated_by, 'admin-1');
+  assert.equal(user.account_features_source, 'admin_api');
   assert.equal(user.updatedAtMs, 1_798_000_000_001);
   assert.equal(user.feature_entitlements, undefined);
   const audit = [...db._store.entries()].find(([path]) => path.startsWith('users/user-1/account_feature_audit/'))?.[1];
   assert.ok(audit);
   assert.equal(audit.actor_uid, 'admin-1');
   assert.deepEqual(audit.next, result.body.accountFeatures);
+  assert.deepEqual(audit.changed_keys, ['hotspot_template_editor', 'advanced_analytics']);
 });
 
 test('set rejects unknown keys, non-booleans, empty maps and unknown accounts', async () => {

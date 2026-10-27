@@ -32,8 +32,14 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
   const uid = typeof input.uid === 'string' ? input.uid.trim() : '';
   const installationId = typeof input.installationId === 'string'
     ? input.installationId.trim()
-    : '';
+    : typeof input.deviceId === 'string'
+      ? input.deviceId.trim()
+      : '';
   const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+  if (input.installationId && input.deviceId
+      && input.installationId !== input.deviceId) {
+    return response(res, 400, { success: false, error: 'device_id_mismatch' });
+  }
   if (!UID_PATTERN.test(uid)
       || !INSTALLATION_ID_PATTERN.test(installationId)
       || !reason || reason.length > 500) {
@@ -70,10 +76,28 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
     const result = await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(userRef);
       if (!snapshot.exists) return { error: 'account_not_found', status: 404 };
-      const previousInstallationId = snapshot.data()?.entitlementInstallationId || null;
+      const user = snapshot.data() || {};
+      const previousInstallationId = typeof user.entitlementInstallationId === 'string'
+        && user.entitlementInstallationId.trim()
+        ? user.entitlementInstallationId.trim()
+        : null;
+      const rawVersion = Number(user.entitlementVersion);
+      const previousVersion = Number.isSafeInteger(rawVersion) && rawVersion >= 1
+        ? rawVersion
+        : 1;
+      // Rebind is the admin approval step: incrementing the lease version makes
+      // every lease previously issued to the old installation stale, and the
+      // new device stays locked until this transaction commits.
+      const version = previousVersion + 1;
       transaction.set(userRef, {
         entitlementInstallationId: installationId,
         entitlementInstallationBoundAt: serverTimestamp(),
+        entitlementPreviousInstallationId: previousInstallationId,
+        entitlementVersion: version,
+        entitlementReboundAt: serverTimestamp(),
+        entitlementReboundAtMs: now,
+        entitlementReboundBy: caller.callerUid,
+        entitlementLeaseRevokedAtMs: now,
       }, { merge: true });
       transaction.set(auditRef, {
         action: 'ENTITLEMENT_DEVICE_REBIND',
@@ -84,11 +108,14 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
           previousInstallationId,
           installationId,
           reason,
+          previousVersion,
+          version,
+          approvalSource: 'admin_api',
         },
         createdAt: serverTimestamp(),
         createdAtMs: now,
       }, { merge: false });
-      return { previousInstallationId, installationId };
+      return { previousInstallationId, installationId, previousVersion, version };
     });
 
     if (result?.error) {

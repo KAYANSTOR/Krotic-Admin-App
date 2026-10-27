@@ -355,6 +355,13 @@ if (!emulatorAddress) {
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features: { sms_auto_parser: true } }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_version: 1 }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_updated_at_ms: Date.now() }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_updated_by: 'admin-1' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { account_features_source: 'admin_api' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementInstallationId: 'attacker-device' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementVersion: 99 }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementReboundBy: 'admin-1' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { networkId: 'NET-99999' }));
+    await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { network_id: 'NET-99999' }));
     await assertSucceeds(updateDoc(doc(adminDb, 'users/user-1'), { network_name: 'Renamed' }));
 
     const ownerDb = testEnv.authenticatedContext('user-1').firestore();
@@ -371,6 +378,8 @@ if (!emulatorAddress) {
     await assertSucceeds(getDoc(doc(adminDb, auditPath)));
     await assertFails(setDoc(doc(adminDb, 'users/user-1/template_acks/device-87654321'), { writer: 'client' }));
     await assertFails(setDoc(doc(adminDb, 'users/user-1/account_feature_audit/audit-2'), { actor_uid: 'admin-1' }));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/account_features/current'), { hotspot_template_editor: true }));
+    await assertFails(setDoc(doc(adminDb, 'users/user-1/feature_entitlements/current'), { hotspot_template_editor: true }));
     await assertFails(updateDoc(doc(adminDb, ackPath), { outcome: 'applied' }));
     await assertFails(updateDoc(doc(adminDb, auditPath), { action: 'tampered' }));
 
