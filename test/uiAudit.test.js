@@ -257,16 +257,17 @@ test('dashboard summary, settlement progress and recent operation links are acce
 
 
 test('user profile KPIs cover all history by default and handle query failures without endless loading', async () => {
-  const [page, hook, query, helpers, inventory] = await Promise.all([
+  const [page, hook, query, helpers, inventory, finance] = await Promise.all([
     read('src/pages/UserProfilePage.jsx'),
     read('src/hooks/userProfile/useUserProfile.js'),
     read('src/lib/localDb/useLocalQuery.js'),
     read('src/lib/users/profileHelpers.js'),
     read('src/components/userProfile/UserInventorySection.jsx'),
+    read('src/components/userProfile/UserProfileFinancialSummary.jsx'),
   ]);
 
   assert.ok(page.includes("useState('all')"));
-  assert.ok(page.includes("value={historyMonth}"));
+  assert.ok(finance.includes("value={historyMonth}"));
   assert.ok(page.includes('formatMonthArabic(historyMonth)'));
   assert.ok(!page.includes('load({ force: true })'));
   assert.ok(!page.includes('window.confirm'));
