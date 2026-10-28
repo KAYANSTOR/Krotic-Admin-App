@@ -39,10 +39,16 @@ test('login controls have explicit labels and visible validation for invalid inp
   assert.match(login, /form\.querySelector\(':invalid'\)\?\.focus\(\)/);
 });
 
-test('keyboard activation of an inner user action does not activate the whole mobile card', async () => {
-  const users = await read('src/pages/UsersPage.jsx');
-  assert.match(users, /if \(event\.target !== event\.currentTarget\) return;/);
-  assert.match(users, /aria-label=\{\`تجديد اشتراك:/);
+test('user cards use separate controls instead of a clickable container', async () => {
+  const [card, actions] = await Promise.all([
+    read('src/components/users/UserCard.jsx'),
+    read('src/components/users/UserActions.jsx'),
+  ]);
+  assert.match(card, /<article className=/);
+  assert.doesNotMatch(card, /role="button"/);
+  assert.ok(card.indexOf('</button>') < card.indexOf('<a'), 'The phone link must not be nested inside the profile button.');
+  assert.match(actions, /key: 'renew'/);
+  assert.match(actions, /aria-label=/);
 });
 
 test('disabled button-like links suppress clicks and keyboard focus', async () => {
@@ -76,9 +82,9 @@ test('app navigation links point to declared route loaders', async () => {
 });
 
 test('mobile action buttons are visible, distinct, labelled and easy to tap', async () => {
-  const [css, users, profile] = await Promise.all([
+  const [css, actions, profile] = await Promise.all([
     read('src/index.css'),
-    read('src/pages/UsersPage.jsx'),
+    read('src/components/users/UserActions.jsx'),
     read('src/pages/UserProfilePage.jsx'),
   ]);
   assert.match(css, /\.row-action\s*\{[^}]*min-height:\s*44px/);
@@ -86,10 +92,11 @@ test('mobile action buttons are visible, distinct, labelled and easy to tap', as
   assert.match(css, /\.row-action--success[^}]*background:\s*var\(--ui-success-soft\)/);
   assert.match(css, /\.row-action:focus-visible/);
   assert.match(css, /@media \(max-width: 640px\)\s*\{\s*\.row-action \{ min-height: 48px/);
-  assert.match(users, /<span>تجديد<\/span>/);
-  assert.match(users, /<span>تعديل<\/span>/);
-  assert.match(users, /<span>الدخول<\/span>/);
-  assert.match(users, /aria-label=\{user\.is_active === false \? 'إلغاء حظر المستخدم' : 'حظر المستخدم'\}/);
+  assert.match(actions, /label: 'تجديد'/);
+  assert.match(actions, /label: 'تعديل'/);
+  assert.match(actions, /label: 'الدخول'/);
+  assert.match(actions, /key: 'toggle'/);
+  assert.match(actions, /aria-label=/);
   assert.match(profile, /<span>تجديد<\/span>/);
   assert.match(profile, /<span>تعديل<\/span>/);
   assert.match(profile, /<span>الدخول<\/span>/);
@@ -132,14 +139,14 @@ test('application status audit is written only after the server confirms setting
 
 
 test('failed admin actions leave confirmation open and always release loading states', async () => {
-  const [users, profile, admins, notifications, settings] = await Promise.all([
-    read('src/pages/UsersPage.jsx'),
+  const [usersActions, profile, admins, notifications, settings] = await Promise.all([
+    read('src/hooks/users/useUsersActions.js'),
     read('src/pages/UserProfilePage.jsx'),
     read('src/pages/AdminsPage.jsx'),
     read('src/pages/NotificationsPage.jsx'),
     read('src/pages/SettingsPage.jsx'),
   ]);
-  assert.match(users, /if \(!result\.ok\) \{[\s\S]*?return false;/);
+  assert.match(usersActions, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(profile, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(admins, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(notifications, /catch \(error\) \{[\s\S]*?return false;\s*\} finally \{\s*setDeleting\(false\)/);
