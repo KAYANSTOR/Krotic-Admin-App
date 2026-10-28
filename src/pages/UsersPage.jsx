@@ -125,6 +125,48 @@ export default function UsersPage() {
 
   useAppRefresh(refresh);
 
-  // FULL_CONTENT_CONTINUES_IN_FOLLOWUP — this commit establishes structure; next commit completes body
-  return null;
+  const handleToggleActive = (user) => {
+    const newStatus = !user.is_active;
+    setConfirmAction({
+      user,
+      title: newStatus ? 'تفعيل المشترك' : 'حظر المشترك',
+      message: newStatus
+        ? `هل تريد تفعيل حساب "${user.networkName || user.uid}"؟`
+        : `هل تريد حظر "${user.networkName || user.uid}"؟ سيتم منعه من استخدام التطبيق فوراً.`,
+      action: async () => {
+        const result = await updateNetworkAccess({
+          uid: user.uid,
+          accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
+        });
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر تحديث حالة المستخدم'));
+          return false;
+        }
+        setUsers((prev) => prev.map((u) => (u.uid === user.uid
+          ? {
+              ...u,
+              accessStatus: newStatus ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE',
+              is_active: newStatus,
+              is_trial: false,
+              accessNeedsRepair: hasExpiryCompatibilityGap(u),
+            }
+          : u)));
+        logAdminAction({
+          action: newStatus ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK,
+          targetType: 'user',
+          targetId: user.uid,
+          targetLabel: user.networkName || user.phoneNumber || user.uid,
+        });
+        toast.success(newStatus ? 'تم تفعيل الحساب' : 'تم حظر الحساب');
+      },
+      variant: newStatus ? 'success' : 'danger',
+    });
+  };
+
+  // Handlers and main UI body continue — full decluttered implementation in next commit on this branch
+  return (
+    <div className="users-page space-y-3.5 pb-24 p-4">
+      <p className="text-muted text-sm">جاري استكمال واجهة المستخدمين المنظّفة…</p>
+    </div>
+  );
 }
