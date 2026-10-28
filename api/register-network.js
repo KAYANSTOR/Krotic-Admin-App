@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from '../server/_lib/firebaseAdmin.js';
-import { legacyAccessFields } from '../server/_lib/accessStatus.js';
+import { ACCESS_STATUSES, legacyAccessFields } from '../server/_lib/accessStatus.js';
 import { formatNetworkId, nextNetworkSequence } from '../server/_lib/networkId.js';
 import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 
@@ -129,6 +129,25 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
           ? { phone_verification_required: PHONE_VERIFICATION_REQUIRED }
           : {}),
       };
+      // Repair a missing user access snapshot only from this already-owned server record.
+      // Never infer activation when the network itself has no recognized access status.
+      const networkAccessStatus = typeof network.accessStatus === 'string'
+        ? network.accessStatus.trim().toUpperCase()
+        : '';
+      const userAccessStatus = typeof user.accessStatus === 'string'
+        ? user.accessStatus.trim().toUpperCase()
+        : '';
+      const networkExpiry = network.subscriptionEndsAt ?? network.subscription_end_date;
+      if (!ACCESS_STATUSES.includes(userAccessStatus)
+        && ACCESS_STATUSES.includes(networkAccessStatus)
+        && networkExpiry != null) {
+        Object.assign(profilePatch, {
+          accessStatus: networkAccessStatus,
+          ...legacyAccessFields(networkAccessStatus, networkExpiry),
+          ...(network.trialStartedAt != null ? { trialStartedAt: network.trialStartedAt } : {}),
+          ...(network.subscriptionEndsAt != null ? { subscriptionEndsAt: network.subscriptionEndsAt } : {}),
+        });
+      }
       if (Object.keys(profilePatch).length > 0) {
         profilePatch.updatedAtMs = Number(now);
         transaction.set(userRef, profilePatch, { merge: true });
