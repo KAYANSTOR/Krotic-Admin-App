@@ -189,71 +189,77 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      <DashWelcome
-        adminName={adminName}
-        adminInitial={adminInitial}
-        online={online}
-        lastSyncAt={lastSyncAt}
-        refreshing={loading || syncing}
-        onRefresh={refresh}
-      />
-
-      <DashAlerts
-        maintenance={maintenance}
-        appStatus={appStatus}
-        salesSyncing={!salesSnapshotsReady && Boolean(stats)}
-        realtimeError={realtimeError}
-        monthlyDataWarning={monthlyDataWarning}
-        error={error}
-        onRetry={refresh}
-      />
-
-      {stats && (
-        <>
+      <div className="dash-hero-card">
+        <DashWelcome
+          adminName={adminName}
+          adminInitial={adminInitial}
+          online={online}
+          lastSyncAt={lastSyncAt}
+          refreshing={loading || syncing}
+          onRefresh={refresh}
+        />
+        {stats && (
           <DashSummary
             stats={stats}
             balanceVisible={balanceVisible}
             onToggleBalance={() => setBalanceVisible((visible) => !visible)}
           />
-          <DashServices />
-          <DashSettlement
-            commissionDue={commissionDue}
-            commissionOutstanding={commissionOutstanding}
-            commissionSettled={commissionSettled}
-            settlementPercent={settlementPercent}
-          />
-          <RecentOperations
-            operations={recentOperations}
-            lastUpdatedAt={lastSalesUpdatedAt}
-          />
-        </>
-      )}
+        )}
+      </div>
 
-      <AggregateRepairTool
-        progress={repairProgress}
-        rebuilding={rebuildingAggregates}
-        refreshing={syncing}
-        onRequestRepair={requestRepair}
-      />
+      <div className="dashboard-content">
+        <DashAlerts
+          maintenance={maintenance}
+          appStatus={appStatus}
+          salesSyncing={!salesSnapshotsReady && Boolean(stats)}
+          realtimeError={realtimeError}
+          monthlyDataWarning={monthlyDataWarning}
+          error={error}
+          onRetry={refresh}
+        />
 
-      {!stats && !error && (
-        <div className="dash-empty" role="status">
-          <span className="dash-empty__icon" aria-hidden="true">
-            <Users className="w-6 h-6" />
-          </span>
-          <p className="dash-empty__title">لا توجد بيانات لعرضها بعد</p>
-          <p className="dash-empty__desc">
-            لم يتم العثور على مستخدمين أو مبيعات مسجّلة حتى الآن.
-          </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            <Link to="/users" className="btn btn--primary btn--sm min-h-[44px]">إدارة المستخدمين</Link>
-            <Link to="/sales" className="btn btn--secondary btn--sm min-h-[44px]">فتح المبيعات</Link>
-            <Button variant="secondary" size="sm" onClick={refresh} disabled={syncing}>
-              {syncing ? 'جارٍ التحديث' : 'تحديث البيانات'}
-            </Button>
+        {stats && (
+          <>
+            <DashServices />
+            <DashSettlement
+              commissionDue={commissionDue}
+              commissionOutstanding={commissionOutstanding}
+              commissionSettled={commissionSettled}
+              settlementPercent={settlementPercent}
+            />
+            <RecentOperations
+              operations={recentOperations}
+              lastUpdatedAt={lastSalesUpdatedAt}
+            />
+          </>
+        )}
+
+        <AggregateRepairTool
+          progress={repairProgress}
+          rebuilding={rebuildingAggregates}
+          refreshing={syncing}
+          onRequestRepair={requestRepair}
+        />
+
+        {!stats && !error && (
+          <div className="dash-empty" role="status">
+            <span className="dash-empty__icon" aria-hidden="true">
+              <Users className="w-6 h-6" />
+            </span>
+            <p className="dash-empty__title">لا توجد بيانات لعرضها بعد</p>
+            <p className="dash-empty__desc">
+              لم يتم العثور على مستخدمين أو مبيعات مسجّلة حتى الآن.
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              <Link to="/users" className="btn btn--primary btn--sm min-h-[44px]">إدارة المستخدمين</Link>
+              <Link to="/sales" className="btn btn--secondary btn--sm min-h-[44px]">فتح المبيعات</Link>
+              <Button variant="secondary" size="sm" onClick={refresh} disabled={syncing}>
+                {syncing ? 'جارٍ التحديث' : 'تحديث البيانات'}
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <ConfirmDialog
         isOpen={Boolean(repairConfirm)}
