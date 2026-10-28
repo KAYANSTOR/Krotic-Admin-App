@@ -1,36 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowRight, DollarSign, Clock3, Clock, AlertCircle, CalendarPlus, Edit, KeyRound, Ban,
-  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users, Package,
-  Trash2, ChevronDown, ChevronUp, Calendar, Receipt, Send, Sparkles,
-  ShieldCheck, ShieldAlert,
+  ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban,
+  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
+  ShieldCheck, ShieldAlert, Trash2, ChevronDown,
 } from 'lucide-react';
-
-function SaleVerificationBadge({ sale }) {
-  const verified = isServerVerifiedSale(sale);
-  if (verified) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
-        title={`معتمد عبر خادم Ingest مع توقيع HMAC ومطابقة بصمة الهاش\nHash: ${sale.payloadHash || '—'}`}
-      >
-        <ShieldCheck className="w-3 h-3 text-emerald-600" />
-        <span>معتمد خادمياً (Ingest)</span>
-      </span>
-    );
-  }
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300"
-      title="سجل بيع قديم من التطبيق غير متحقق منه خادمياً"
-    >
-      <Clock className="w-3 h-3 text-amber-600" />
-      <span>سجل قديم (غير موثّق)</span>
-    </span>
-  );
-}
 import toast from 'react-hot-toast';
+
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
 import { Card } from '../components/ui/Card';
@@ -43,291 +19,239 @@ import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import UserDevicesPanel from '../components/UserDevicesPanel';
+import MonthCard from '../components/userProfile/MonthCard';
+import UserInventorySection from '../components/userProfile/UserInventorySection';
+
 import { formatNumber, formatDate, isExpired } from '../lib/format';
-import { saleCommission, saleOutstanding, sumOutstanding, isServerVerifiedSale } from '../lib/commission';
+import { saleCommission, saleFaceValue, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
-import { useLocalQuery } from '../lib/localDb/useLocalQuery';
-import { useLocalDb } from '../lib/localDb/LocalDbContext';
-import { loadLocalBillingHistory, loadLocalUsersWithBilling } from '../lib/localDb/localData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
 import { getAppUpdateStatus } from '../lib/appVersion';
-import UserDevicesPanel from '../components/UserDevicesPanel';
-import { fetchInventorySnapshot } from '../lib/inventorySnapshot';
+import useAppRefresh from '../lib/useAppRefresh';
 
-const accessLabel = {
-  TRIAL: { text: 'تجريبي', tone: 'warning' },
-  ACTIVE_PAID: { text: 'رسمي', tone: 'success' },
-  SUSPENDED_GRACE: { text: 'موقوف', tone: 'danger' },
-  LOCKED_EXPIRED: { text: 'منتهي', tone: 'danger' },
-};
-
-function formatMonthArabic(monthKey) {
-  if (!monthKey || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) return monthKey || '';
-  const [year, month] = monthKey.split('-').map(Number);
-  const monthNames = [
-    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
-  ];
-  return `${monthNames[month - 1]} ${year}`;
-}
+import {
+  hasCustomCommission,
+  getUserDisplayName,
+  formatAppVersion,
+  getAccessStatusMeta,
+  formatMonthArabic,
+} from '../lib/users/profileHelpers';
+import { buildMonthlyBreakdown, paymentMonthKey } from '../lib/users/monthlyBreakdown';
+import { useUserProfile } from '../hooks/userProfile/useUserProfile';
 
 export default function UserProfilePage() {
   const { uid } = useParams();
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [globalConfig, setGlobalConfig] = useState(null);
-  const [history, setHistory] = useState({ sales: [], payments: [] });
-  const [historyMonth, setHistoryMonth] = useState(() => getCurrentMonthKey());
+
+  const {
+    user,
+    globalConfig,
+    allSales,
+    allPayments,
+    inventorySnapshot,
+    inventoryLoading,
+    inventoryError,
+    reloadInventory,
+    loading,
+    userLoadError,
+    historyError,
+    error,
+    refresh,
+    syncing,
+    lastSyncAt,
+    historyLoading,
+    historyAvailable,
+  } = useUserProfile(uid);
+
+  const [historyMonth, setHistoryMonth] = useState('all');
   const [selectedMonthForBilling, setSelectedMonthForBilling] = useState(null);
   const [expandedMonths, setExpandedMonths] = useState(() => new Set([getCurrentMonthKey()]));
-  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [billing, setBilling] = useState(false);
   const [authModal, setAuthModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
-  const [inventorySnapshot, setInventorySnapshot] = useState(null);
-  const [inventoryLoading, setInventoryLoading] = useState(true);
-  const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  // الملف والتاريخ المالي من القاعدة المحلية فقط.
-  const usersQuery = useLocalQuery((localDb) => loadLocalUsersWithBilling(localDb), [], { enabled: Boolean(uid) });
-  const historyQuery = useLocalQuery((localDb) => loadLocalBillingHistory(localDb, uid), [uid], { enabled: Boolean(uid) });
+  // One stable pull-to-refresh subscription, using the newest refresh callback.
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+  const stableRefresh = useCallback(() => refreshRef.current(), []);
+  useAppRefresh(stableRefresh);
 
   useEffect(() => {
-    const data = usersQuery.data;
-    if (!data) return;
-    setGlobalConfig(data.globalConfig || null);
-    const found = (data.users || []).find((item) => item.uid === uid) || null;
-    if (found) setUser(found);
-  }, [usersQuery.data, uid]);
+    if (error) toast.error('تعذر تحميل جزء من بيانات ملف العميل؛ يمكنك إعادة المحاولة.');
+  }, [error]);
 
-  useEffect(() => {
-    if (!historyQuery.data) return;
-    setHistory({
-      sales: historyQuery.data.sales || [],
-      payments: historyQuery.data.payments || [],
-    });
-  }, [historyQuery.data]);
-
-  useEffect(() => {
-    const ready = usersQuery.data || historyQuery.data;
-    if (ready) setLoading(false);
-  }, [usersQuery.data, historyQuery.data]);
-
-  // ملخص المخزون المزامَن من Android يُقرأ من وثيقة صغيرة واحدة (أعداد فقط).
-  const networkId = user?.networkId || uid;
-  useEffect(() => {
-    if (!networkId) return undefined;
-    let active = true;
-    setInventoryLoading(true);
-    fetchInventorySnapshot(networkId)
-      .then((snapshot) => {
-        if (active) setInventorySnapshot(snapshot);
-      })
-      .catch((error) => {
-        console.warn('Inventory snapshot read failed:', error);
-        if (active) setInventorySnapshot(null);
-      })
-      .finally(() => {
-        if (active) setInventoryLoading(false);
-      });
-    return () => { active = false; };
-  }, [networkId]);
-
-  const refresh = async () => {
-    await runSync({ reason: 'manual' });
-    usersQuery.refresh();
-    historyQuery.refresh();
-  };
-
-  const load = refresh;
-
-  useEffect(() => {
-    if (usersQuery.error || historyQuery.error) {
-      toast.error('تعذر تحميل ملف العميل من القاعدة المحلية');
+  const monthOptions = useMemo(() => {
+    const months = new Set([getCurrentMonthKey()]);
+    for (const sale of allSales) {
+      const month = monthKeyFromDate(sale?.createdAt);
+      if (month) months.add(month);
     }
-  }, [usersQuery.error, historyQuery.error]);
+    for (const payment of allPayments) {
+      const month = paymentMonthKey(payment);
+      if (month) months.add(month);
+    }
+    return [...months].filter(Boolean).sort((left, right) => right.localeCompare(left));
+  }, [allSales, allPayments]);
 
-  const allSales = history.sales || [];
-  const allPayments = history.payments || [];
-  const monthOptions = [...new Set([
-    getCurrentMonthKey(),
-    ...allSales.map((sale) => monthKeyFromDate(sale.createdAt)),
-    ...allPayments.map((payment) => (
-      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
-        ? payment.month
-        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
-    )),
-  ].filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  // The KPIs default to all history; the month selector changes only the KPI period.
+  const sales = useMemo(
+    () => historyMonth === 'all'
+      ? allSales
+      : allSales.filter((sale) => monthKeyFromDate(sale?.createdAt) === historyMonth),
+    [allSales, historyMonth],
+  );
+  const payments = useMemo(
+    () => historyMonth === 'all'
+      ? allPayments
+      : allPayments.filter((payment) => paymentMonthKey(payment) === historyMonth),
+    [allPayments, historyMonth],
+  );
 
-  const sales = historyMonth === 'all'
-    ? allSales
-    : allSales.filter((sale) => monthKeyFromDate(sale.createdAt) === historyMonth);
-  const payments = historyMonth === 'all'
-    ? allPayments
-    : allPayments.filter((payment) => (
-      /^\d{4}-(0[1-9]|1[0-2])$/.test(payment.month || '')
-        ? payment.month
-        : monthKeyFromDate(payment.timestamp ?? payment.createdAt)
-    ) === historyMonth);
+  const verifiedSales = useMemo(() => sales.filter(isServerVerifiedSale), [sales]);
+  const legacySales = useMemo(() => sales.filter((sale) => !isServerVerifiedSale(sale)), [sales]);
+  const verifiedCommissionDue = useMemo(
+    () => verifiedSales.reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0),
+    [verifiedSales],
+  );
+  const legacyEstimatedCommission = useMemo(
+    () => legacySales.reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0),
+    [legacySales],
+  );
+  const verifiedOutstanding = useMemo(
+    () => verifiedSales.reduce((sum, sale) => sum + saleOutstanding(sale), 0),
+    [verifiedSales],
+  );
+  const totalPaid = useMemo(
+    () => payments.reduce((sum, payment) => sum + (Number(payment?.amount) || 0), 0),
+    [payments],
+  );
+  const totalSales = useMemo(
+    () => sales.reduce((sum, sale) => sum + saleFaceValue(sale), 0),
+    [sales],
+  );
 
-  const verifiedSales = sales.filter(isServerVerifiedSale);
-  const legacySales = sales.filter((s) => !isServerVerifiedSale(s));
-  const verifiedCommissionDue = verifiedSales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
-  const legacyEstimatedCommission = legacySales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
-  const verifiedOutstanding = verifiedSales.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
+  const monthlyBreakdown = useMemo(
+    () => buildMonthlyBreakdown(allSales, allPayments, monthOptions),
+    [allSales, allPayments, monthOptions],
+  );
 
-  const commissionDue = sales.reduce((sum, sale) => sum + (saleCommission(sale) || 0), 0);
-  const totalPaid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-  const outstanding = sumOutstanding(sales);
-  const totalSales = sales.reduce((sum, sale) => sum + (Number(sale.faceValue) || 0), 0);
-
-  // تفصيل الأشهر والعمولات لكل شهر مع إمكانية التوسيع وعرض العمليات مع فصل السجلات القديمة
-  const monthlyBreakdown = useMemo(() => {
-    const buckets = {};
-    monthOptions.forEach((mKey) => {
-      if (mKey === 'all') return;
-      buckets[mKey] = {
-        month: mKey,
-        sales: [],
-        payments: [],
-        totalSales: 0,
-        verifiedSalesTotal: 0,
-        legacySalesTotal: 0,
-        verifiedCount: 0,
-        legacyCount: 0,
-        verifiedCommissionDue: 0,
-        legacyEstimatedCommission: 0,
-        commissionDue: 0,
-        totalPaid: 0,
-        verifiedOutstanding: 0,
-        outstanding: 0,
-      };
-    });
-
-    allSales.forEach((sale) => {
-      const mKey = monthKeyFromDate(sale.createdAt);
-      if (!mKey) return;
-      if (!buckets[mKey]) {
-        buckets[mKey] = {
-          month: mKey,
-          sales: [],
-          payments: [],
-          totalSales: 0,
-          verifiedSalesTotal: 0,
-          legacySalesTotal: 0,
-          verifiedCount: 0,
-          legacyCount: 0,
-          verifiedCommissionDue: 0,
-          legacyEstimatedCommission: 0,
-          commissionDue: 0,
-          totalPaid: 0,
-          verifiedOutstanding: 0,
-          outstanding: 0,
-        };
-      }
-      buckets[mKey].sales.push(sale);
-      const faceVal = Number(sale.faceValue) || 0;
-      buckets[mKey].totalSales += faceVal;
-
-      const comm = saleCommission(sale) || 0;
-      const isVerified = isServerVerifiedSale(sale);
-      if (isVerified) {
-        buckets[mKey].verifiedCount += 1;
-        buckets[mKey].verifiedSalesTotal += faceVal;
-        buckets[mKey].verifiedCommissionDue += comm;
-        buckets[mKey].verifiedOutstanding += (saleOutstanding(sale) ?? comm);
-      } else {
-        buckets[mKey].legacyCount += 1;
-        buckets[mKey].legacySalesTotal += faceVal;
-        buckets[mKey].legacyEstimatedCommission += comm;
-      }
-      // العمولات المستحقة المعتمدة خادمياً فقط
-      buckets[mKey].commissionDue = buckets[mKey].verifiedCommissionDue;
-      buckets[mKey].outstanding = buckets[mKey].verifiedOutstanding;
-    });
-
-    allPayments.forEach((pmt) => {
-      const mKey = /^\d{4}-(0[1-9]|1[0-2])$/.test(pmt.month || '')
-        ? pmt.month
-        : monthKeyFromDate(pmt.timestamp ?? pmt.createdAt);
-      if (!mKey) return;
-      if (!buckets[mKey]) {
-        buckets[mKey] = {
-          month: mKey,
-          sales: [],
-          payments: [],
-          totalSales: 0,
-          verifiedSalesTotal: 0,
-          legacySalesTotal: 0,
-          verifiedCount: 0,
-          legacyCount: 0,
-          verifiedCommissionDue: 0,
-          legacyEstimatedCommission: 0,
-          commissionDue: 0,
-          totalPaid: 0,
-          verifiedOutstanding: 0,
-          outstanding: 0,
-        };
-      }
-      buckets[mKey].payments.push(pmt);
-      buckets[mKey].totalPaid += Number(pmt.amount) || 0;
-    });
-
-    return Object.values(buckets).sort((a, b) => b.month.localeCompare(a.month));
-  }, [allSales, allPayments, monthOptions]);
-
-  const toggleMonthExpand = (mKey) => {
-    setExpandedMonths((prev) => {
-      const next = new Set(prev);
-      if (next.has(mKey)) next.delete(mKey);
-      else next.add(mKey);
+  const toggleMonthExpand = useCallback((monthKey) => {
+    setExpandedMonths((previous) => {
+      const next = new Set(previous);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
       return next;
     });
-  };
+  }, []);
 
-  const handleOpenBillingForMonth = (mKey) => {
-    setSelectedMonthForBilling(mKey);
+  const openBillingForMonth = useCallback((monthKey) => {
+    setSelectedMonthForBilling(monthKey);
     setBilling(true);
-  };
+  }, []);
 
-  const applyAccess = (patch, { successMessage, auditAction, details }) => {
-    setConfirmAction({
-      title: 'تأكيد الإجراء',
-      message: 'سيُنفَّذ هذا الإجراء على الخادم ويُسجَّل في سجل العمليات. هل أنت متأكد؟',
-      variant: 'danger',
+  const runConfirmed = useCallback((action) => {
+    setConfirmAction(action);
+  }, []);
+
+  const applyAccess = useCallback((patch, {
+    title,
+    message,
+    successMessage,
+    auditAction,
+    details,
+    variant = 'primary',
+  }) => {
+    runConfirmed({
+      title,
+      message,
+      variant,
       action: async () => {
         const result = await updateNetworkAccess({ uid, ...patch });
-        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر تنفيذ الإجراء')); return false; }
-        await logAdminAction({ action: auditAction, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid, details });
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر تنفيذ الإجراء'));
+          return false;
+        }
+        await logAdminAction({
+          action: auditAction,
+          targetType: 'user',
+          targetId: uid,
+          targetLabel: getUserDisplayName(user, uid),
+          details,
+        }).catch(() => {});
         toast.success(successMessage);
-        load({ force: true });
+        await refresh();
+        return true;
       },
     });
-  };
+  }, [runConfirmed, uid, user, refresh]);
 
-  const handleRenew = () => {
-    setConfirmAction({
-      title: 'تجديد سريع',
-      message: 'سيتم تمديد الوصول 30 يوماً عبر الخادم. هل أنت متأكد؟',
+  const handleMakeOfficial = useCallback(() => {
+    const targetName = getUserDisplayName(user, uid);
+    applyAccess(
+      { accessStatus: 'ACTIVE_PAID' },
+      {
+        title: 'تحويل الحساب إلى رسمي',
+        message: `تحويل الحساب «${targetName}» من تجريبي إلى رسمي دائم؟`,
+        successMessage: 'تم تحويل الحساب إلى رسمي',
+        auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL,
+        variant: 'primary',
+      },
+    );
+  }, [applyAccess, user, uid]);
+
+  const handleToggleAccess = useCallback(() => {
+    const targetName = getUserDisplayName(user, uid);
+    const block = user?.is_active !== false;
+    applyAccess(
+      { accessStatus: block ? 'SUSPENDED_GRACE' : 'ACTIVE_PAID' },
+      {
+        title: block ? 'حظر المشترك' : 'إلغاء حظر المشترك',
+        message: block
+          ? `هل تريد حظر «${targetName}»؟ سيُمنع من استخدام التطبيق فوراً.`
+          : `هل تريد إلغاء حظر «${targetName}» وإعادة تفعيل الوصول؟`,
+        successMessage: block ? 'تم حظر الحساب' : 'تم إلغاء الحظر وإعادة التفعيل',
+        auditAction: block ? AUDIT_ACTIONS.USER_BLOCK : AUDIT_ACTIONS.USER_ACTIVATE,
+        variant: block ? 'danger' : 'success',
+      },
+    );
+  }, [applyAccess, user, uid]);
+
+  const handleRenew = useCallback(() => {
+    const targetName = getUserDisplayName(user, uid);
+    runConfirmed({
+      title: 'تجديد اشتراك سريع',
+      message: `سيتم تمديد صلاحية وصول «${targetName}» لمدة 30 يوماً إضافية عبر الخادم. هل تريد المتابعة؟`,
       variant: 'success',
       action: async () => {
         const result = await renewNetwork(uid, 30);
-        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر التجديد')); return false; }
-        await logAdminAction({ action: AUDIT_ACTIONS.USER_RENEW, targetType: 'user', targetId: uid, targetLabel: user?.networkName || uid });
-        toast.success('تم التجديد بنجاح');
-        load({ force: true });
+        if (!result.ok) {
+          toast.error(adminApiError(result.error, 'تعذر تجديد الاشتراك'));
+          return false;
+        }
+        await logAdminAction({
+          action: AUDIT_ACTIONS.USER_RENEW,
+          targetType: 'user',
+          targetId: uid,
+          targetLabel: targetName,
+        }).catch(() => {});
+        toast.success('تم تجديد الاشتراك بنجاح لمدة 30 يوماً');
+        await refresh();
+        return true;
       },
     });
-  };
+  }, [runConfirmed, uid, user, refresh]);
 
-  const handleDelete = () => {
-    const targetName = user?.networkName || user?.network_name || user?.phone || uid;
-    setConfirmAction({
+  const handleDelete = useCallback(() => {
+    const targetName = getUserDisplayName(user, uid);
+    runConfirmed({
       title: 'حذف حساب المشترك والشبكة',
-      message: `هل أنت متأكد من حذف الحساب «${targetName}»؟ سيتم حذف جميع بيانات المشترك والشبكة وسجلاتها نهائياً ولا يمكن التراجع عن هذا الإجراء.`,
+      message: `هل تريد حذف حساب «${targetName}» نهائياً؟ سيُحذف الحساب والشبكة وسجلاتهما، ولا يمكن التراجع عن هذا الإجراء.`,
       variant: 'danger',
       action: async () => {
         const result = await deleteNetworkAccount(uid);
@@ -347,35 +271,25 @@ export default function UserProfilePage() {
         return true;
       },
     });
-  };
+  }, [runConfirmed, user, uid, navigate]);
 
-  const handleManualPhoneVerify = () => {
+  const handleManualPhoneVerify = useCallback(() => {
     if (!user) return;
     const isVerified = isUserPhoneVerified(user);
-    const targetName = user.networkName || user.phoneNumber || user.phone || uid;
+    const targetName = getUserDisplayName(user, uid);
     const phoneDisplay = user.phoneNumber || user.phone || 'غير مسجّل';
 
     if (!isVerified) {
-      setConfirmAction({
-        title: 'تفعيل التحقق من الهاتف يدوياً (للدعم الفني)',
-        message: `هل تريد تفعيل واعتماد حساب «${targetName}» برقم الهاتف (${phoneDisplay}) يدوياً؟
-
-ملاحظة للدعم الفني: يُستخدم هذا الإجراء لمساعدة المشتركين في حال تعذر وصول كود التحقق SMS بسبب مشاكل الشبكة أو تغطية المشغل. سيتم اعتماد الحساب فوراً كـ (phone_verified: true).`,
+      runConfirmed({
+        title: 'توثيق الهاتف يدوياً',
+        message: `هل تريد توثيق رقم هاتف «${targetName}» (${phoneDisplay}) يدوياً؟ يُستخدم هذا الإجراء للدعم الفني فقط عند تعذر وصول رمز التحقق.`,
         variant: 'success',
         action: async () => {
           const result = await updateNetworkAccess({ uid, phone_verified: true });
           if (!result.ok) {
-            toast.error(adminApiError(result.error, 'تعذر تفعيل التحقق من الهاتف'));
+            toast.error(adminApiError(result.error, 'تعذر توثيق الهاتف'));
             return false;
           }
-          setUser((prev) => (prev ? {
-            ...prev,
-            phone_verified: true,
-            phoneVerified: true,
-            phone_verified_at: new Date(),
-            verified_by_admin: true,
-            phone_verified_manual: true,
-          } : prev));
           await logAdminAction({
             action: AUDIT_ACTIONS.USER_PHONE_VERIFY_MANUAL,
             targetType: 'user',
@@ -383,15 +297,15 @@ export default function UserProfilePage() {
             targetLabel: targetName,
             details: { phone: phoneDisplay, manual: true, reason: 'دعم فني - تفعيل يدوي' },
           }).catch(() => {});
-          toast.success(`تم تفعيل وتوثيق حساب «${targetName}» برقم الهاتف بنجاح`);
-          load({ force: true });
+          toast.success(`تم توثيق رقم هاتف «${targetName}»`);
+          await refresh();
           return true;
         },
       });
     } else {
-      setConfirmAction({
+      runConfirmed({
         title: 'إلغاء توثيق الهاتف',
-        message: `حساب «${targetName}» مفعّل وموثّق بالهاتف حالياً (${phoneDisplay}). هل تريد إلغاء حالة التوثيق؟ (phone_verified: false)`,
+        message: `رقم هاتف «${targetName}» (${phoneDisplay}) موثّق حالياً. هل تريد إلغاء التوثيق؟`,
         variant: 'danger',
         action: async () => {
           const result = await updateNetworkAccess({ uid, phone_verified: false });
@@ -399,12 +313,6 @@ export default function UserProfilePage() {
             toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
             return false;
           }
-          setUser((prev) => (prev ? {
-            ...prev,
-            phone_verified: false,
-            phoneVerified: false,
-            phone_verified_manual: false,
-          } : prev));
           await logAdminAction({
             action: AUDIT_ACTIONS.USER_PHONE_UNVERIFY,
             targetType: 'user',
@@ -412,13 +320,43 @@ export default function UserProfilePage() {
             targetLabel: targetName,
             details: { phone: phoneDisplay },
           }).catch(() => {});
-          toast.success('تم إلغاء توثيق الهاتف للحساب');
-          load({ force: true });
+          toast.success('تم إلغاء توثيق الهاتف');
+          await refresh();
           return true;
         },
       });
     }
-  };
+  }, [user, uid, runConfirmed, refresh]);
+
+  const handleSaveEdit = useCallback(async (targetUid, updates) => {
+    const result = await updateNetworkAccess({ uid: targetUid, ...updates });
+    if (!result.ok) {
+      toast.error(adminApiError(result.error, 'تعذر حفظ التعديلات'));
+      return false;
+    }
+    toast.success('تم حفظ التعديلات بنجاح');
+    setEditing(false);
+    await refresh();
+    return true;
+  }, [refresh]);
+
+  const handleBillingClose = useCallback(async () => {
+    setBilling(false);
+    setSelectedMonthForBilling(null);
+    await refresh();
+  }, [refresh]);
+
+  const status = getAccessStatusMeta(user);
+  const expired = isExpired(user?.subscription_end_date);
+  const updateStatus = getAppUpdateStatus(user || {}, globalConfig);
+  const updateLabel = updateStatus === 'current'
+    ? 'محدّث'
+    : updateStatus === 'outdated'
+      ? 'إصدار قديم'
+      : 'لم يرسل بيانات الإصدار';
+  const isVerifiedPhone = isUserPhoneVerified(user || {});
+  const targetName = getUserDisplayName(user, uid);
+  const errorMessage = error?.message || 'تعذر تحميل بيانات هذا الحساب من القاعدة المحلية.';
 
   if (loading) {
     return (
@@ -431,46 +369,66 @@ export default function UserProfilePage() {
 
   if (!user) {
     return (
-      <div className="users-page">
-        <PageHero icon={Users} title="ملف العميل" subtitle="لم يتم العثور على هذا الحساب." />
-        <Card><Link to="/users" className="btn btn--secondary">رجوع إلى المستخدمين</Link></Card>
+      <div className="users-page space-y-3">
+        <PageHero
+          icon={Users}
+          title="ملف العميل"
+          subtitle={userLoadError
+            ? 'تعذر تحميل بيانات الحساب.'
+            : 'لم يتم العثور على هذا الحساب.'}
+          actions={<Button variant="secondary" icon={RefreshCw} onClick={refresh}>إعادة المحاولة</Button>}
+        />
+        {error && (
+          <div className="users-error" role="alert" aria-live="assertive">
+            {errorMessage}
+            <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh} className="ms-2">إعادة المحاولة</Button>
+          </div>
+        )}
+        <Card>
+          <Link to="/users" className="btn btn--secondary min-h-[44px] inline-flex items-center">رجوع إلى المستخدمين</Link>
+        </Card>
       </div>
     );
   }
 
-  const status = accessLabel[user.accessStatus] || (user.is_trial ? accessLabel.TRIAL : accessLabel.ACTIVE_PAID);
-  const expired = isExpired(user.subscription_end_date);
-  const updateStatus = getAppUpdateStatus(user, globalConfig);
-  const updateLabel = updateStatus === 'current' ? 'محدّث' : updateStatus === 'outdated' ? 'إصدار قديم' : 'لم يرسل بيانات الإصدار';
-
   return (
-    <div className="users-page pb-12">
+    <div className="users-page pb-12 space-y-3">
       <PageHero
         icon={Users}
         kicker="ملف العميل"
-        title={user.networkName || uid}
-        subtitle={`${user.phoneNumber || '—'} • ${user.networkId || uid}`}
-        meta={`${sales.length} عملية بيع • ${payments.length} دفعة • ${historyMonth === 'all' ? 'كل الأشهر' : historyMonth}`}
+        title={targetName}
+        subtitle={`${user.phoneNumber || user.phone || '—'} • ${user.networkId || uid}`}
+        meta={`${sales.length} عملية بيع • ${payments.length} دفعة • ${historyMonth === 'all' ? 'كل الأشهر' : formatMonthArabic(historyMonth)}`}
         actions={
           <>
-            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={loading || syncing} onRefresh={refresh} />
+            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={syncing} onRefresh={refresh} />
             <Button variant="secondary" icon={ArrowRight} onClick={() => navigate('/users')}>رجوع</Button>
           </>
         }
       />
 
-      {(usersQuery.error || historyQuery.error) && (
-        <div className="users-error users-error--warning mb-4" role="status" aria-live="polite">
-          تعذّر قراءة بيانات هذا الحساب من القاعدة المحلية؛ أعد المحاولة أو زامن التغييرات.
+      {error && (
+        <div className="users-error users-error--warning mb-2" role="alert" aria-live="assertive">
+          {historyError
+            ? 'تعذر تحميل السجل المالي لهذا العميل. أعد المحاولة؛ ستبقى تفاصيل الحساب متاحة.'
+            : errorMessage}
+          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh} className="ms-2" disabled={syncing}>
+            إعادة المحاولة
+          </Button>
         </div>
       )}
 
-      {/* بطاقة الحساب والإجراءات السريعة */}
+      {historyLoading && !historyAvailable && !historyError && (
+        <div className="text-xs text-muted py-2" role="status" aria-live="polite">
+          جارٍ تحميل السجل المالي لهذا العميل…
+        </div>
+      )}
+
       <Section
         eyebrow="الحساب"
         title="تفاصيل وإجراءات سريعة"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge tone={status.tone}>{status.text}</Badge>
             {user.is_active === false && <Badge tone="danger">محظور</Badge>}
           </div>
@@ -480,10 +438,10 @@ export default function UserProfilePage() {
           <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
             <div className="user-card__meta-item">
               <dt>النسبة المضبوطة حالياً</dt>
-              <dd><span className="num font-bold">{user.commission_rate != null && user.commission_rate !== '' ? `${user.commission_rate}% (خاصة)` : 'عامة'}</span></dd>
+              <dd><span className="num font-bold">{hasCustomCommission(user) ? `${user.commission_rate}% (خاصة)` : 'عامة'}</span></dd>
             </div>
             <div className="user-card__meta-item">
-              <dt>تاريخ التصفية</dt>
+              <dt>تاريخ الانتهاء</dt>
               <dd className={expired ? 'text-danger font-bold' : 'font-semibold'}>{formatDate(user.subscription_end_date)}</dd>
             </div>
             <div className="user-card__meta-item">
@@ -492,467 +450,251 @@ export default function UserProfilePage() {
             </div>
             <div className="user-card__meta-item">
               <dt>رقم الهاتف</dt>
-              <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || '—'}</dd>
+              <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || user.phone || '—'}</dd>
             </div>
             <div className="user-card__meta-item">
               <dt>حالة التحقق بالهاتف</dt>
               <dd>
-                {isUserPhoneVerified(user) ? (
+                {isVerifiedPhone ? (
                   <span className="inline-flex items-center gap-1 font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>مفعّل برقم الهاتف (true)</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+                    <span>موثّق برقم الهاتف</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 text-xs">
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                    <span>غير مفعّل (false)</span>
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
+                    <span>غير موثّق</span>
                   </span>
                 )}
               </dd>
             </div>
           </dl>
 
-          <div className="user-card__actions" style={{ marginTop: '1rem' }}>
-            <button
-              type="button"
-              onClick={() => { setSelectedMonthForBilling(getCurrentMonthKey()); setBilling(true); }}
-              className="row-action row-action--success"
-              aria-label="الفوترة والتسويات"
-            >
-              <DollarSign className="w-4 h-4 text-emerald-600" />
+          <div className="user-card__actions mt-4">
+            <button type="button" onClick={() => openBillingForMonth(getCurrentMonthKey())} className="row-action row-action--success min-h-[44px]" aria-label="الفوترة والتسويات">
+              <DollarSign className="w-4 h-4 text-emerald-600" aria-hidden="true" />
               <span className="text-xs font-bold">تسوية وعمولة</span>
             </button>
-            <button type="button" onClick={handleRenew} className="row-action row-action--brand" title="تجديد" aria-label="تجديد الاشتراك">
-              <CalendarPlus className="w-4 h-4 text-brand" />
+            <button type="button" onClick={handleRenew} className="row-action row-action--brand min-h-[44px]">
+              <CalendarPlus className="w-4 h-4 text-brand" aria-hidden="true" />
               <span>تجديد</span>
             </button>
-            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral" title="تعديل" aria-label="تعديل إعدادات المستخدم">
-              <Edit className="w-4 h-4" />
+            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral min-h-[44px]">
+              <Edit className="w-4 h-4" aria-hidden="true" />
               <span>تعديل</span>
             </button>
-            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral" title="بيانات الدخول" aria-label="بيانات الدخول">
-              <KeyRound className="w-4 h-4" />
+            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral min-h-[44px]">
+              <KeyRound className="w-4 h-4" aria-hidden="true" />
               <span>الدخول</span>
             </button>
-
-            {/* التفعيل اليدوي برقم الهاتف للدعم الفني */}
-            <button
-              type="button"
-              onClick={handleManualPhoneVerify}
-              className={`row-action ${isUserPhoneVerified(user) ? 'row-action--success' : 'row-action--brand-soft'}`}
-              title={isUserPhoneVerified(user) ? 'إلغاء توثيق الهاتف' : 'تفعيل الهاتف يدوياً للدعم الفني'}
-              aria-label="تفعيل الهاتف يدوياً"
-            >
-              {isUserPhoneVerified(user) ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
-              <span>{isUserPhoneVerified(user) ? 'الهاتف مفعّل' : 'تفعيل الهاتف'}</span>
-            </button>
-
-            {user.is_trial && (
-              <button
-                onClick={() => applyAccess({ accessStatus: 'ACTIVE_PAID' }, { successMessage: 'تم تحويل المستخدم إلى رسمي', auditAction: AUDIT_ACTIONS.USER_MAKE_OFFICIAL })}
-                type="button"
-                className="row-action row-action--brand-soft"
-                title="تحويل لرسمي"
-                aria-label="تحويل المستخدم إلى رسمي"
-              >
-                <CheckCircle className="w-4 h-4 text-brand" />
-                <span>رسمي</span>
-              </button>
-            )}
-            <button
-              onClick={() => applyAccess(
-                { accessStatus: user.is_active === false ? 'ACTIVE_PAID' : 'SUSPENDED_GRACE' },
-                { successMessage: user.is_active === false ? 'تم إلغاء الحظر' : 'تم الحظر', auditAction: user.is_active === false ? AUDIT_ACTIONS.USER_ACTIVATE : AUDIT_ACTIONS.USER_BLOCK },
-              )}
-              type="button"
-              className={`row-action ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
-              title={user.is_active === false ? 'إلغاء الحظر' : 'حظر'}
-              aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
-            >
-              {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-              <span>{user.is_active === false ? "رفع الحظر" : "حظر"}</span>
-            </button>
-            <button
-              onClick={handleDelete}
-              type="button"
-              className="row-action row-action--danger"
-              title="حذف الحساب نهائياً"
-              aria-label="حذف الحساب نهائياً"
-            >
-              <Trash2 className="w-4 h-4 text-danger" />
-              <span>حذف الحساب</span>
-            </button>
           </div>
+
+          <details className="mt-3 border-t border-line/60 pt-3">
+            <summary className="flex items-center justify-between gap-2 cursor-pointer rounded-xl px-3 py-2 min-h-[44px] font-bold text-sm text-ink hover:bg-surface-sunken">
+              <span>إجراءات إضافية</span>
+              <ChevronDown className="w-4 h-4 text-muted" aria-hidden="true" />
+            </summary>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+              <button
+                type="button"
+                onClick={handleManualPhoneVerify}
+                className={`row-action min-h-[44px] ${isVerifiedPhone ? 'row-action--success' : 'row-action--brand-soft'}`}
+                title={isVerifiedPhone ? 'إلغاء توثيق الهاتف' : 'توثيق الهاتف يدوياً للدعم الفني'}
+              >
+                {isVerifiedPhone ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
+                <span>{isVerifiedPhone ? 'إلغاء التوثيق' : 'توثيق الهاتف'}</span>
+              </button>
+
+              {user.is_trial && (
+                <button type="button" onClick={handleMakeOfficial} className="row-action row-action--brand-soft min-h-[44px]">
+                  <CheckCircle className="w-4 h-4 text-brand" aria-hidden="true" />
+                  <span>تحويل إلى رسمي</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleToggleAccess}
+                className={`row-action min-h-[44px] ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
+                aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
+              >
+                {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                <span>{user.is_active === false ? 'رفع الحظر' : 'حظر'}</span>
+              </button>
+
+              <button type="button" onClick={handleDelete} className="row-action row-action--danger min-h-[44px]" title="حذف الحساب نهائياً">
+                <Trash2 className="w-4 h-4 text-danger" aria-hidden="true" />
+                <span>حذف الحساب</span>
+              </button>
+            </div>
+          </details>
         </Card>
       </Section>
 
       <Section eyebrow="التطبيق والجهاز" title="الإصدار المثبت وآخر ظهور">
         <Card>
           <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
-            <div className="user-card__meta-item"><dt>الإصدار المثبّت</dt><dd dir="ltr" className="font-mono">{user.app_version || user.appVersion || 'غير مُبلّغ'}</dd></div>
-            <div className="user-card__meta-item"><dt>versionCode المثبّت</dt><dd dir="ltr" className="font-mono">{user.app_version_code ?? 'غير مُبلّغ'}</dd></div>
-            <div className="user-card__meta-item"><dt>آخر إصدار منشور</dt><dd dir="ltr" className="font-mono">{globalConfig?.app_latest_version || 'غير محدد'}{globalConfig?.app_latest_version_code ? ` (${globalConfig.app_latest_version_code})` : ''}</dd></div>
-            <div className="user-card__meta-item"><dt>حالة التحديث</dt><dd><Badge tone={updateStatus === 'current' ? 'success' : updateStatus === 'outdated' ? 'warning' : 'neutral'}>{updateLabel}</Badge></dd></div>
-            <div className="user-card__meta-item"><dt>آخر ظهور</dt><dd>{formatDate(user.last_seen_at || user.lastSeenAt, { withTime: true })}</dd></div>
-            <div className="user-card__meta-item"><dt>المنصة</dt><dd>{user.platform || 'غير مُبلّغ'}</dd></div>
-            <div className="user-card__meta-item"><dt>حالة الترخيص/الوصول</dt><dd>{status.text}{user.is_active === false ? ' — موقوف' : expired ? ' — منتهي' : ''}</dd></div>
+            <div className="user-card__meta-item">
+              <dt>الإصدار المثبّت</dt>
+              <dd dir="ltr" className="font-mono">{formatAppVersion(user.app_version ?? user.appVersion)}</dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>versionCode المثبّت</dt>
+              <dd dir="ltr" className="font-mono">{formatAppVersion(user.app_version_code)}</dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>آخر إصدار منشور</dt>
+              <dd dir="ltr" className="font-mono">
+                {globalConfig?.app_latest_version || 'غير محدد'}
+                {globalConfig?.app_latest_version_code != null && globalConfig.app_latest_version_code !== ''
+                  ? ` (${formatAppVersion(globalConfig.app_latest_version_code)})`
+                  : ''}
+              </dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>حالة التحديث</dt>
+              <dd>
+                <Badge tone={updateStatus === 'current' ? 'success' : updateStatus === 'outdated' ? 'warning' : 'neutral'}>
+                  {updateLabel}
+                </Badge>
+              </dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>آخر ظهور</dt>
+              <dd>{formatDate(user.last_seen_at || user.lastSeenAt, { withTime: true })}</dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>المنصة</dt>
+              <dd>{user.platform || 'غير مُبلّغ'}</dd>
+            </div>
+            <div className="user-card__meta-item">
+              <dt>حالة الترخيص/الوصول</dt>
+              <dd>{status.text}{user.is_active === false ? ' — موقوف' : expired ? ' — منتهي' : ''}</dd>
+            </div>
           </dl>
-          <p className="text-xs text-muted mt-4">تعكس هذه البيانات آخر تقرير ناجح من التطبيق، وليست فحصاً لحظياً للجهاز.</p>
+          <p className="text-xs text-muted mt-4">
+            تعكس هذه البيانات آخر تقرير ناجح من التطبيق، وليست فحصاً لحظياً للجهاز.
+          </p>
         </Card>
-        <UserDevicesPanel userId={uid} userLabel={user.networkName || uid} />
+        <UserDevicesPanel userId={uid} userLabel={targetName} />
       </Section>
 
-      {/* المؤشرات المالية العامة للعميل */}
-      <div className="grid-kpi my-4">
-        <StatCard title="إجمالي المبيعات" value={formatNumber(totalSales)} icon={DollarSign} tone="brand" subtitle={historyMonth === "all" ? "كل الأشهر • ريال يمني" : historyMonth} />
-        <StatCard
-          title="العمولة المعتمدة خادمياً"
-          value={formatNumber(verifiedCommissionDue)}
-          icon={Wallet}
-          tone="warning"
-          subtitle={legacyEstimatedCommission > 0 ? `+ ${formatNumber(legacyEstimatedCommission)} ر.ي قديمة للمراجعة` : (historyMonth === "all" ? "كل العمولات المعتمدة" : "عمولة الشهر المعتمدة")}
-        />
-        <StatCard
-          title="المتبقي غير المسوّى"
-          value={formatNumber(verifiedOutstanding)}
-          icon={Wallet}
-          tone="success"
-          subtitle="عمولة معتمدة خادمياً"
-        />
-        <StatCard title="المسدّد" value={formatNumber(totalPaid)} icon={DollarSign} tone="neutral" subtitle={historyMonth === "all" ? "إجمالي الدفعات" : "دفعات الشهر المحدد"} />
-      </div>
+      <Section eyebrow="المؤشرات المالية" title="ملخص المبيعات والعمولات">
+        <div className="flex items-center justify-between my-2 flex-wrap gap-2">
+          <p className="text-xs text-muted">تُعرض جميع الفترات افتراضياً، ويمكن اختيار شهر محدد.</p>
+          <label className="flex items-center gap-2 text-xs font-semibold text-muted">
+            الفترة
+            <select
+              value={historyMonth}
+              onChange={(event) => setHistoryMonth(event.target.value)}
+              className="input-field py-2 text-xs min-h-[44px]"
+              aria-label="فترة المؤشرات المالية"
+            >
+              <option value="all">كل الأشهر</option>
+              {monthOptions.map((month) => (
+                <option key={month} value={month}>{formatMonthArabic(month)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-      <Section
-        eyebrow="المخزون المزامَن"
-        title="الكروت لدى العميل"
-        description="ملخص أعداد المخزون المزامَن من تطبيق Android (متاح/محجوز/مباع) بدون أرقام الكروت السرية. تفاصيل الأرقام تبقى محلية في Android ولا تُرفع."
-      >
         <div className="grid-kpi">
           <StatCard
-            title="الكروت المباعة (سجلات البيع)"
-            value={formatNumber(allSales.length)}
-            icon={Package}
+            title={historyMonth === 'all' ? 'إجمالي المبيعات' : 'مبيعات الشهر المحدد'}
+            value={formatNumber(totalSales)}
+            icon={DollarSign}
             tone="brand"
-            subtitle="عدد سجلات البيع المتاحة لكل الأشهر"
+            subtitle={historyMonth === 'all' ? 'كل الأشهر • ريال يمني' : formatMonthArabic(historyMonth)}
           />
           <StatCard
-            title="الكروت غير المباعة"
-            value={inventoryLoading
-              ? '...'
-              : (inventorySnapshot ? formatNumber(inventorySnapshot.totalAvailableCards) : 'غير متاح (بانتظار المزامنة)')}
-            icon={Package}
+            title="العمولة المعتمدة خادمياً"
+            value={formatNumber(verifiedCommissionDue)}
+            icon={Wallet}
+            tone="warning"
+            subtitle={legacyEstimatedCommission > 0
+              ? `+ ${formatNumber(legacyEstimatedCommission)} ر.ي قديمة للمراجعة`
+              : historyMonth === 'all' ? 'كل العمولات المعتمدة' : 'العمولة المعتمدة لهذا الشهر'}
+          />
+          <StatCard
+            title="المتبقي غير المسوّى"
+            value={formatNumber(verifiedOutstanding)}
+            icon={Wallet}
+            tone="success"
+            subtitle="من سجلات المبيعات المعتمدة فقط"
+          />
+          <StatCard
+            title="الدفعات المسجلة"
+            value={formatNumber(totalPaid)}
+            icon={DollarSign}
             tone="neutral"
-            subtitle={inventorySnapshot
-              ? 'أعداد متاحة الآن من آخر مزامنة'
-              : 'لم تصل وثيقة مخزون من تطبيق Android بعد'}
+            subtitle={historyMonth === 'all' ? 'إجمالي الدفعات في كل الأشهر' : `دفعات ${formatMonthArabic(historyMonth)}`}
           />
         </div>
 
-        {inventorySnapshot ? (
-          <div className="grid-kpi" style={{ marginTop: '0.75rem' }}>
-            <StatCard title="الكروت المتاحة" value={formatNumber(inventorySnapshot.totalAvailableCards)} icon={Package} tone="success" />
-            <StatCard title="الكروت المحجوزة" value={formatNumber(inventorySnapshot.totalReservedCards)} icon={Package} tone="warning" />
-            <StatCard title="الكروت المباعة محلياً" value={formatNumber(inventorySnapshot.totalSoldCards)} icon={Package} tone="brand" />
-            <StatCard title="الكروت التالفة" value={formatNumber(inventorySnapshot.totalInvalidCards)} icon={Package} tone="danger" />
-          </div>
-        ) : null}
-
-        <p className="text-xs text-muted" style={{ marginTop: '0.5rem' }}>
-          {inventorySnapshot
-            ? `آخر مزامنة للمخزون: ${formatDate(inventorySnapshot.generatedAtMs || inventorySnapshot.updatedAtMs, { withTime: true })} • المراجعة ${formatNumber(inventorySnapshot.inventoryRevision)}`
-            : 'لا تتوفر وثيقة مخزون بعد؛ ستظهر الأعداد هنا بعد أول مزامنة ناجحة من تطبيق Android.'}
-        </p>
-
-        {inventorySnapshot && inventorySnapshot.breakdown.length > 0 ? (
-          <div className="overflow-x-auto mt-3">
-            <table className="w-full min-w-[520px] text-right text-sm">
-              <thead>
-                <tr className="border-b border-stone-200 text-stone-600">
-                  <th className="px-3 py-3 font-bold">الفئة</th>
-                  <th className="px-3 py-3 font-bold">العملة</th>
-                  <th className="px-3 py-3 font-bold">المتاح</th>
-                  <th className="px-3 py-3 font-bold">المحجوز</th>
-                  <th className="px-3 py-3 font-bold">المباع</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventorySnapshot.breakdown.map((row, index) => (
-                  <tr key={`${row.catalogId}-${row.denomination}-${row.currency}-${index}`} className="border-b border-stone-100 last:border-0">
-                    <td className="px-3 py-3 font-semibold text-stone-800 tabular-nums">{formatNumber(row.denomination)}</td>
-                    <td className="px-3 py-3">{row.currency || '—'}</td>
-                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.availableCount)}</td>
-                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.reservedCount)}</td>
-                    <td className="px-3 py-3 tabular-nums">{formatNumber(row.soldCount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
+        {historyMonth === 'all' && legacyEstimatedCommission > 0 && (
+          <p className="text-xs leading-5 text-amber-800 mt-2" role="note">
+            العمولات التقديرية للسجلات القديمة معروضة للمراجعة فقط ولا تدخل ضمن عمولة الإدارة المعتمدة.
+          </p>
+        )}
       </Section>
 
-      {/* تفصيل الشهور والعمولات مع التوسيع وعرض عمليات كل شهر (ميزة مطلوبة خصيصاً) */}
+      <UserInventorySection
+        snapshot={inventorySnapshot}
+        loading={inventoryLoading}
+        error={inventoryError}
+        onRetry={reloadInventory}
+        salesCount={allSales.length}
+      />
+
       <Section
         eyebrow="الشهور والتسويات"
         title="تفاصيل الشهور والعمولات والمبيعات"
-        description="اضغط على كرت أي شهر لعرض عملياته وتفاصيل مبيعاته وعمولته وإمكانية تسويته فوراً."
+        description="افتح الشهر لعرض عمليات البيع والدفعات، ثم انتقل إلى إنشاء تسوية لذلك الشهر."
       >
-        {monthlyBreakdown.length === 0 ? (
+        {historyError ? (
+          <Card>
+            <div className="p-4 text-sm text-danger-ink" role="alert">
+              تعذر تحميل تفاصيل الشهور. أعد المحاولة لاستعادة سجل المبيعات والدفعات.
+              <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh} className="mt-3" disabled={syncing}>
+                إعادة المحاولة
+              </Button>
+            </div>
+          </Card>
+        ) : historyLoading && !historyAvailable ? (
+          <Card>
+            <div className="p-5 text-sm text-muted" role="status" aria-live="polite">جارٍ تحميل السجل المالي…</div>
+          </Card>
+        ) : monthlyBreakdown.length === 0 ? (
           <Card>
             <div className="empty-state">
-              <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg"><Inbox className="w-6 h-6" /></span>
+              <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg">
+                <Inbox className="w-6 h-6" />
+              </span>
               <p className="empty-state__title">لا توجد حركات مسجلة</p>
-              <p className="empty-state__desc">ستظهر الشهور والعمولات هنا بمجرد وصول أول عملية بيع من الشبكة.</p>
+              <p className="empty-state__desc">ستظهر الشهور والعمولات هنا بعد وصول أول عملية بيع أو دفعة.</p>
             </div>
           </Card>
         ) : (
           <div className="space-y-3">
-            {monthlyBreakdown.map((m) => {
-              const isExpanded = expandedMonths.has(m.month);
-              const remaining = Math.max(0, m.commissionDue - m.totalPaid);
-              const isFullySettled = m.commissionDue > 0 && m.totalPaid >= m.commissionDue;
-              const isPartiallySettled = m.totalPaid > 0 && m.totalPaid < m.commissionDue;
-
-              return (
-                <div
-                  key={m.month}
-                  className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-                    isExpanded
-                      ? 'bg-surface border-brand shadow-sm ring-1 ring-brand/20'
-                      : 'bg-surface border-line hover:border-brand/40 hover:shadow-xs'
-                  }`}
-                >
-                  {/* شريط رأس كرت الشهر القابل للنقر للتوسيع */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleMonthExpand(m.month)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleMonthExpand(m.month);
-                      }
-                    }}
-                    className="p-4 cursor-pointer select-none"
-                    aria-expanded={isExpanded}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          isFullySettled
-                            ? 'bg-emerald-500/10 text-emerald-600'
-                            : isPartiallySettled
-                            ? 'bg-amber-500/10 text-amber-600'
-                            : 'bg-brand/10 text-brand'
-                        }`}>
-                          <Calendar className="w-4 h-4" />
-                        </span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-black text-sm text-ink">{formatMonthArabic(m.month)}</h3>
-                            <span className="text-[10px] text-muted font-mono" dir="ltr">({m.month})</span>
-                          </div>
-                          <p className="text-[11px] text-muted mt-0.5">
-                            {m.sales.length} عملية بيع • {m.payments.length} دفعات مسجلة
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge
-                          tone={
-                            isFullySettled
-                              ? 'success'
-                              : isPartiallySettled
-                              ? 'warning'
-                              : m.commissionDue > 0
-                              ? 'danger'
-                              : m.legacyCount > 0
-                              ? 'warning'
-                              : 'neutral'
-                          }
-                        >
-                          {isFullySettled
-                            ? 'مسواة بالكامل (معتمدة)'
-                            : isPartiallySettled
-                            ? 'مسواة جزئياً'
-                            : m.commissionDue > 0
-                            ? 'بانتظار التسوية'
-                            : m.legacyCount > 0
-                            ? 'سجلات قديمة للمراجعة'
-                            : 'لا توجد عمولة'}
-                        </Badge>
-                        <span className="p-1 text-muted hover:text-ink">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* شبكة الأرقام السريعة الخاصة بهذا الشهر مع إبراز التوثيق */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-line/60">
-                      <div className="bg-surface-sunken p-2.5 rounded-xl border border-line/40">
-                        <span className="text-[10px] text-muted block font-medium">مبيعات الشهر</span>
-                        <span className="text-xs sm:text-sm font-black font-mono text-ink">
-                          {formatNumber(m.totalSales)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
-                        </span>
-                        <span className="text-[9px] text-muted block mt-0.5">
-                          {m.verifiedCount} معتمدة{m.legacyCount > 0 ? ` • ${m.legacyCount} قديمة` : ''}
-                        </span>
-                      </div>
-                      <div className="bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20">
-                        <span className="text-[10px] text-amber-700 dark:text-amber-300 block font-bold">العمولة المعتمدة</span>
-                        <span className="text-xs sm:text-sm font-black font-mono text-amber-600 dark:text-amber-400">
-                          {formatNumber(m.commissionDue)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
-                        </span>
-                        {m.legacyEstimatedCommission > 0 && (
-                          <span className="text-[9px] text-amber-800 font-semibold block mt-0.5 truncate" title="عمولات سجلات قديمة تتطلب مراجعة إدارية">
-                            + {formatNumber(m.legacyEstimatedCommission)} ر.ي قديمة
-                          </span>
-                        )}
-                      </div>
-                      <div className="bg-emerald-500/5 p-2.5 rounded-xl border border-emerald-500/20">
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 block font-bold">المسدد</span>
-                        <span className="text-xs sm:text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
-                          {formatNumber(m.totalPaid)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
-                        </span>
-                      </div>
-                      <div className="bg-rose-500/5 p-2.5 rounded-xl border border-rose-500/20">
-                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-bold">المتبقي المعتمد</span>
-                        <span className="text-xs sm:text-sm font-black font-mono text-rose-600 dark:text-rose-400">
-                          {formatNumber(remaining)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* الجزء الموسّع الذي يعرض عمليات المبيعات بالتفصيل لهذا الشهر وزر التسوية */}
-                  {isExpanded && (
-                    <div className="p-4 bg-surface-sunken/60 border-t border-line space-y-4">
-                      {/* زر تسوية هذا الشهر مباشرة */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-surface p-3 rounded-xl border border-line">
-                        <div>
-                          <p className="font-extrabold text-xs text-ink">
-                            تسوية عمولة {formatMonthArabic(m.month)}
-                          </p>
-                          <p className="text-[11px] text-muted">
-                            المتبقي غير المسوى: <strong className="text-rose-600">{formatNumber(remaining)} ر.ي</strong>
-                          </p>
-                        </div>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          icon={DollarSign}
-                          onClick={() => handleOpenBillingForMonth(m.month)}
-                          className="font-black"
-                        >
-                          إنشاء تسوية لهذا الشهر
-                        </Button>
-                      </div>
-
-                      {/* تنبيه السجلات القديمة إن وُجدت */}
-                      {m.legacyCount > 0 && (
-                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                          <div>
-                            <p className="font-bold">تنبيه تدقيق: يتضمن هذا الشهر {m.legacyCount} سجلات بيع قديمة غير موثقة خادمياً ({formatNumber(m.legacySalesTotal)} ر.ي)</p>
-                            <p className="text-[11px] text-amber-800 mt-0.5">
-                              العمولة التقديرية المحتملة: {formatNumber(m.legacyEstimatedCommission)} ر.ي. لا تُحتسب تلقائياً في المستحقات لعدم وجود توقيع Ingest خادمي. يمكنك تسويتها استثنائياً عبر إنشاء تسوية للشهر مع تسجيل سبب التوثيق.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* عمليات مبيعات هذا الشهر */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-xs font-black text-ink flex items-center gap-1.5">
-                            <Receipt className="w-3.5 h-3.5 text-muted" />
-                            <span>عمليات المبيعات الخاصة بهذا الشهر ({m.sales.length})</span>
-                          </h4>
-                          <span className="text-[10px] text-muted">مرتبة من الأحدث للأقدم</span>
-                        </div>
-
-                        {m.sales.length === 0 ? (
-                          <div className="p-3 text-center text-xs text-muted bg-surface rounded-xl border border-dashed border-line">
-                            لا توجد عمليات بيع مسجلة في هذا الشهر
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {m.sales.slice().reverse().map((sale) => {
-                              const saleComm = saleCommission(sale);
-                              const isSaleSettled = saleComm !== null && saleOutstanding(sale) === 0;
-
-                              return (
-                                <div
-                                  key={sale.id || sale.saleId}
-                                  className="p-3 rounded-xl bg-surface border border-line flex items-center justify-between gap-3 text-xs"
-                                >
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-mono font-bold text-ink truncate" dir="ltr">
-                                        {sale.customerId || sale.voucherCode || 'كرت مبيعات'}
-                                      </span>
-                                      <SaleVerificationBadge sale={sale} />
-                                      <Badge tone={isSaleSettled ? 'success' : 'warning'}>
-                                        {isSaleSettled ? 'مسواة' : 'غير مسواة'}
-                                      </Badge>
-                                    </div>
-                                    <span className="text-[10px] text-muted block mt-0.5">
-                                      {formatDate(sale.createdAt, { withTime: true })}
-                                    </span>
-                                  </div>
-
-                                  <div className="text-left shrink-0">
-                                    <div className="font-mono font-black text-ink">
-                                      {formatNumber(sale.faceValue)} <small className="text-[9px] text-muted">ر.ي</small>
-                                    </div>
-                                    <div className="text-[10px] font-bold text-brand mt-0.5">
-                                      عمولة: {saleComm === null ? 'غير محتسب' : `${formatNumber(saleComm)} ر.ي`}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* دفعات هذا الشهر */}
-                      {m.payments.length > 0 && (
-                        <div className="pt-2 border-t border-line/60">
-                          <h4 className="text-xs font-black text-ink mb-2">الدفعات المسجلة لهذا الشهر ({m.payments.length})</h4>
-                          <div className="space-y-1.5">
-                            {m.payments.map((p) => (
-                              <div key={p.id} className="p-2.5 rounded-lg bg-surface border border-line flex items-center justify-between text-xs">
-                                <span className="text-muted text-[11px]">{formatDate(p.timestamp ?? p.createdAt, { withTime: true })}</span>
-                                <span className="font-mono font-black text-emerald-600">{formatNumber(p.amount)} ر.ي</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {monthlyBreakdown.map((month) => (
+              <MonthCard
+                key={month.month}
+                month={month}
+                isExpanded={expandedMonths.has(month.month)}
+                onToggle={toggleMonthExpand}
+                onSettle={openBillingForMonth}
+              />
+            ))}
           </div>
         )}
       </Section>
 
-      {/* المودالات */}
       {editing && (
         <UserEditModal
           isOpen={editing}
           onClose={() => setEditing(false)}
           user={user}
-          onSave={async (targetUid, updates) => {
-            const result = await updateNetworkAccess({ uid: targetUid, ...updates });
-            if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر الحفظ')); return; }
-            toast.success('تم حفظ التعديلات');
-            setEditing(false);
-            load({ force: true });
-          }}
+          onSave={handleSaveEdit}
           onDelete={() => {
             setEditing(false);
             handleDelete();
@@ -963,7 +705,7 @@ export default function UserProfilePage() {
       {billing && (
         <UserBillingModal
           isOpen={billing}
-          onClose={() => { setBilling(false); setSelectedMonthForBilling(null); load({ force: true }); }}
+          onClose={handleBillingClose}
           user={user}
           initialMonth={selectedMonthForBilling}
         />
@@ -978,7 +720,7 @@ export default function UserProfilePage() {
       )}
 
       <ConfirmDialog
-        isOpen={!!confirmAction}
+        isOpen={Boolean(confirmAction)}
         onClose={() => setConfirmAction(null)}
         onConfirm={async () => {
           if (!confirmAction?.action) return false;
@@ -987,7 +729,7 @@ export default function UserProfilePage() {
           setConfirmAction(null);
           return true;
         }}
-        title={confirmAction?.title || ''}
+        title={confirmAction?.title || 'تأكيد الإجراء'}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'danger'}
       />

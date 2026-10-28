@@ -253,3 +253,44 @@ test('dashboard summary, settlement progress and recent operation links are acce
   assert.ok(salesPage.includes("setActiveTab('live')"));
   assert.ok(salesPage.includes('scrollIntoView'));
 });
+
+
+test('user profile KPIs cover all history by default and handle query failures without endless loading', async () => {
+  const [page, hook, query, helpers, inventory] = await Promise.all([
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/hooks/userProfile/useUserProfile.js'),
+    read('src/lib/localDb/useLocalQuery.js'),
+    read('src/lib/users/profileHelpers.js'),
+    read('src/components/userProfile/UserInventorySection.jsx'),
+  ]);
+
+  assert.ok(page.includes("useState('all')"));
+  assert.ok(page.includes("value={historyMonth}"));
+  assert.ok(page.includes('formatMonthArabic(historyMonth)'));
+  assert.ok(!page.includes('load({ force: true })'));
+  assert.ok(!page.includes('window.confirm'));
+  assert.ok(page.includes('title: block ?'));
+  assert.ok(page.includes('message: block'));
+  assert.ok(inventory.includes('Array.isArray(snapshot?.breakdown)'));
+  assert.ok(hook.includes('const loading = Boolean(uid) && !user && usersQuery.loading && !userLoadError'));
+  assert.ok(hook.includes('historyError = historyQuery.error?.profileUid === uid'));
+  assert.ok(query.includes('setState({ data: null, error, loading: false })'));
+  assert.ok(helpers.includes("return normalized || 'غير مُبلّغ'"));
+});
+
+test('monthly breakdown creates buckets once and keeps approved commission outstanding separate from payment totals', async () => {
+  const [page, breakdown, monthCard, badge] = await Promise.all([
+    read('src/pages/UserProfilePage.jsx'),
+    read('src/lib/users/monthlyBreakdown.js'),
+    read('src/components/userProfile/MonthCard.jsx'),
+    read('src/components/userProfile/SaleVerificationBadge.jsx'),
+  ]);
+
+  assert.ok(page.includes('buildMonthlyBreakdown(allSales, allPayments, monthOptions)'));
+  assert.ok(breakdown.includes('export function createEmptyMonthBucket'));
+  assert.ok(breakdown.includes('export function paymentMonthKey(payment)'));
+  assert.ok(breakdown.includes('bucket.outstanding = bucket.verifiedOutstanding'));
+  assert.ok(monthCard.includes('Number(m.verifiedOutstanding) || 0'));
+  assert.ok(!monthCard.includes('m.commissionDue - m.totalPaid'));
+  assert.ok(!badge.includes('Hash:'));
+});
