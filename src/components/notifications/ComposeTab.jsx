@@ -324,7 +324,7 @@ export default function ComposeTab({
               className="input-field text-xs min-h-[44px]"
             />
             <p className="text-[11px] text-muted leading-tight">
-              اترك الحقل فارغاً للإرسال الفوري. تُرسل الإشعارات المجدولة عبر الموزّع الخادمي عند حلول موعدها.
+              اترك الحقل فارغاً للإرسال الفوري. يفحص الموزّع الخادمي الإشعارات المجدولة مرة واحدة يومياً قرابة 06:00 UTC.
             </p>
           </div>
 

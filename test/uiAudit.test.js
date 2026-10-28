@@ -54,7 +54,7 @@ test('disabled button-like links suppress clicks and keyboard focus', async () =
 
 test('notification scheduling copy matches the deployed daily cron cadence', async () => {
   const [page, configText] = await Promise.all([
-    read('src/pages/NotificationsPage.jsx'),
+    read('src/components/notifications/ComposeTab.jsx'),
     read('vercel.json'),
   ]);
   const config = JSON.parse(configText);
@@ -79,7 +79,7 @@ test('mobile action buttons are visible, distinct, labelled and easy to tap', as
   const [css, users, profile] = await Promise.all([
     read('src/index.css'),
     read('src/pages/UsersPage.jsx'),
-    read('src/pages/UserProfilePage.jsx'),
+    read('src/components/userProfile/UserProfileAccountSection.jsx'),
   ]);
   assert.match(css, /\.row-action\s*\{[^}]*min-height:\s*44px/);
   assert.match(css, /\.row-action--danger[^}]*background:\s*var\(--ui-danger-soft\)/);
@@ -136,13 +136,14 @@ test('failed admin actions leave confirmation open and always release loading st
     read('src/pages/UsersPage.jsx'),
     read('src/pages/UserProfilePage.jsx'),
     read('src/pages/AdminsPage.jsx'),
-    read('src/pages/NotificationsPage.jsx'),
+    read('src/hooks/notifications/useNotifications.js'),
     read('src/pages/SettingsPage.jsx'),
   ]);
   assert.match(users, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(profile, /if \(!result\.ok\) \{[\s\S]*?return false;/);
   assert.match(admins, /if \(!result\.ok\) \{[\s\S]*?return false;/);
-  assert.match(notifications, /catch \(error\) \{[\s\S]*?return false;\s*\} finally \{\s*setDeleting\(false\)/);
+  assert.match(notifications, /finally \{[\s\S]*?setDeleting\(false\)/);
+  assert.match(notifications, /finally \{[\s\S]*?setSending\(false\)/);
   assert.match(settings, /if \(!result\.ok\) \{\s*toast\.error\(adminApiError\(result\.error, 'تعذر تحديث تواريخ الانتهاء'\)\);\s*return false;/);
   assert.match(settings, /finally \{\s*setUpdatingBatch\(false\)/);
   const batchHandler = settings.slice(
