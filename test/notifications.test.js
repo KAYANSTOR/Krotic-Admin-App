@@ -79,6 +79,7 @@ test('notification page and send hook have stable guarded flows and do not misla
   assert.ok(scheduler.includes("collection(db, 'notification_requests')"));
   assert.ok(compose.includes('&& !sending'));
   assert.ok(compose.includes('min={scheduledMin}'));
+  assert.ok(hook.includes('Date.now() + 5 * 60_000'));
   assert.ok(compose.includes('useDeferredValue'));
   assert.ok(compose.includes('isBuiltinTemplate'));
 });

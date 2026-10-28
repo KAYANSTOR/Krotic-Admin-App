@@ -95,7 +95,7 @@ export function useNotifications() {
     let scheduledMs = null;
     if (scheduledAt) {
       scheduledMs = new Date(scheduledAt).getTime();
-      if (!Number.isFinite(scheduledMs) || scheduledMs < Date.now() + 60_000) {
+      if (!Number.isFinite(scheduledMs) || scheduledMs < Date.now() + 5 * 60_000) {
         toast.error('اختر وقتاً مستقبلياً يتجاوز دقيقة واحدة على الأقل.');
         return false;
       }
@@ -174,7 +174,13 @@ export function useNotifications() {
     try {
       const result = await deleteNotification({ id: notification.id });
       if (!result.ok) {
-        toast.error(errorMessage(result.error));
+        toast.error(
+          result.error === 'missing_token' || result.error === 'invalid_token'
+            ? errorMessage(result.error)
+            : result.error === 'network_error'
+              ? 'تعذر الاتصال بالخادم لحذف الإشعار.'
+              : 'تعذر حذف الإشعار من السجل على الخادم.',
+        );
         return false;
       }
 
