@@ -55,6 +55,7 @@ export default function Layout({ children }) {
   const online = useOnlineStatus();
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
+  const isDashboard = location.pathname === '/';
 
   // لون شريط حالة الهاتف يتبع الشاشة الحالية عند تشغيل اللوحة كتطبيق مثبت.
   useEffect(() => {
@@ -187,7 +188,7 @@ export default function Layout({ children }) {
         </aside>
       )}
 
-      <div className="app-body lg:ms-[264px]">
+      <div className={`app-body ${isDashboard ? 'app-body--dashboard' : ''} ${isDashboard && !online ? 'app-body--offline' : ''} lg:ms-[264px]`}>
         <header className="app-header">
           <div className="app-header__inner">
             <div className="app-header__lead">
