@@ -2752,3 +2752,141 @@ body { background: var(--ui-paper); }
   .app-header { padding-top:max(8px,var(--ui-safe-top)); }
   .bottom-nav { padding-bottom:max(8px,var(--ui-safe-bottom)); }
 }
+
+
+/* ============================================================
+   Dashboard Hero — full-bleed, one continuous Terracotta surface
+   The top app bar overlays this card so its real controls remain
+   available without a separate white strip.
+   ============================================================ */
+.app-body--dashboard { position: relative; }
+.app-body--dashboard .app-header {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 45;
+  min-height: calc(var(--ui-appbar-height) + var(--ui-safe-top));
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.app-body--dashboard .app-header__inner { max-width: none; }
+.app-body--dashboard .app-header__title { display: none !important; }
+.app-body--dashboard .app-header__menu {
+  color: #fff !important;
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+}
+.app-body--dashboard .app-header__actions > button:not(.admin-chip),
+.app-body--dashboard .app-header__actions > a {
+  color: #fff !important;
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  box-shadow: none !important;
+}
+.app-body--dashboard .app-header__actions .app-header__install,
+.app-body--dashboard .app-header__actions .app-header__logout {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 12px;
+  width: auto;
+  min-width: 44px;
+  color: #fff !important;
+  background: rgba(255,255,255,.08) !important;
+  border-color: rgba(255,255,255,.16) !important;
+}
+.app-body--dashboard .app-header__menu:active,
+.app-body--dashboard .app-header__actions > button:active {
+  background: rgba(255,255,255,.18) !important;
+}
+.app-body--dashboard .offline-banner {
+  position: absolute;
+  inset-inline: 12px;
+  top: calc(var(--ui-appbar-height) + var(--ui-safe-top));
+  z-index: 44;
+}
+.app-body--dashboard .app-main {
+  min-height: 100dvh;
+  max-width: 100%;
+  padding: 0 !important;
+}
+.app-body--dashboard .dashboard-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.app-body--dashboard .dash-hero-card {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 0 0 32px 32px;
+  background-color: #7A301E;
+  background-image:
+    radial-gradient(at 15% 15%, rgba(232,136,105,.95) 0, transparent 55%),
+    radial-gradient(at 85% 25%, rgba(184,92,62,.82) 0, transparent 60%),
+    linear-gradient(180deg, #D97757 0%, #8F3B26 55%, #6E2C1B 100%);
+  color: #fff;
+  box-shadow: 0 18px 42px -28px rgba(92,34,20,.82);
+}
+.app-body--dashboard .dash-welcome {
+  margin: 0;
+  padding: calc(var(--ui-appbar-height) + var(--ui-safe-top) + 8px) 20px 12px;
+  color: #fff;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.app-body--dashboard .dash-welcome__freshness {
+  padding-top: 0 !important;
+  border-top: 0 !important;
+}
+.app-body--dashboard .dash-summary {
+  margin: 0 !important;
+  padding: 0;
+}
+.app-body--dashboard .dash-summary__hero {
+  padding: 12px 20px 28px;
+  color: #fff;
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.app-body--dashboard .dash-summary__hero::before,
+.app-body--dashboard .dash-summary__hero::after { content: none !important; display: none !important; }
+.app-body--dashboard .dash-summary__meta { border-top-color: rgba(255,255,255,.10); }
+.app-body--dashboard .dash-quick { border-top: 0 !important; }
+.app-body--dashboard .dashboard-content {
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+  padding: 18px var(--ui-gutter) 24px;
+}
+.app-body--dashboard.app-body--offline .dash-welcome {
+  padding-top: calc(var(--ui-appbar-height) + var(--ui-safe-top) + 64px);
+}
+@media (min-width: 720px) {
+  .app-body--dashboard .dash-welcome { padding-inline: 28px; }
+  .app-body--dashboard .dash-summary__hero { padding-inline: 28px; }
+}
+@media (min-width: 1024px) {
+  .app-body--dashboard .app-header { display: none; }
+  .app-body--dashboard .offline-banner { top: 12px; }
+  .app-body--dashboard .dash-welcome { padding: 24px 32px 12px; }
+  .app-body--dashboard.app-body--offline .dash-welcome { padding-top: 76px; }
+  .app-body--dashboard .dash-summary__hero { padding: 16px 32px 32px; }
+}
+@media (max-width: 380px) {
+  .app-body--dashboard .dash-welcome { padding-inline: 14px; }
+  .app-body--dashboard .dash-summary__hero { padding-inline: 14px; }
+}
