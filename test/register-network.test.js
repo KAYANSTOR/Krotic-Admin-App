@@ -159,6 +159,64 @@ test('retrying a pending registration removes the temporary SMS gate without cla
   assert.equal(user.phoneVerified, false);
 });
 
+test('an existing owned network repairs missing user access fields from its server record', async () => {
+  const db = new FakeDb();
+  const startedAt = Timestamp.fromMillis(Date.UTC(2026, 9, 1));
+  const endsAt = Timestamp.fromMillis(Date.UTC(2026, 9, 31));
+  db.docs.set('users/client_access_repair', {
+    uid: 'client_access_repair',
+    networkId: 'NET-10021',
+    phone: validInput.phone,
+  });
+  db.docs.set('networks/NET-10021', {
+    networkId: 'NET-10021',
+    owner_uid: 'client_access_repair',
+    accessStatus: 'TRIAL',
+    trialStartedAt: startedAt,
+    subscriptionEndsAt: endsAt,
+    is_active: true,
+    is_trial: true,
+  });
+
+  const result = await provisionSelfRegistration(db, {
+    uid: 'client_access_repair',
+    profile: validInput,
+    now: Date.UTC(2026, 10, 15),
+  });
+
+  const user = db.docs.get('users/client_access_repair');
+  assert.equal(result.status, 'duplicate');
+  assert.equal(user.accessStatus, 'TRIAL');
+  assert.equal(user.is_active, true);
+  assert.equal(user.is_trial, true);
+  assert.equal(user.trialStartedAt.toMillis(), startedAt.toMillis());
+  assert.equal(user.subscriptionEndsAt.toMillis(), endsAt.toMillis());
+  assert.equal(user.subscription_end_date.toMillis(), endsAt.toMillis());
+});
+
+test('an existing owned network without a trusted access status does not auto-activate the user', async () => {
+  const db = new FakeDb();
+  db.docs.set('users/client_no_access', {
+    uid: 'client_no_access',
+    networkId: 'NET-10022',
+    phone: validInput.phone,
+  });
+  db.docs.set('networks/NET-10022', {
+    networkId: 'NET-10022',
+    owner_uid: 'client_no_access',
+  });
+
+  await provisionSelfRegistration(db, {
+    uid: 'client_no_access',
+    profile: validInput,
+  });
+
+  const user = db.docs.get('users/client_no_access');
+  assert.equal(user.accessStatus, undefined);
+  assert.equal(user.is_active, undefined);
+  assert.equal(user.is_trial, undefined);
+});
+
 test('an admin-provisioned account can complete a missing profile without a new trial', async () => {
   const db = new FakeDb();
   const startedAt = Timestamp.fromMillis(Date.UTC(2026, 9, 1));
