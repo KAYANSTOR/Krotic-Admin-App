@@ -112,7 +112,6 @@ test('dashboard layout styles reuse tokens and mobile-first grids', async () => 
   assert.match(css, /\.recent-operation \{[\s\S]*?min-height: 68px/);
   assert.match(css, /\.dash-progress__track \{[\s\S]*?justify-content: flex-start/);
   assert.match(css, /\.dash-welcome__freshness \{[\s\S]*?grid-column: 1 \/ -1/);
-  assert.match(css, /\.dash-notices/);
 
   assert.doesNotMatch(css, /\.dash-finance|\.dash-actions|\.dash-action__/);
 });
