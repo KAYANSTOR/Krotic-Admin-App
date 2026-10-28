@@ -15,10 +15,9 @@ test('dashboard keeps its local-first data sources and incremental refresh', asy
   assert.match(page, /if \(loading && !stats\)/);
 });
 
-test('dashboard follows the reference hierarchy and keeps only real destinations', async () => {
+test('dashboard follows a calm hierarchy without filler copy', async () => {
   const page = await read('src/pages/DashboardPage.jsx');
 
-  // ترتيب الهيكل: ترحيب ← بطاقة رئيسية ← إجراءات ← خدمات ← ملخص ثانوي ← عمليات.
   const positions = {
     welcome: page.indexOf('className="dash-welcome"'),
     summary: page.indexOf('className="dash-summary"'),
@@ -36,12 +35,10 @@ test('dashboard follows the reference hierarchy and keeps only real destinations
   assert.ok(positions.services < positions.progress);
   assert.ok(positions.progress < positions.recent);
 
-  // أربعة إجراءات سريعة فقط، وكلها مسارات موجودة في التطبيق.
   const quickBlock = page.slice(positions.quick, page.indexOf('</nav>', positions.quick));
   const quickTargets = [...quickBlock.matchAll(/to="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(quickTargets, ['/users', '/sales', '/notifications', '/template-center']);
 
-  // ست خدمات/أقسام، بلا أهداف وهمية.
   const servicesBlock = page.slice(positions.services, page.indexOf('</Section>', positions.services));
   const serviceTargets = [...servicesBlock.matchAll(/to="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(serviceTargets, [
@@ -52,6 +49,11 @@ test('dashboard follows the reference hierarchy and keeps only real destinations
     '/template-center/reconciliation',
     '/settings',
   ]);
+
+  assert.doesNotMatch(page, /يحتسب المبيعات المكتملة فقط/);
+  assert.doesNotMatch(page, /الوصول السريع/);
+  assert.doesNotMatch(page, /الملخص الثانوي/);
+  assert.doesNotMatch(page, /dash-welcome__eyebrow/);
 });
 
 test('dashboard uses real aggregates and never reference sample content', async () => {
@@ -61,7 +63,6 @@ test('dashboard uses real aggregates and never reference sample content', async 
   assert.match(page, /stats\.totalUsers/);
   assert.match(page, /ريال يمني/);
 
-  // لا بيانات أو نصوص من الصورة المرجعية.
   assert.doesNotMatch(page, /2,450,000|124,500|Total balance|Add money|Savings goal|New laptop|Netflix|₦/i);
   assert.doesNotMatch(page, /const\s+mock|sampleData|dummy/i);
 });
@@ -111,7 +112,7 @@ test('dashboard layout styles reuse tokens and mobile-first grids', async () => 
   assert.match(css, /\.recent-operation \{[\s\S]*?min-height: 68px/);
   assert.match(css, /\.dash-progress__track \{[\s\S]*?justify-content: flex-start/);
   assert.match(css, /\.dash-welcome__freshness \{[\s\S]*?grid-column: 1 \/ -1/);
+  assert.match(css, /\.dash-notices/);
 
-  // بقايا الهيكل السابق يجب ألا تبقى كأنماط منافسة.
   assert.doesNotMatch(css, /\.dash-finance|\.dash-actions|\.dash-action__/);
 });
