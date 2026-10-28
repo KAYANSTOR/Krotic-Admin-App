@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'krotak-pro-shell-v5';
-const RUNTIME_CACHE = 'krotak-pro-runtime-v5';
+const SHELL_CACHE = 'krotak-pro-shell-v6';
+const RUNTIME_CACHE = 'krotak-pro-runtime-v6';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
