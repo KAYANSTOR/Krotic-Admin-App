@@ -1,113 +1,45 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import {
-  AlertTriangle, Archive, ArrowDownToLine, Bell, ChevronDown, CreditCard, Eye, EyeOff,
-  Layers3, ListChecks, RefreshCw, Send, Settings, TrendingUp, UserPlus, Users,
-  Wallet, Wrench,
-} from 'lucide-react';
-import IconTile from '../components/ui/IconTile';
-import Button from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { PageSkeleton } from '../components/ui/Skeleton';
-import useAppRefresh from '../lib/useAppRefresh';
-import useOnlineStatus from '../lib/useOnlineStatus';
-import Section from '../components/ui/Section';
-import DataFreshness from '../components/ui/DataFreshness';
-import Badge from '../components/ui/Badge';
-import EmptyState from '../components/ui/EmptyState';
 import toast from 'react-hot-toast';
-import { callAdminApi, adminApiError } from '../lib/adminApi';
-import { formatDate, formatNumber, toDate } from '../lib/format';
-import { summarizeCompletedSales } from '../lib/commission';
-import { useLocalQuery } from '../lib/localDb/useLocalQuery';
-import { useLocalDb } from '../lib/localDb/LocalDbContext';
-import { loadLocalDashboard, loadLocalNetworkSales } from '../lib/localDb/localData';
 
-const MONTH_LABELS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-const AGGREGATE_REPAIR_PROGRESS_KEY = 'krotak:aggregate-repair-progress:v1';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import useAppRefresh from '../lib/useAppRefresh.js';
+import useOnlineStatus from '../lib/useOnlineStatus.js';
+import { PageSkeleton } from '../components/ui/Skeleton.jsx';
+import { useLocalQuery } from '../lib/localDb/useLocalQuery.js';
+import { useLocalDb } from '../lib/localDb/LocalDbContext.jsx';
+import { loadLocalDashboard, loadLocalNetworkSales } from '../lib/localDb/localData.js';
+import { adminApiError, rebuildFinancialAggregatesPage } from '../lib/adminApi.js';
+import { formatNumber } from '../lib/format.js';
+import {
+  recentOperationsFromNetworks,
+  loadBalanceVisible,
+  saveBalanceVisible,
+} from '../lib/dashboard/helpers.js';
+import { loadRepairProgress, saveRepairProgress } from '../lib/dashboard/repairProgress.js';
+import Button from '../components/ui/Button.jsx';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 
-/** تسميات حالات البيع الفعلية المستخدمة في شاشة المبيعات. */
-const SALE_STATUS = {
-  COMPLETED: { label: 'مكتمل', tone: 'success' },
-  ROLLED_BACK: { label: 'مسترجع', tone: 'warning' },
-  SMS_PENDING: { label: 'بانتظار SMS', tone: 'info' },
-};
-
-function saleStatusMeta(status) {
-  return SALE_STATUS[status] || { label: 'غير محدد', tone: 'neutral' };
-}
-
-function summarizeRealtimeSales(networks) {
-  const now = new Date();
-  const months = [];
-  const monthBuckets = new Map();
-  for (let offset = 5; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const bucket = { month, label: MONTH_LABELS[date.getMonth()], face: 0, count: 0 };
-    months.push(bucket);
-    monthBuckets.set(month, bucket);
-  }
-
-  const totals = {
-    totalSales: 0,
-    totalTransactions: 0,
-    totalCommission: 0,
-    totalCommissionOutstanding: 0,
-  };
-
-  networks.forEach((network) => {
-    const sales = (network.sales || []).filter((sale) => sale.status === 'COMPLETED');
-    const summary = summarizeCompletedSales(sales);
-    totals.totalSales += summary.reportedSalesValue;
-    totals.totalTransactions += summary.reportedTransactions;
-    totals.totalCommission += summary.commissionDue;
-    totals.totalCommissionOutstanding += summary.outstandingCommission;
-
-    sales.forEach((sale) => {
-      const date = toDate(sale.createdAt);
-      if (!date || Number.isNaN(date.getTime())) return;
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const bucket = monthBuckets.get(key);
-      if (bucket) {
-        bucket.face += Number(sale.faceValue) || 0;
-        bucket.count += 1;
-      }
-    });
-  });
-
-  return { stats: totals, monthlySales: months };
-}
-
-function recentOperationsFromNetworks(networks) {
-  return networks
-    .flatMap((network) => (network.sales || []).map((sale) => ({
-      ...sale,
-      networkName: network.networkName || network.network_name || network.name
-        || network.networkTitle || `شبكة ${network.networkId || network.uid}`,
-      commissionRate: network.commissionRate,
-    })))
-    .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
-    .slice(0, 8);
-}
+import DashWelcome from '../components/dashboard/DashWelcome.jsx';
+import DashAlerts from '../components/dashboard/DashAlerts.jsx';
+import DashSummary from '../components/dashboard/DashSummary.jsx';
+import DashServices from '../components/dashboard/DashServices.jsx';
+import DashSettlement from '../components/dashboard/DashSettlement.jsx';
+import RecentOperations from '../components/dashboard/RecentOperations.jsx';
+import AggregateRepairTool from '../components/dashboard/AggregateRepairTool.jsx';
 
 export default function DashboardPage() {
   const { adminData } = useAuth();
   const { runSync, syncing, lastSyncAt } = useLocalDb();
   const online = useOnlineStatus();
-  const [balanceVisible, setBalanceVisible] = useState(true);
+
+  const [balanceVisible, setBalanceVisible] = useState(loadBalanceVisible);
+  const [repairProgress, setRepairProgress] = useState(loadRepairProgress);
+  const [repairConfirm, setRepairConfirm] = useState(null);
   const [rebuildingAggregates, setRebuildingAggregates] = useState(false);
-  const [aggregateRepairProgress, setAggregateRepairProgress] = useState(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(AGGREGATE_REPAIR_PROGRESS_KEY) || 'null');
-      return saved && typeof saved === 'object'
-        ? { processed: Math.max(0, Number(saved.processed) || 0), cursor: typeof saved.cursor === 'string' ? saved.cursor : null, done: saved.done === true }
-        : { processed: 0, cursor: null, done: false };
-    } catch {
-      return { processed: 0, cursor: null, done: false };
-    }
-  });
+  const [lastSalesUpdatedAt, setLastSalesUpdatedAt] = useState(null);
+  const repairInFlightRef = useRef(false);
 
   const dashboardQuery = useLocalQuery((localDb) => loadLocalDashboard(localDb), []);
   const salesQuery = useLocalQuery((localDb) => loadLocalNetworkSales(localDb), []);
@@ -115,78 +47,132 @@ export default function DashboardPage() {
   const report = dashboardQuery.data;
   const stats = report?.stats || null;
   const appStatus = report?.appStatus || null;
-  const alerts = report?.alerts || null;
-  const monthlySales = report?.monthlySales || [];
   const monthlyDataWarning = Boolean(report?.monthlyDataWarning);
   const recentOperations = useMemo(
     () => recentOperationsFromNetworks(salesQuery.data || []),
     [salesQuery.data],
   );
+
   const loading = dashboardQuery.loading && !report;
   const error = dashboardQuery.error
     ? 'تعذر قراءة بيانات لوحة التحكم من القاعدة المحلية. أعد المحاولة.'
     : null;
-  const partialErrors = [];
-  const salesSnapshotsReady = !dashboardQuery.loading;
-  const realtimeDataWarning = Boolean(salesQuery.error);
+  const salesSnapshotsReady = !dashboardQuery.loading && !salesQuery.loading;
+  const realtimeError = Boolean(salesQuery.error);
 
-  const refresh = async () => {
-    await runSync({ reason: 'manual' });
-    dashboardQuery.refresh();
-    salesQuery.refresh();
-  };
+  const dashboardRefresh = dashboardQuery.refresh;
+  const salesRefresh = salesQuery.refresh;
 
-  useAppRefresh(refresh);
-
-  const repairFinancialAggregates = async () => {
-    if (rebuildingAggregates || aggregateRepairProgress.done) return;
-    const resume = Boolean(aggregateRepairProgress.cursor);
-    const accepted = window.confirm(
-      (resume ? 'متابعة' : 'بدء') + ' إعادة بناء المجاميع المالية لشبكة واحدة من سجلات المبيعات والمدفوعات؟ قد تستهلك آلاف قراءات Firestore للشبكة الواحدة. بما أن الحصة المجانية قد تكون مستنفدة، شغّلها بعد تجدد الحصة اليومية. لن تُعالج شبكة أخرى حتى تضغط المتابعة مرة أخرى.'
-    );
-    if (!accepted) return;
-    setRebuildingAggregates(true);
-    let cursor = aggregateRepairProgress.cursor || null;
-    let processed = Number(aggregateRepairProgress.processed) || 0;
+  const refresh = useCallback(async () => {
     try {
-      const response = await callAdminApi('/api/migrate', {
-        action: 'rebuild-all',
-        limit: 1,
-        ...(cursor ? { cursor } : {}),
-      });
-      if (!response.ok) throw new Error(adminApiError(response.error, 'تعذر إعادة بناء المجاميع المالية'));
+      await runSync({ reason: 'manual' });
+    } catch {
+      toast.error('تعذر تحديث البيانات من الخادم. ستبقى البيانات المحلية معروضة.');
+    } finally {
+      dashboardRefresh();
+      salesRefresh();
+    }
+  }, [runSync, dashboardRefresh, salesRefresh]);
+
+  // Keep one global refresh listener; it always calls the newest refresh callback.
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+  const stableRefresh = useCallback(() => refreshRef.current(), []);
+  useAppRefresh(stableRefresh);
+
+  useEffect(() => {
+    saveBalanceVisible(balanceVisible);
+  }, [balanceVisible]);
+
+  useEffect(() => {
+    if (salesQuery.data !== null && salesQuery.data !== undefined) {
+      setLastSalesUpdatedAt(Date.now());
+    }
+  }, [salesQuery.data]);
+
+  const requestRepair = useCallback(() => {
+    if (
+      repairInFlightRef.current
+      || rebuildingAggregates
+      || syncing
+      || repairProgress.done
+    ) return;
+
+    const resume = Boolean(repairProgress.cursor);
+    setRepairConfirm({
+      title: resume ? 'متابعة إصلاح المجاميع المالية' : 'إصلاح المجاميع المالية',
+      message: `${resume ? 'متابعة' : 'بدء'} إعادة بناء المجاميع المالية لشبكة واحدة من سجلات المبيعات والمدفوعات؟ قد تستهلك العملية آلاف قراءات Firestore بحسب حجم الشبكة. إذا كانت الحصة اليومية مستنفدة، انتظر تجددها قبل التشغيل. لن تُعالج شبكة أخرى حتى تطلب المتابعة مرة أخرى.`,
+      variant: 'primary',
+    });
+  }, [rebuildingAggregates, syncing, repairProgress]);
+
+  const performRepair = useCallback(async () => {
+    if (
+      repairInFlightRef.current
+      || rebuildingAggregates
+      || syncing
+      || repairProgress.done
+    ) return false;
+
+    repairInFlightRef.current = true;
+    setRebuildingAggregates(true);
+
+    let cursor = repairProgress.cursor || null;
+    let processed = Number(repairProgress.processed) || 0;
+
+    try {
+      const response = await rebuildFinancialAggregatesPage({ cursor, limit: 1 });
+      if (!response.ok) {
+        throw new Error(adminApiError(response.error, 'تعذر إعادة بناء المجاميع المالية'));
+      }
+
       const result = response.data || {};
       processed += Number(result.processed) || 0;
-      cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null;
+      cursor = typeof result.nextCursor === 'string' && result.nextCursor
+        ? result.nextCursor
+        : null;
       const done = result.done === true || !cursor;
-      const nextProgress = { processed, cursor: done ? null : cursor, done };
-      setAggregateRepairProgress(nextProgress);
-      try {
-        window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
-      } catch { /* progress persistence is best-effort */ }
+      const nextProgress = {
+        processed,
+        cursor: done ? null : cursor,
+        done,
+        completedAt: done ? new Date().toISOString() : null,
+      };
+
+      setRepairProgress(nextProgress);
+      saveRepairProgress(nextProgress);
+
+      // Refresh failure is handled inside refresh and must not repeat a successful repair page.
       await refresh();
+
       if (done) {
         toast.success(`اكتملت إعادة بناء مجاميع ${formatNumber(processed)} شبكة. حدّث شاشة المستخدمين إذا كانت مفتوحة.`);
       } else {
-        toast.success(`أُصلحت شبكة واحدة. الإجمالي ${formatNumber(processed)} شبكة؛ اضغط «متابعة الإصلاح» عند استعدادك للدفعة التالية.`);
+        toast.success(`أُصلحت شبكة واحدة. الإجمالي ${formatNumber(processed)} شبكة؛ يمكنك متابعة الدفعة التالية عند استعدادك.`);
       }
+      return true;
     } catch (repairError) {
-      const nextProgress = { processed, cursor, done: false };
-      setAggregateRepairProgress(nextProgress);
-      try {
-        window.localStorage.setItem(AGGREGATE_REPAIR_PROGRESS_KEY, JSON.stringify(nextProgress));
-      } catch { /* progress persistence is best-effort */ }
-      toast.error(repairError instanceof Error ? repairError.message : 'توقفت إعادة بناء المجاميع. يمكنك الاستئناف بعد تجدد حصة Firestore.');
+      const nextProgress = {
+        processed,
+        cursor,
+        done: false,
+        completedAt: null,
+      };
+      setRepairProgress(nextProgress);
+      saveRepairProgress(nextProgress);
+      toast.error(
+        repairError instanceof Error
+          ? repairError.message
+          : 'توقفت إعادة بناء المجاميع. يمكنك الاستئناف بعد تجدد حصة Firestore.',
+      );
+      return false;
     } finally {
+      repairInFlightRef.current = false;
       setRebuildingAggregates(false);
     }
-  };
-
-  if (loading && !stats) return <PageSkeleton />;
-
-  const maintenance = appStatus && !appStatus.is_app_active;
-  const adminName = (adminData?.name || 'المدير').trim();
-  const adminInitial = adminName.charAt(0) || 'م';
+  }, [rebuildingAggregates, syncing, repairProgress, refresh]);
 
   const commissionDue = Math.max(0, Number(stats?.totalCommissionDue) || 0);
   const commissionOutstanding = Math.max(0, Number(stats?.totalCommissionOutstanding) || 0);
@@ -195,312 +181,93 @@ export default function DashboardPage() {
     ? Math.min(100, Math.round((commissionSettled / commissionDue) * 100))
     : 0;
 
-  const statusNotices = [];
-  if (maintenance) {
-    statusNotices.push({
-      key: 'maintenance',
-      title: 'التطبيق في وضع الصيانة',
-      msg: appStatus?.maintenance_message || null,
-    });
-  }
-  if (!salesSnapshotsReady && stats) {
-    statusNotices.push({
-      key: 'syncing',
-      title: 'جارٍ مزامنة المؤشرات المالية',
-      msg: null,
-    });
-  }
-  if (realtimeDataWarning) {
-    statusNotices.push({
-      key: 'sales-warn',
-      title: 'تعذر مزامنة بعض تحديثات المبيعات',
-      msg: partialErrors.length ? null : 'تحقق من الاتصال قبل أي تسوية مالية.',
-      details: partialErrors,
-    });
-  }
-  if (monthlyDataWarning) {
-    statusNotices.push({
-      key: 'monthly',
-      title: 'تفصيل الأشهر غير مكتمل',
-      msg: 'الإجماليات محفوظة؛ التفصيل الشهري يُستعاد من السجلات.',
-      details: partialErrors,
-    });
-  }
+  const maintenance = Boolean(appStatus && !appStatus.is_app_active);
+  const adminName = String(adminData?.name ?? '').trim() || 'المدير';
+  const adminInitial = adminName.charAt(0) || 'م';
 
-  void alerts;
-  void monthlySales;
-  void summarizeRealtimeSales;
+  if (loading) return <PageSkeleton />;
 
   return (
     <div className="dashboard-page">
-      <header className="dash-welcome" aria-label="ترحيب">
-        <span className="dash-welcome__avatar" aria-hidden="true">{adminInitial}</span>
-        <div className="dash-welcome__identity">
-          <h1 className="dash-welcome__title">أهلاً، {adminName}</h1>
-          <p className={`dash-welcome__status ${online ? 'is-online' : 'is-offline'}`} role="status">
-            <span className="dash-welcome__dot" aria-hidden="true" />
-            {online ? 'متصل' : 'عرض محلي — بدون اتصال'}
-          </p>
-        </div>
-        <DataFreshness
-          className="dash-welcome__freshness"
-          lastSyncedAt={lastSyncAt}
-          refreshing={loading || syncing}
-          onRefresh={refresh}
-        />
-      </header>
+      <DashWelcome
+        adminName={adminName}
+        adminInitial={adminInitial}
+        online={online}
+        lastSyncAt={lastSyncAt}
+        refreshing={loading || syncing}
+        onRefresh={refresh}
+      />
 
-      {statusNotices.map((notice) => (
-        <div key={notice.key} className="dash-alert" role="status" aria-live="polite">
-          <span className="dash-alert__icon" aria-hidden="true">
-            <AlertTriangle className="w-5 h-5" />
-          </span>
-          <div className="dash-alert__body">
-            <p className="dash-alert__title">{notice.title}</p>
-            {notice.msg && <p className="dash-alert__msg">{notice.msg}</p>}
-            {notice.details?.length > 0 && (
-              <details className="dash-error__details">
-                <summary>التفاصيل ({notice.details.length})</summary>
-                <ul>
-                  {notice.details.map((message, index) => (
-                    <li key={index} dir="ltr">{message}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        </div>
-      ))}
-
-      {error && (
-        <div className="dash-error" role="alert">
-          <span className="dash-error__icon" aria-hidden="true">
-            <AlertTriangle className="w-5 h-5" />
-          </span>
-          <div className="dash-error__body">
-            <p className="dash-error__title">حدث خطأ</p>
-            <p className="dash-error__msg">{error}</p>
-          </div>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh}>
-            إعادة المحاولة
-          </Button>
-        </div>
-      )}
+      <DashAlerts
+        maintenance={maintenance}
+        appStatus={appStatus}
+        salesSyncing={!salesSnapshotsReady && Boolean(stats)}
+        realtimeError={realtimeError}
+        monthlyDataWarning={monthlyDataWarning}
+        error={error}
+        onRetry={refresh}
+      />
 
       {stats && (
         <>
-          <section className="dash-summary" aria-label="الملخص المالي">
-            <article className="dash-summary__hero">
-              <header className="dash-summary__head">
-                <span className="dash-summary__label">إجمالي المبيعات</span>
-                <span className="dash-summary__badge">
-                  <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
-                  كل الوقت
-                </span>
-              </header>
-              <p className="dash-summary__value">
-                <strong>{balanceVisible ? formatNumber(stats.totalSales) : '••••••'}</strong>
-                <button
-                  type="button"
-                  className="dash-summary__visibility"
-                  onClick={() => setBalanceVisible((visible) => !visible)}
-                  aria-label={balanceVisible ? 'إخفاء إجمالي المبيعات' : 'إظهار إجمالي المبيعات'}
-                  aria-pressed={!balanceVisible}
-                  title={balanceVisible ? 'إخفاء المبلغ' : 'إظهار المبلغ'}
-                >
-                  {balanceVisible
-                    ? <Eye className="w-5 h-5" aria-hidden="true" />
-                    : <EyeOff className="w-5 h-5" aria-hidden="true" />}
-                </button>
-                <span>ريال يمني</span>
-              </p>
-
-              <dl className="dash-summary__meta">
-                <div className="dash-summary__meta-item">
-                  <dt><Wallet className="w-4 h-4" aria-hidden="true" /> عمولة غير مسوّاة</dt>
-                  <dd>{formatNumber(stats.totalCommissionOutstanding || 0)} <small>ريال</small></dd>
-                </div>
-                <div className="dash-summary__meta-item">
-                  <dt><Users className="w-4 h-4" aria-hidden="true" /> الشبكات</dt>
-                  <dd>{formatNumber(stats.totalUsers || 0)}</dd>
-                </div>
-              </dl>
-
-              <nav className="dash-quick" aria-label="إجراءات سريعة">
-                <Link to="/users" className="dash-quick__item dash-quick__item--primary">
-                  <span className="dash-quick__icon"><UserPlus aria-hidden="true" /></span>
-                  <span className="dash-quick__label">المستخدمون</span>
-                </Link>
-                <Link to="/sales" className="dash-quick__item">
-                  <span className="dash-quick__icon"><CreditCard aria-hidden="true" /></span>
-                  <span className="dash-quick__label">المبيعات</span>
-                </Link>
-                <Link to="/notifications" className="dash-quick__item">
-                  <span className="dash-quick__icon"><Bell aria-hidden="true" /></span>
-                  <span className="dash-quick__label">إشعار</span>
-                </Link>
-                <Link to="/template-center" className="dash-quick__item">
-                  <span className="dash-quick__icon"><Layers3 aria-hidden="true" /></span>
-                  <span className="dash-quick__label">القوالب</span>
-                </Link>
-              </nav>
-            </article>
-          </section>
-
-          <Section
-            className="dash-services-section"
-            title="مركز القوالب"
-            aria-label="مركز القوالب"
-          >
-            <div className="dash-services">
-              <Link to="/template-center/inbound" className="dash-service">
-                <IconTile icon={ArrowDownToLine} tone="brand" />
-                <span className="dash-service__label">الواردة</span>
-              </Link>
-              <Link to="/template-center/outbound" className="dash-service">
-                <IconTile icon={Send} tone="brand" />
-                <span className="dash-service__label">الصادرة</span>
-              </Link>
-              <Link to="/template-center/wallets" className="dash-service">
-                <IconTile icon={Wallet} tone="gold" />
-                <span className="dash-service__label">المصادر</span>
-              </Link>
-              <Link to="/template-center/releases" className="dash-service">
-                <IconTile icon={Archive} tone="neutral" />
-                <span className="dash-service__label">الإصدارات</span>
-              </Link>
-              <Link to="/template-center/reconciliation" className="dash-service">
-                <IconTile icon={ListChecks} tone="neutral" />
-                <span className="dash-service__label">التسوية</span>
-              </Link>
-              <Link to="/settings" className="dash-service">
-                <IconTile icon={Settings} tone="neutral" />
-                <span className="dash-service__label">الإعدادات</span>
-              </Link>
-            </div>
-          </Section>
-
-          <section className="dash-progress" aria-labelledby="settlement-title">
-            <div className="dash-progress__head">
-              <h2 className="dash-progress__title" id="settlement-title">تسوية عمولة الإدارة</h2>
-              {commissionDue > 0 && (
-                <span className="dash-progress__percent" aria-hidden="true">{settlementPercent}%</span>
-              )}
-            </div>
-            {commissionDue > 0 ? (
-              <>
-                <div
-                  className="dash-progress__track"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={settlementPercent}
-                  aria-valuetext={`${settlementPercent}%`}
-                  aria-label="نسبة تسوية عمولة الإدارة"
-                >
-                  <span className="dash-progress__fill" style={{ width: `${settlementPercent}%` }} />
-                </div>
-                <p className="dash-progress__caption">
-                  المسوّى {formatNumber(commissionSettled)} من {formatNumber(commissionDue)} ريال
-                  {commissionOutstanding > 0 && (
-                    <> · متبقي {formatNumber(commissionOutstanding)}</>
-                  )}
-                </p>
-              </>
-            ) : (
-              <p className="dash-progress__caption">لا توجد عمولات مستحقة مسجّلة حتى الآن.</p>
-            )}
-          </section>
-
-          <Section
-            title="آخر المبيعات"
-            action={<Link to="/sales" className="section__link">عرض الكل</Link>}
-            aria-label="آخر العمليات"
-          >
-            {recentOperations.length === 0 ? (
-              <Card>
-                <EmptyState
-                  icon={CreditCard}
-                  title="لا توجد عمليات حديثة"
-                  description="ستظهر هنا بعد مزامنة المبيعات."
-                />
-              </Card>
-            ) : (
-              <ul className="recent-operations">
-                {recentOperations.map((operation, index) => {
-                  const status = saleStatusMeta(operation.status);
-                  return (
-                    <li key={`${operation.networkName}-${operation.id || index}`}>
-                      <Link
-                        to="/sales"
-                        className="recent-operation"
-                        aria-label={`${operation.networkName}، ${formatNumber(operation.faceValue)} ريال، ${status.label}`}
-                      >
-                        <span className="recent-operation__icon"><CreditCard className="w-4 h-4" aria-hidden="true" /></span>
-                        <span className="recent-operation__body">
-                          <strong>{operation.networkName}</strong>
-                          <span>{formatDate(operation.createdAt, { withTime: true })}</span>
-                        </span>
-                        <span className="recent-operation__end">
-                          <span className="recent-operation__amount">{formatNumber(operation.faceValue)} <small>ريال</small></span>
-                          <Badge tone={status.tone} dot>{status.label}</Badge>
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Section>
+          <DashSummary
+            stats={stats}
+            balanceVisible={balanceVisible}
+            onToggleBalance={() => setBalanceVisible((visible) => !visible)}
+          />
+          <DashServices />
+          <DashSettlement
+            commissionDue={commissionDue}
+            commissionOutstanding={commissionOutstanding}
+            commissionSettled={commissionSettled}
+            settlementPercent={settlementPercent}
+          />
+          <RecentOperations
+            operations={recentOperations}
+            lastUpdatedAt={lastSalesUpdatedAt}
+          />
         </>
       )}
 
-      {!aggregateRepairProgress.done && (
-        <Card className="dash-maintenance">
-          <details open={aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0 ? true : undefined}>
-            <summary className="dash-maintenance__summary">
-              <span className="dash-maintenance__summary-main">
-                <span className="dash-maintenance__icon" aria-hidden="true"><Wrench className="w-4 h-4" /></span>
-                <span>
-                  <span className="dash-maintenance__title">صيانة الملخصات المالية</span>
-                  <span className="dash-maintenance__sub">إعادة بناء المجاميع من السجلات — استهلاك قراءات عالٍ</span>
-                </span>
-              </span>
-              <ChevronDown className="dash-maintenance__chevron" aria-hidden="true" />
-            </summary>
-            <div className="dash-maintenance__body">
-              {(aggregateRepairProgress.cursor || aggregateRepairProgress.processed > 0) && (
-                <p className="text-xs font-semibold text-ink-soft mb-2">
-                  تمت معالجة {formatNumber(aggregateRepairProgress.processed)} شبكة
-                  {aggregateRepairProgress.done ? ' — مكتمل.' : ' — اضغط للمتابعة.'}
-                </p>
-              )}
-              <div className="dash-maintenance__actions">
-                <Button variant="secondary" size="sm" icon={RefreshCw} loading={rebuildingAggregates} disabled={rebuildingAggregates} onClick={repairFinancialAggregates}>
-                  {rebuildingAggregates ? 'جارٍ الإصلاح…' : aggregateRepairProgress.cursor ? 'متابعة (شبكة واحدة)' : 'إصلاح شبكة واحدة'}
-                </Button>
-              </div>
-            </div>
-          </details>
-        </Card>
-      )}
-      {aggregateRepairProgress.done && (
-        <Card className="dash-maintenance dash-maintenance--done">
-          <p className="text-sm font-extrabold text-success-ink">
-            اكتملت إعادة بناء المجاميع ({formatNumber(aggregateRepairProgress.processed)} شبكة).
-          </p>
-        </Card>
-      )}
+      <AggregateRepairTool
+        progress={repairProgress}
+        rebuilding={rebuildingAggregates}
+        refreshing={syncing}
+        onRequestRepair={requestRepair}
+      />
 
       {!stats && !error && (
         <div className="dash-empty" role="status">
           <span className="dash-empty__icon" aria-hidden="true">
             <Users className="w-6 h-6" />
           </span>
-          <p className="dash-empty__title">لا توجد بيانات بعد</p>
-          <p className="dash-empty__desc">لم يُسجَّل مستخدمون أو مبيعات حتى الآن.</p>
+          <p className="dash-empty__title">لا توجد بيانات لعرضها بعد</p>
+          <p className="dash-empty__desc">
+            لم يتم العثور على مستخدمين أو مبيعات مسجّلة حتى الآن.
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Link to="/users" className="btn btn--primary btn--sm min-h-[44px]">إدارة المستخدمين</Link>
+            <Link to="/sales" className="btn btn--secondary btn--sm min-h-[44px]">فتح المبيعات</Link>
+            <Button variant="secondary" size="sm" onClick={refresh} disabled={syncing}>
+              {syncing ? 'جارٍ التحديث' : 'تحديث البيانات'}
+            </Button>
+          </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(repairConfirm)}
+        onClose={() => setRepairConfirm(null)}
+        onConfirm={async () => {
+          const succeeded = await performRepair();
+          if (!succeeded) return false;
+          setRepairConfirm(null);
+          return true;
+        }}
+        title={repairConfirm?.title || ''}
+        message={repairConfirm?.message || ''}
+        variant={repairConfirm?.variant || 'primary'}
+      />
     </div>
   );
 }

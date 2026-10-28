@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   DollarSign, Filter, Download, CheckCircle2, ShieldCheck, Clock3,
   ChevronDown, ChevronUp, Wallet, Inbox, AlertCircle,
@@ -23,6 +24,10 @@ import { mergeSalesByIdentity } from '../lib/salesReadCompat';
 
 const NETWORK_PAGE_SIZE = 12;
 const FILTER_STORAGE_KEY = 'krotak:sales-filters:v4';
+
+function saleDomId(id) {
+  return `sales-operation-${String(id ?? 'unknown').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
 
 function toDateInput(date) {
   const pad = (value) => String(value).padStart(2, '0');
@@ -77,6 +82,8 @@ function SaleVerificationBadge({ sale }) {
 }
 
 export default function SalesPage() {
+  const location = useLocation();
+  const focusSaleId = location.state?.focusSaleId;
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const savedFilters = useMemo(loadSavedFilters, []);
   const [statusFilter, setStatusFilter] = useState(savedFilters?.statusFilter || 'all');
@@ -305,6 +312,29 @@ export default function SalesPage() {
       return timeB - timeA;
     });
   }, [networkSales, filterSales]);
+
+  // A dashboard operation link can open the live-sales tab and focus the matching sale.
+  useEffect(() => {
+    if (focusSaleId == null || focusSaleId === '') return;
+    setActiveTab('live');
+    setSearchQuery('');
+    setStatusFilter('all');
+    setVerificationFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setShowCustomDate(false);
+  }, [focusSaleId]);
+
+  useEffect(() => {
+    if (focusSaleId == null || focusSaleId === '' || activeTab !== 'live') return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(saleDomId(focusSaleId))?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusSaleId, activeTab, allLiveSales]);
 
   const statusLabel = {
     COMPLETED: { text: 'مكتمل', class: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -782,8 +812,14 @@ export default function SalesPage() {
             <div className="space-y-2">
               {allLiveSales.slice(0, 40).map((sale) => (
                 <div
+                  id={saleDomId(sale.id)}
                   key={sale.id}
-                  className="p-3 rounded-2xl bg-surface border border-line shadow-xs space-y-2"
+                  className={`p-3 rounded-2xl bg-surface border border-line shadow-xs space-y-2 ${
+                    focusSaleId != null && String(sale.id) === String(focusSaleId)
+                      ? 'ring-2 ring-brand border-brand bg-brand-soft/20'
+                      : ''
+                  }`}
+                  aria-current={focusSaleId != null && String(sale.id) === String(focusSaleId) ? 'true' : undefined}
                 >
                   <div className="flex items-center justify-between">
                     <div>

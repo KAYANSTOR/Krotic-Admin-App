@@ -182,6 +182,15 @@ export async function repairAccessPage(cursor = null, limit = 100) {
   return callAdminApi('/api/networks', { action: 'repair-access', cursor, limit });
 }
 
+/** يعيد بناء المجاميع المالية على دفعات صغيرة عبر مسار الترحيل الخادمي. */
+export async function rebuildFinancialAggregatesPage({ cursor = null, limit = 1 } = {}) {
+  return callAdminApi('/api/migrate', {
+    action: 'rebuild-all',
+    limit,
+    ...(cursor ? { cursor } : {}),
+  });
+}
+
 /** حذف حساب المشترك والشبكة بالكامل مع كل سجلاتها من قاعدة البيانات */
 export async function deleteNetworkAccount(uid) {
   // الحذف الكامل (المستخدم + الشبكات + المجموعات الفرعية + الفهرس + التدقيق)

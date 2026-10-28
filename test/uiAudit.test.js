@@ -179,3 +179,77 @@ test('account-features screen writes through the server path and never touches F
   // لا تدّعي الشاشة أن التخزين الإداري وحده يفعّل ميزة على كل إصدار Android.
   assert.match(page, /ما لم يكن ذلك الإصدار يقرأ عقد account_features/);
 });
+
+
+test('dashboard page uses focused modules and removes stale duplicated logic', async () => {
+  const [page, helpers, progress, welcome, alerts, summary, services, settlement, operations, repair] = await Promise.all([
+    read('src/pages/DashboardPage.jsx'),
+    read('src/lib/dashboard/helpers.js'),
+    read('src/lib/dashboard/repairProgress.js'),
+    read('src/components/dashboard/DashWelcome.jsx'),
+    read('src/components/dashboard/DashAlerts.jsx'),
+    read('src/components/dashboard/DashSummary.jsx'),
+    read('src/components/dashboard/DashServices.jsx'),
+    read('src/components/dashboard/DashSettlement.jsx'),
+    read('src/components/dashboard/RecentOperations.jsx'),
+    read('src/components/dashboard/AggregateRepairTool.jsx'),
+  ]);
+
+  assert.ok(page.length < 12000, 'DashboardPage should remain an orchestration layer');
+  assert.ok(page.includes('salesSnapshotsReady = !dashboardQuery.loading && !salesQuery.loading'));
+  assert.ok(page.includes('useAppRefresh(stableRefresh)'));
+  assert.ok(page.includes('refreshRef.current()'));
+  assert.ok(!page.includes('window.confirm'));
+  assert.ok(!['summarizeRealtimeSales', 'MONTH_LABELS', 'partialErrors', 'monthlySales ='].some((token) => page.includes(token)));
+  assert.ok(page.includes("String(adminData?.name ?? '').trim()"));
+  assert.ok(page.includes('ConfirmDialog'));
+  for (const component of [welcome, alerts, summary, services, settlement, operations, repair]) {
+    assert.ok(component.includes('export default function'));
+  }
+  assert.ok(helpers.includes('SALE_STATUS_FALLBACK'));
+  assert.ok(progress.includes('AGGREGATE_REPAIR_PROGRESS_KEY'));
+});
+
+test('aggregate repair is routed through adminApi and guarded against parallel runs', async () => {
+  const [page, api, progress, repair] = await Promise.all([
+    read('src/pages/DashboardPage.jsx'),
+    read('src/lib/adminApi.js'),
+    read('src/lib/dashboard/repairProgress.js'),
+    read('src/components/dashboard/AggregateRepairTool.jsx'),
+  ]);
+
+  assert.ok(page.includes('rebuildFinancialAggregatesPage({ cursor, limit: 1 })'));
+  assert.ok(page.includes('repairInFlightRef'));
+  assert.ok(page.includes('saveRepairProgress(nextProgress)'));
+  assert.ok(api.includes('export async function rebuildFinancialAggregatesPage'));
+  assert.ok(api.includes("callAdminApi('/api/migrate'"));
+  assert.ok(progress.includes('function loadRepairProgress'));
+  assert.ok(progress.includes('function saveRepairProgress'));
+  assert.ok(repair.includes('هذا المتصفح فقط'));
+  assert.ok(repair.includes('disabled={rebuilding || refreshing}'));
+});
+
+test('dashboard summary, settlement progress and recent operation links are accessible', async () => {
+  const [summary, settlement, operations, helpers, salesPage] = await Promise.all([
+    read('src/components/dashboard/DashSummary.jsx'),
+    read('src/components/dashboard/DashSettlement.jsx'),
+    read('src/components/dashboard/RecentOperations.jsx'),
+    read('src/lib/dashboard/helpers.js'),
+    read('src/pages/SalesPage.jsx'),
+  ]);
+
+  assert.ok(summary.includes('Number(stats?.totalSales) || 0'));
+  assert.ok(summary.includes('aria-pressed={!balanceVisible}'));
+  assert.ok(summary.includes('min-w-[44px] min-h-[44px]'));
+  assert.ok(settlement.includes('aria-valuetext='));
+  assert.ok(settlement.includes(' بالمئة'));
+  assert.ok(!settlement.includes('dash-progress__percent" aria-hidden'));
+  assert.ok(operations.includes('state={operation.id ? { focusSaleId: operation.id } : undefined}'));
+  assert.ok(operations.includes('function operationKey'));
+  assert.ok(operations.includes('تم تحديث قائمة العمليات'));
+  assert.ok(helpers.includes('loadBalanceVisible'));
+  assert.ok(helpers.includes('saveBalanceVisible'));
+  assert.ok(salesPage.includes('const focusSaleId = location.state?.focusSaleId'));
+  assert.ok(salesPage.includes("setActiveTab('live')"));
+  assert.ok(salesPage.includes('scrollIntoView'));
+});
