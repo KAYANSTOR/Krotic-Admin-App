@@ -86,6 +86,7 @@ export default function App() {
       <AuthProvider>
         <Toaster
           position="bottom-center"
+          containerStyle={{ bottom: 'calc(68px + env(safe-area-inset-bottom) + 16px)' }}
           toastOptions={{
             duration: 3500,
             style: {
@@ -100,6 +101,8 @@ export default function App() {
               maxWidth: 'calc(100vw - 32px)',
               boxShadow: '0 6px 10px 4px rgba(26,20,16,.12), 0 2px 3px rgba(26,20,16,.10)',
             },
+            success: { style: { background: '#1F5138' }, iconTheme: { primary: '#fff', secondary: '#1F5138' } },
+            error: { style: { background: '#8A2B2B' }, iconTheme: { primary: '#fff', secondary: '#8A2B2B' } },
           }}
         />
         <ReadMeterPanel />
