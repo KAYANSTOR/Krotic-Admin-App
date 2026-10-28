@@ -56,6 +56,14 @@ export default function Layout({ children }) {
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'لوحة التحكم';
 
+  // لون شريط حالة الهاتف يتبع الشاشة الحالية عند تشغيل اللوحة كتطبيق مثبت.
+  useEffect(() => {
+    const themeColor = location.pathname === '/' ? '#D97757' : '#F7F4EF';
+    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+      meta.setAttribute('content', themeColor);
+    });
+  }, [location.pathname]);
+
   // درج التنقل على الهاتف: قفل تمرير الخلفية، إغلاق بـ Escape، وإغلاق تلقائي عند تغيير الصفحة.
   useBodyScrollLock(sidebarOpen);
 
