@@ -1,8 +1,0 @@
-{
-  "name": "Krotak Pro Admin",
-  "description": "لوحة التحكم الإدارية لتطبيق كروتك برو لإدارة الشبكات والمبيعات والمستخدمين",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

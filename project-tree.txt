@@ -1,0 +1,376 @@
+.
+Krotak Admin — project tree
+Branch: ux/dashboard-declutter
+Commit: 32012ff9e03eb86a8d21deae4391112ca4ab0a50
+Depth: 4; excludes node_modules, dist, build, .git, coverage
+
+├── .aistudio
+│   └── artifacts
+│       └── brain
+│           └── 2c20dfc2-1ac7-41d7-bc5d-70bfb4526e38
+├── .github
+│   └── workflows
+│       └── ci.yml
+├── api
+│   ├── inventory
+│   │   └── snapshot.js
+│   ├── sales
+│   │   └── ingest.js
+│   ├── admin-session.js
+│   ├── admins.js
+│   ├── device-heartbeat.js
+│   ├── dispatch-notifications.js
+│   ├── manage-user-auth.js
+│   ├── networks.js
+│   ├── register-network.js
+│   ├── send-fcm.js
+│   ├── settings.js
+│   └── settlement.js
+├── contracts
+│   ├── fixtures
+│   │   ├── account-features-catalog.sample.json
+│   │   ├── account-features.sample.json
+│   │   ├── android-application-state.sample.json
+│   │   ├── android-default-catalog-v1.json
+│   │   ├── android-default-catalog-v1.sha256
+│   │   ├── inbound-template.sample.json
+│   │   ├── inventory-snapshot.sample.json
+│   │   ├── outbound-template.sample.json
+│   │   ├── README.md
+│   │   ├── template-ack.sample.json
+│   │   ├── template-center-ack-request.sample.json
+│   │   ├── template-release.sample.json
+│   │   └── wallet.sample.json
+│   ├── lib
+│   │   └── schemaValidator.js
+│   └── schemas
+│       ├── account-features-catalog.schema.json
+│       ├── account-features.schema.json
+│       ├── android-application-state.schema.json
+│       ├── default-template-catalog.schema.json
+│       ├── inbound-template.schema.json
+│       ├── inventory-snapshot.schema.json
+│       ├── outbound-template.schema.json
+│       ├── template-ack.schema.json
+│       ├── template-center-ack-request.schema.json
+│       ├── template-release.schema.json
+│       └── wallet.schema.json
+├── docs
+│   ├── contracts
+│   │   ├── admin-default-catalog-import-contract-2026-10-21.md
+│   │   └── default-template-catalog.schema.json
+│   ├── ACCOUNT_FEATURES_ACK_CONTRACT_AR.md
+│   ├── ADMIN_CONTROL_CENTER_CONTRACTS_AR.md
+│   ├── ADMIN_LOCAL_FIRST_ARCHITECTURE_AR.md
+│   ├── ADMIN_PANEL_CLOSURE_AUDIT_AR.md
+│   ├── ANDROID_ADMIN_INTEGRATION_CONTRACT_V2_AR.md
+│   ├── CI_TRIAGE_AR.md
+│   ├── DEPLOY_STEPS_AR.md
+│   ├── DESIGN_SYSTEM_V1_AR.md
+│   ├── DEVICE_ATTESTATION_STATUS_AR.md
+│   ├── ENTITLEMENT_LEASE_DEPLOYMENT_AR.md
+│   ├── HANDOFF_NEXT_AGENT_AR.md
+│   ├── INTEGRATION_FIX_REPORT_2026-10-27_AR.md
+│   ├── KROTAK_ADMIN_ROADMAP_AR.md
+│   ├── NEEDS_DECISION_WALLET_KEY_AR.md
+│   ├── PERF_BASELINE_AR.md
+│   ├── PHASE0_BASELINE_REPORT_AR.md
+│   ├── REVIEW_AND_CHANGELOG_AR.md
+│   ├── TEMPLATE_CENTER_CONTRACT_AR.md
+│   └── TEMPLATE_CENTER_STYLE_AUDIT_AR.md
+├── functions
+│   ├── test
+│   │   ├── aggregateOwner.test.js
+│   │   ├── idempotency.test.js
+│   │   └── notificationDelivery.test.js
+│   ├── index.js
+│   └── package.json
+├── public
+│   ├── icons
+│   │   ├── app_icon.png
+│   │   ├── favicon.ico
+│   │   ├── krotak-pro-16.png
+│   │   ├── krotak-pro-180.png
+│   │   ├── krotak-pro-192.png
+│   │   ├── krotak-pro-32.png
+│   │   ├── krotak-pro-48.png
+│   │   └── krotak-pro-512.png
+│   ├── favicon.ico
+│   ├── manifest.webmanifest
+│   ├── manus-routes.json
+│   ├── service-worker.js
+│   └── vite.svg
+├── scripts
+│   ├── icon-assets
+│   │   ├── app_icon.png
+│   │   ├── favicon.ico
+│   │   ├── krotak-pro-16.png
+│   │   ├── krotak-pro-180.png
+│   │   ├── krotak-pro-192.png
+│   │   ├── krotak-pro-32.png
+│   │   ├── krotak-pro-48.png
+│   │   ├── krotak-pro-512.png
+│   │   └── krotak-pro-app-icon-master.png
+│   ├── backfill-updated-at.mjs
+│   ├── check-rules.mjs
+│   ├── eslint-no-undef.config.mjs
+│   ├── generate_keys.js
+│   └── generate-icons.js
+├── security-tests
+│   └── firestore-rules.test.js
+├── server
+│   ├── _lib
+│   │   ├── accessStatus.js
+│   │   ├── accountFeatures.js
+│   │   ├── accountNotifications.js
+│   │   ├── adminBootstrap.js
+│   │   ├── defaultCatalogImport.js
+│   │   ├── deviceHeartbeat.js
+│   │   ├── deviceHeartbeats.js
+│   │   ├── deviceHeartbeatsApi.js
+│   │   ├── entitlementActivation.js
+│   │   ├── entitlementDeviceRebind.js
+│   │   ├── firebaseAdmin.js
+│   │   ├── migration.js
+│   │   ├── migrationApi.js
+│   │   ├── money.js
+│   │   ├── networkId.js
+│   │   ├── networkLedger.js
+│   │   ├── networkSecret.js
+│   │   ├── networkSecretApi.js
+│   │   ├── networkSecretStore.js
+│   │   ├── phoneOtp.js
+│   │   ├── settlementLedger.js
+│   │   ├── subscriptionExpiry.js
+│   │   ├── templateCenter.js
+│   │   ├── templateCenterAck.js
+│   │   └── templateCenterApi.js
+│   └── record-payment.js
+├── src
+│   ├── components
+│   │   ├── dashboard
+│   │   │   ├── AggregateRepairTool.jsx
+│   │   │   ├── DashAlerts.jsx
+│   │   │   ├── DashServices.jsx
+│   │   │   ├── DashSettlement.jsx
+│   │   │   ├── DashSummary.jsx
+│   │   │   ├── DashWelcome.jsx
+│   │   │   └── RecentOperations.jsx
+│   │   ├── notifications
+│   │   │   ├── ComposeTab.jsx
+│   │   │   ├── HistoryTab.jsx
+│   │   │   └── TemplatesTab.jsx
+│   │   ├── ui
+│   │   │   ├── Badge.jsx
+│   │   │   ├── BarChart.jsx
+│   │   │   ├── Button.jsx
+│   │   │   ├── Card.jsx
+│   │   │   ├── DataFreshness.jsx
+│   │   │   ├── EmptyState.jsx
+│   │   │   ├── Field.jsx
+│   │   │   ├── IconTile.jsx
+│   │   │   ├── Modal.jsx
+│   │   │   ├── PageHeader.jsx
+│   │   │   ├── PageHero.jsx
+│   │   │   ├── Section.jsx
+│   │   │   ├── Skeleton.jsx
+│   │   │   ├── StatCard.jsx
+│   │   │   └── Switch.jsx
+│   │   ├── userProfile
+│   │   │   ├── MonthCard.jsx
+│   │   │   ├── SaleVerificationBadge.jsx
+│   │   │   ├── UserInventorySection.jsx
+│   │   │   ├── UserProfileAccountSection.jsx
+│   │   │   ├── UserProfileDeviceSection.jsx
+│   │   │   └── UserProfileFinancialSummary.jsx
+│   │   ├── AppErrorBoundary.jsx
+│   │   ├── BottomNav.jsx
+│   │   ├── ChangeAdminPasswordModal.jsx
+│   │   ├── ConfirmDialog.jsx
+│   │   ├── Layout.jsx
+│   │   ├── LoadingSpinner.jsx
+│   │   ├── MeniscusSurface.jsx
+│   │   ├── PhoneNotificationModal.jsx
+│   │   ├── ProtectedRoute.jsx
+│   │   ├── PullToRefresh.jsx
+│   │   ├── ReadMeterPanel.jsx
+│   │   ├── Sidebar.jsx
+│   │   ├── UserAuthModal.jsx
+│   │   ├── UserBillingModal.jsx
+│   │   ├── UserDevicesPanel.jsx
+│   │   └── UserEditModal.jsx
+│   ├── contexts
+│   │   └── AuthContext.jsx
+│   ├── hooks
+│   │   ├── notifications
+│   │   │   └── useNotifications.js
+│   │   └── userProfile
+│   │       └── useUserProfile.js
+│   ├── lib
+│   │   ├── dashboard
+│   │   │   ├── helpers.js
+│   │   │   └── repairProgress.js
+│   │   ├── localDb
+│   │   │   ├── db.js
+│   │   │   ├── localData.js
+│   │   │   ├── LocalDbContext.jsx
+│   │   │   ├── localQueries.js
+│   │   │   ├── plain.js
+│   │   │   ├── readMeter.js
+│   │   │   ├── syncCore.js
+│   │   │   ├── syncEngine.js
+│   │   │   ├── syncEvents.js
+│   │   │   ├── useAutoSync.js
+│   │   │   └── useLocalQuery.js
+│   │   ├── notifications
+│   │   │   ├── constants.js
+│   │   │   ├── scheduler.js
+│   │   │   ├── templates.js
+│   │   │   └── timestamps.js
+│   │   ├── users
+│   │   │   ├── monthlyBreakdown.js
+│   │   │   └── profileHelpers.js
+│   │   ├── accessStatus.js
+│   │   ├── adminApi.js
+│   │   ├── androidSeedCatalog.js
+│   │   ├── appVersion.js
+│   │   ├── auditLog.js
+│   │   ├── billingHelpers.js
+│   │   ├── bundledTemplatePack.js
+│   │   ├── cn.js
+│   │   ├── commission.js
+│   │   ├── csv.js
+│   │   ├── format.js
+│   │   ├── inventorySnapshot.js
+│   │   ├── mapWithConcurrency.js
+│   │   ├── notificationTemplates.js
+│   │   ├── phoneNotifications.js
+│   │   ├── routeLoaders.js
+│   │   ├── salesReadCompat.js
+│   │   ├── templateCenterIds.js
+│   │   ├── templateCenterRoutes.js
+│   │   ├── templateCenterView.js
+│   │   ├── useAppRefresh.js
+│   │   ├── useBodyScrollLock.js
+│   │   └── useOnlineStatus.js
+│   ├── pages
+│   │   ├── template-center
+│   │   │   ├── DraftScopePanel.jsx
+│   │   │   ├── InboundTab.jsx
+│   │   │   ├── OutboundTab.jsx
+│   │   │   ├── ReconciliationTab.jsx
+│   │   │   ├── ReleasesTab.jsx
+│   │   │   ├── TemplateCenterContext.jsx
+│   │   │   ├── TemplateCenterLayout.jsx
+│   │   │   └── WalletsTab.jsx
+│   │   ├── AdminsPage.jsx
+│   │   ├── AuditPage.jsx
+│   │   ├── DashboardPage.jsx
+│   │   ├── DevicesPage.jsx
+│   │   ├── LoginPage.jsx
+│   │   ├── NotificationsPage.jsx
+│   │   ├── PaidFeaturesPage.jsx
+│   │   ├── SalesPage.jsx
+│   │   ├── SettingsPage.jsx
+│   │   ├── TemplateCenterPage.jsx
+│   │   ├── UserProfilePage.jsx
+│   │   ├── UsersPage.jsx
+│   │   ├── UsersPage.restored.jsx
+│   │   └── UsersPage.ux.jsx
+│   ├── App.jsx
+│   ├── firebase.js
+│   ├── index.css
+│   └── main.jsx
+├── test
+│   ├── helpers
+│   │   ├── fakeFirestore.js
+│   │   └── memoryDb.js
+│   ├── accessStatus.test.js
+│   ├── accountFeatures.test.js
+│   ├── accountNotifications.test.js
+│   ├── adminBootstrap.test.js
+│   ├── admins.test.js
+│   ├── androidContractIntegration.test.js
+│   ├── androidSeedCatalog.test.js
+│   ├── appVersion.test.js
+│   ├── billingHelpers.test.js
+│   ├── commission.test.js
+│   ├── contracts.test.js
+│   ├── dashboardLayout.test.js
+│   ├── defaultCatalogImport.test.js
+│   ├── defaultCatalogImportApi.test.js
+│   ├── designSystem.test.js
+│   ├── deviceHeartbeat.test.js
+│   ├── deviceHeartbeats.test.js
+│   ├── dispatchCron.test.js
+│   ├── entitlementActivation.test.js
+│   ├── ingestAck.test.js
+│   ├── inventorySnapshot.test.js
+│   ├── localData.test.js
+│   ├── localFirstGuards.test.js
+│   ├── manage-user-auth.test.js
+│   ├── mapWithConcurrency.test.js
+│   ├── migration.test.js
+│   ├── money.test.js
+│   ├── monthlyBreakdown.test.js
+│   ├── networkId.test.js
+│   ├── networkLedger.test.js
+│   ├── networks.test.js
+│   ├── networkSecret.test.js
+│   ├── networkSecretApi.test.js
+│   ├── networkSecretStore.test.js
+│   ├── networkStatementAndIdempotency.test.js
+│   ├── notifications.test.js
+│   ├── notificationTemplates.test.js
+│   ├── otpRouting.test.js
+│   ├── phoneNotifications.test.js
+│   ├── readMeter.test.js
+│   ├── recordPayment.test.js
+│   ├── register-network.test.js
+│   ├── reportConsistency.test.js
+│   ├── routeLoaders.test.js
+│   ├── salesIngest.test.js
+│   ├── salesIngestHandler.test.js
+│   ├── salesReadCompat.test.js
+│   ├── sendFcm.test.js
+│   ├── settings.test.js
+│   ├── settlement.test.js
+│   ├── settlementLedger.test.js
+│   ├── smsOtp.test.js
+│   ├── subscriptionExpiry.test.js
+│   ├── syncEngine.test.js
+│   ├── templateCenter.test.js
+│   ├── templateCenterAck.test.js
+│   ├── templateCenterApi.test.js
+│   ├── templateCenterTerminology.test.js
+│   ├── templateCenterUi.test.js
+│   ├── templateCenterView.test.js
+│   ├── uiAudit.test.js
+│   └── vercelFunctionLimit.test.js
+├── .env.example
+├── .gitignore
+├── ANDROID_ADMIN_INTEGRATION_CONTRACT_AR.md
+├── ANDROID_FLUTTER_INTEGRATION_QUICK_CONTRACT_AR.md
+├── bun.lock
+├── DECISIONS_REQUIRED_AR.md
+├── Default:
+├── DEPLOYMENT.md
+├── firebase_admin_panel_guide.md
+├── firebase-applet-config.json
+├── firebase.json
+├── firestore.indexes.json
+├── firestore.rules
+├── index.html
+├── KROTAK_PERFORMANCE_PLAN_AR.md
+├── metadata.json
+├── notifications-deployment-ar.md
+├── OWNER_ACCESS_COMMISSION_POLICY_AR.md
+├── package-lock.json
+├── package.json
+├── postcss.config.js
+├── README.md
+├── SALES_SETTLEMENT_MODEL_AR.md
+├── server.ts
+├── tailwind.config.js
+├── vercel.json
+└── vite.config.js

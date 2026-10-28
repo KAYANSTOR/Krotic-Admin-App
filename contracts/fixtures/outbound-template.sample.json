@@ -1,6 +1,0 @@
-{
-  "_synthetic": true,
-  "_note": "بيانات اختبار اصطناعية غير إنتاجية",
-  "key": "customer_debt_payment_template",
-  "body": "تم استلام دفعة بقيمة {amount} ريال. شكراً لتعاملكم معنا."
-}
