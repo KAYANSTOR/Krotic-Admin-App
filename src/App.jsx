@@ -85,12 +85,20 @@ export default function App() {
     <Router future={{ v7_startTransition: true }}>
       <AuthProvider>
         <Toaster
-          position="top-center"
+          position="bottom-center"
           toastOptions={{
-            duration: 3000,
+            duration: 3500,
             style: {
               fontFamily: 'Tajawal, sans-serif',
               direction: 'rtl',
+              background: '#322B24',
+              color: '#fff',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              fontSize: '14px',
+              fontWeight: 500,
+              maxWidth: 'calc(100vw - 32px)',
+              boxShadow: '0 6px 10px 4px rgba(26,20,16,.12), 0 2px 3px rgba(26,20,16,.10)',
             },
           }}
         />
