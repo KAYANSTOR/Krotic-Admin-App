@@ -1,6 +1,6 @@
-import { monthKeyFromDate } from '../billingHelpers';
-import { saleCommission, saleOutstanding, isServerVerifiedSale } from '../commission';
-import { isValidMonthKey } from './profileHelpers';
+import { monthKeyFromDate } from '../billingHelpers.js';
+import { saleCommission, saleOutstanding, isServerVerifiedSale } from '../commission.js';
+import { isValidMonthKey } from './profileHelpers.js';
 
 export function paymentMonthKey(payment) {
   if (isValidMonthKey(payment?.month)) return payment.month;
