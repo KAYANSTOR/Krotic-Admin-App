@@ -240,6 +240,74 @@ export async function triggerScheduledDispatch() {
   }
 }
 
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+/** إرسال إشعار فوري عبر المسار الخادمي المحمي بصلاحيات المدير. */
+export async function sendPushNotification({ title, body, targetUid = null }) {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return { ok: false, error: 'missing_token' };
+
+    const response = await fetch('/api/send-fcm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        title,
+        body,
+        data: {
+          route: '/account-notifications',
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        ...(targetUid ? { targetUid } : {}),
+      }),
+    });
+    const data = await readJsonResponse(response);
+    return {
+      ok: response.ok && data.success === true,
+      data,
+      error: data.error || (response.ok ? null : `http_${response.status}`),
+    };
+  } catch (error) {
+    return { ok: false, error: 'network_error', errorObject: error };
+  }
+}
+
+/** حذف سجل إشعار من الخادم؛ قواعد Firestore لا تسمح للعميل بحذف سجل التسليم مباشرة. */
+export async function deleteNotification({ id }) {
+  if (!String(id || '').trim()) return { ok: false, error: 'id_required' };
+
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return { ok: false, error: 'missing_token' };
+
+    const response = await fetch('/api/send-fcm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ action: 'delete', id }),
+    });
+    const data = await readJsonResponse(response);
+    return {
+      ok: response.ok && data.success === true,
+      data,
+      error: data.error || (response.ok ? null : `http_${response.status}`),
+    };
+  } catch (error) {
+    return { ok: false, error: 'network_error', errorObject: error };
+  }
+}
+
 /**
  * ينادي دالة إدارة على الخادم مع رمز هوية المدير الحالي.
  * يُرجع دائماً كائناً بدون رمي استثناء: { ok, data, error }.

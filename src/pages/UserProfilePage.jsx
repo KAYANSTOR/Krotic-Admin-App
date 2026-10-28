@@ -1,29 +1,25 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import {
-  ArrowRight, DollarSign, CalendarPlus, Edit, KeyRound, Ban,
-  UserCheck, CheckCircle, RefreshCw, Inbox, Wallet, Users,
-  ShieldCheck, ShieldAlert, Trash2, ChevronDown,
-} from 'lucide-react';
+import { ArrowRight, RefreshCw, Inbox, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import PageHero from '../components/ui/PageHero';
 import Section from '../components/ui/Section';
 import { Card } from '../components/ui/Card';
-import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import StatCard from '../components/ui/StatCard';
 import DataFreshness from '../components/ui/DataFreshness';
 import { SkeletonPageHeader, SkeletonTable } from '../components/ui/Skeleton';
 import UserEditModal from '../components/UserEditModal';
 import UserBillingModal from '../components/UserBillingModal';
 import UserAuthModal from '../components/UserAuthModal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import UserDevicesPanel from '../components/UserDevicesPanel';
 import MonthCard from '../components/userProfile/MonthCard';
 import UserInventorySection from '../components/userProfile/UserInventorySection';
+import UserProfileAccountSection from '../components/userProfile/UserProfileAccountSection';
+import UserProfileDeviceSection from '../components/userProfile/UserProfileDeviceSection';
+import UserProfileFinancialSummary from '../components/userProfile/UserProfileFinancialSummary';
 
-import { formatNumber, formatDate, isExpired } from '../lib/format';
+import { formatNumber, isExpired } from '../lib/format';
 import { saleCommission, saleFaceValue, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
@@ -32,13 +28,7 @@ import { isUserPhoneVerified } from '../lib/accessStatus';
 import { getAppUpdateStatus } from '../lib/appVersion';
 import useAppRefresh from '../lib/useAppRefresh';
 
-import {
-  hasCustomCommission,
-  getUserDisplayName,
-  formatAppVersion,
-  getAccessStatusMeta,
-  formatMonthArabic,
-} from '../lib/users/profileHelpers';
+import { getUserDisplayName, getAccessStatusMeta, formatMonthArabic } from '../lib/users/profileHelpers';
 import { buildMonthlyBreakdown, paymentMonthKey } from '../lib/users/monthlyBreakdown';
 import { useUserProfile } from '../hooks/userProfile/useUserProfile';
 
@@ -154,6 +144,11 @@ export default function UserProfilePage() {
     setSelectedMonthForBilling(monthKey);
     setBilling(true);
   }, []);
+
+  const handleOpenCurrentBilling = useCallback(
+    () => openBillingForMonth(getCurrentMonthKey()),
+    [openBillingForMonth],
+  );
 
   const runConfirmed = useCallback((action) => {
     setConfirmAction(action);
@@ -424,219 +419,43 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      <Section
-        eyebrow="الحساب"
-        title="تفاصيل وإجراءات سريعة"
-        action={
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge tone={status.tone}>{status.text}</Badge>
-            {user.is_active === false && <Badge tone="danger">محظور</Badge>}
-          </div>
-        }
-      >
-        <Card>
-          <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
-            <div className="user-card__meta-item">
-              <dt>النسبة المضبوطة حالياً</dt>
-              <dd><span className="num font-bold">{hasCustomCommission(user) ? `${user.commission_rate}% (خاصة)` : 'عامة'}</span></dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>تاريخ الانتهاء</dt>
-              <dd className={expired ? 'text-danger font-bold' : 'font-semibold'}>{formatDate(user.subscription_end_date)}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>معرّف الشبكة</dt>
-              <dd dir="ltr" className="font-mono">{user.networkId || uid}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>رقم الهاتف</dt>
-              <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || user.phone || '—'}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>حالة التحقق بالهاتف</dt>
-              <dd>
-                {isVerifiedPhone ? (
-                  <span className="inline-flex items-center gap-1 font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-                    <span>موثّق برقم الهاتف</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 text-xs">
-                    <ShieldAlert className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
-                    <span>غير موثّق</span>
-                  </span>
-                )}
-              </dd>
-            </div>
-          </dl>
+      <UserProfileAccountSection
+        user={user}
+        uid={uid}
+        status={status}
+        expired={expired}
+        isVerifiedPhone={isVerifiedPhone}
+        onOpenBilling={handleOpenCurrentBilling}
+        onRenew={handleRenew}
+        onEdit={() => setEditing(true)}
+        onOpenAuth={() => setAuthModal(true)}
+        onVerifyPhone={handleManualPhoneVerify}
+        onMakeOfficial={handleMakeOfficial}
+        onToggleAccess={handleToggleAccess}
+        onDelete={handleDelete}
+      />
 
-          <div className="user-card__actions mt-4">
-            <button type="button" onClick={() => openBillingForMonth(getCurrentMonthKey())} className="row-action row-action--success min-h-[44px]" aria-label="الفوترة والتسويات">
-              <DollarSign className="w-4 h-4 text-emerald-600" aria-hidden="true" />
-              <span className="text-xs font-bold">تسوية وعمولة</span>
-            </button>
-            <button type="button" onClick={handleRenew} className="row-action row-action--brand min-h-[44px]">
-              <CalendarPlus className="w-4 h-4 text-brand" aria-hidden="true" />
-              <span>تجديد</span>
-            </button>
-            <button type="button" onClick={() => setEditing(true)} className="row-action row-action--neutral min-h-[44px]">
-              <Edit className="w-4 h-4" aria-hidden="true" />
-              <span>تعديل</span>
-            </button>
-            <button type="button" onClick={() => setAuthModal(true)} className="row-action row-action--neutral min-h-[44px]">
-              <KeyRound className="w-4 h-4" aria-hidden="true" />
-              <span>الدخول</span>
-            </button>
-          </div>
+      <UserProfileDeviceSection
+        user={user}
+        uid={uid}
+        targetName={targetName}
+        globalConfig={globalConfig}
+        status={status}
+        expired={expired}
+        updateStatus={updateStatus}
+        updateLabel={updateLabel}
+      />
 
-          <details className="mt-3 border-t border-line/60 pt-3">
-            <summary className="flex items-center justify-between gap-2 cursor-pointer rounded-xl px-3 py-2 min-h-[44px] font-bold text-sm text-ink hover:bg-surface-sunken">
-              <span>إجراءات إضافية</span>
-              <ChevronDown className="w-4 h-4 text-muted" aria-hidden="true" />
-            </summary>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
-              <button
-                type="button"
-                onClick={handleManualPhoneVerify}
-                className={`row-action min-h-[44px] ${isVerifiedPhone ? 'row-action--success' : 'row-action--brand-soft'}`}
-                title={isVerifiedPhone ? 'إلغاء توثيق الهاتف' : 'توثيق الهاتف يدوياً للدعم الفني'}
-              >
-                {isVerifiedPhone ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
-                <span>{isVerifiedPhone ? 'إلغاء التوثيق' : 'توثيق الهاتف'}</span>
-              </button>
-
-              {user.is_trial && (
-                <button type="button" onClick={handleMakeOfficial} className="row-action row-action--brand-soft min-h-[44px]">
-                  <CheckCircle className="w-4 h-4 text-brand" aria-hidden="true" />
-                  <span>تحويل إلى رسمي</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleToggleAccess}
-                className={`row-action min-h-[44px] ${user.is_active === false ? 'row-action--success' : 'row-action--danger'}`}
-                aria-label={user.is_active === false ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
-              >
-                {user.is_active === false ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                <span>{user.is_active === false ? 'رفع الحظر' : 'حظر'}</span>
-              </button>
-
-              <button type="button" onClick={handleDelete} className="row-action row-action--danger min-h-[44px]" title="حذف الحساب نهائياً">
-                <Trash2 className="w-4 h-4 text-danger" aria-hidden="true" />
-                <span>حذف الحساب</span>
-              </button>
-            </div>
-          </details>
-        </Card>
-      </Section>
-
-      <Section eyebrow="التطبيق والجهاز" title="الإصدار المثبت وآخر ظهور">
-        <Card>
-          <dl className="user-card__meta" style={{ background: 'transparent', border: 0, padding: 0 }}>
-            <div className="user-card__meta-item">
-              <dt>الإصدار المثبّت</dt>
-              <dd dir="ltr" className="font-mono">{formatAppVersion(user.app_version ?? user.appVersion)}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>versionCode المثبّت</dt>
-              <dd dir="ltr" className="font-mono">{formatAppVersion(user.app_version_code)}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>آخر إصدار منشور</dt>
-              <dd dir="ltr" className="font-mono">
-                {globalConfig?.app_latest_version || 'غير محدد'}
-                {globalConfig?.app_latest_version_code != null && globalConfig.app_latest_version_code !== ''
-                  ? ` (${formatAppVersion(globalConfig.app_latest_version_code)})`
-                  : ''}
-              </dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>حالة التحديث</dt>
-              <dd>
-                <Badge tone={updateStatus === 'current' ? 'success' : updateStatus === 'outdated' ? 'warning' : 'neutral'}>
-                  {updateLabel}
-                </Badge>
-              </dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>آخر ظهور</dt>
-              <dd>{formatDate(user.last_seen_at || user.lastSeenAt, { withTime: true })}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>المنصة</dt>
-              <dd>{user.platform || 'غير مُبلّغ'}</dd>
-            </div>
-            <div className="user-card__meta-item">
-              <dt>حالة الترخيص/الوصول</dt>
-              <dd>{status.text}{user.is_active === false ? ' — موقوف' : expired ? ' — منتهي' : ''}</dd>
-            </div>
-          </dl>
-          <p className="text-xs text-muted mt-4">
-            تعكس هذه البيانات آخر تقرير ناجح من التطبيق، وليست فحصاً لحظياً للجهاز.
-          </p>
-        </Card>
-        <UserDevicesPanel userId={uid} userLabel={targetName} />
-      </Section>
-
-      <Section eyebrow="المؤشرات المالية" title="ملخص المبيعات والعمولات">
-        <div className="flex items-center justify-between my-2 flex-wrap gap-2">
-          <p className="text-xs text-muted">تُعرض جميع الفترات افتراضياً، ويمكن اختيار شهر محدد.</p>
-          <label className="flex items-center gap-2 text-xs font-semibold text-muted">
-            الفترة
-            <select
-              value={historyMonth}
-              onChange={(event) => setHistoryMonth(event.target.value)}
-              className="input-field py-2 text-xs min-h-[44px]"
-              aria-label="فترة المؤشرات المالية"
-            >
-              <option value="all">كل الأشهر</option>
-              {monthOptions.map((month) => (
-                <option key={month} value={month}>{formatMonthArabic(month)}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="grid-kpi">
-          <StatCard
-            title={historyMonth === 'all' ? 'إجمالي المبيعات' : 'مبيعات الشهر المحدد'}
-            value={formatNumber(totalSales)}
-            icon={DollarSign}
-            tone="brand"
-            subtitle={historyMonth === 'all' ? 'كل الأشهر • ريال يمني' : formatMonthArabic(historyMonth)}
-          />
-          <StatCard
-            title="العمولة المعتمدة خادمياً"
-            value={formatNumber(verifiedCommissionDue)}
-            icon={Wallet}
-            tone="warning"
-            subtitle={legacyEstimatedCommission > 0
-              ? `+ ${formatNumber(legacyEstimatedCommission)} ر.ي قديمة للمراجعة`
-              : historyMonth === 'all' ? 'كل العمولات المعتمدة' : 'العمولة المعتمدة لهذا الشهر'}
-          />
-          <StatCard
-            title="المتبقي غير المسوّى"
-            value={formatNumber(verifiedOutstanding)}
-            icon={Wallet}
-            tone="success"
-            subtitle="من سجلات المبيعات المعتمدة فقط"
-          />
-          <StatCard
-            title="الدفعات المسجلة"
-            value={formatNumber(totalPaid)}
-            icon={DollarSign}
-            tone="neutral"
-            subtitle={historyMonth === 'all' ? 'إجمالي الدفعات في كل الأشهر' : `دفعات ${formatMonthArabic(historyMonth)}`}
-          />
-        </div>
-
-        {historyMonth === 'all' && legacyEstimatedCommission > 0 && (
-          <p className="text-xs leading-5 text-amber-800 mt-2" role="note">
-            العمولات التقديرية للسجلات القديمة معروضة للمراجعة فقط ولا تدخل ضمن عمولة الإدارة المعتمدة.
-          </p>
-        )}
-      </Section>
+      <UserProfileFinancialSummary
+        historyMonth={historyMonth}
+        setHistoryMonth={setHistoryMonth}
+        monthOptions={monthOptions}
+        totalSales={totalSales}
+        verifiedCommissionDue={verifiedCommissionDue}
+        legacyEstimatedCommission={legacyEstimatedCommission}
+        verifiedOutstanding={verifiedOutstanding}
+        totalPaid={totalPaid}
+      />
 
       <UserInventorySection
         snapshot={inventorySnapshot}

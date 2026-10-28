@@ -131,7 +131,7 @@ export function useUserProfile(uid) {
     refresh,
     syncing,
     lastSyncAt,
-    historyLoading: Boolean(uid) && !historyEnvelope && !historyError,
+    historyLoading: Boolean(uid) && historyQuery.loading && !historyEnvelope && !historyError,
     historyAvailable: Boolean(historyEnvelope),
   };
 }
