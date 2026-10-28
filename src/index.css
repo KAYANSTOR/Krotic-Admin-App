@@ -2565,6 +2565,13 @@ body { background: var(--ui-paper); }
     --ui-brand-deeper:var(--ui-terracotta-900);
     --ui-brand-soft:var(--ui-terracotta-100);
     --ui-brand-tint:var(--ui-terracotta-300);
+    /* Compatibility aliases used by existing page components */
+    --ui-forest-black:var(--ui-terracotta-950);
+    --ui-deep-forest:var(--ui-terracotta-900);
+    --ui-forest-green:var(--ui-terracotta-800);
+    --ui-primary-green:var(--ui-terracotta-600);
+    --ui-sage-green:var(--ui-terracotta-400);
+    --ui-mint-surface:var(--ui-terracotta-100);
     --ui-paper:#F7F4EF;
     --ui-surface:#FFFFFF;
     --ui-white:#FFFFFF;
