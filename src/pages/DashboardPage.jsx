@@ -199,7 +199,6 @@ export default function DashboardPage() {
   if (maintenance) {
     statusNotices.push({
       key: 'maintenance',
-      tone: 'warning',
       title: 'التطبيق في وضع الصيانة',
       msg: appStatus?.maintenance_message || null,
     });
@@ -207,7 +206,6 @@ export default function DashboardPage() {
   if (!salesSnapshotsReady && stats) {
     statusNotices.push({
       key: 'syncing',
-      tone: 'info',
       title: 'جارٍ مزامنة المؤشرات المالية',
       msg: null,
     });
@@ -215,7 +213,6 @@ export default function DashboardPage() {
   if (realtimeDataWarning) {
     statusNotices.push({
       key: 'sales-warn',
-      tone: 'warning',
       title: 'تعذر مزامنة بعض تحديثات المبيعات',
       msg: partialErrors.length ? null : 'تحقق من الاتصال قبل أي تسوية مالية.',
       details: partialErrors,
@@ -224,7 +221,6 @@ export default function DashboardPage() {
   if (monthlyDataWarning) {
     statusNotices.push({
       key: 'monthly',
-      tone: 'warning',
       title: 'تفصيل الأشهر غير مكتمل',
       msg: 'الإجماليات محفوظة؛ التفصيل الشهري يُستعاد من السجلات.',
       details: partialErrors,
@@ -254,29 +250,27 @@ export default function DashboardPage() {
         />
       </header>
 
-      {statusNotices.length > 0 && (
-        <div className="dash-notices" role="status" aria-live="polite">
-          {statusNotices.map((notice) => (
-            <div key={notice.key} className={`dash-notice dash-notice--${notice.tone}`}>
-              <AlertTriangle className="dash-notice__icon" aria-hidden="true" />
-              <div className="dash-notice__body">
-                <p className="dash-notice__title">{notice.title}</p>
-                {notice.msg && <p className="dash-notice__msg">{notice.msg}</p>}
-                {notice.details?.length > 0 && (
-                  <details className="dash-error__details">
-                    <summary>التفاصيل ({notice.details.length})</summary>
-                    <ul>
-                      {notice.details.map((message, index) => (
-                        <li key={index} dir="ltr">{message}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>
-            </div>
-          ))}
+      {statusNotices.map((notice) => (
+        <div key={notice.key} className="dash-alert" role="status" aria-live="polite">
+          <span className="dash-alert__icon" aria-hidden="true">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <div className="dash-alert__body">
+            <p className="dash-alert__title">{notice.title}</p>
+            {notice.msg && <p className="dash-alert__msg">{notice.msg}</p>}
+            {notice.details?.length > 0 && (
+              <details className="dash-error__details">
+                <summary>التفاصيل ({notice.details.length})</summary>
+                <ul>
+                  {notice.details.map((message, index) => (
+                    <li key={index} dir="ltr">{message}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
         </div>
-      )}
+      ))}
 
       {error && (
         <div className="dash-error" role="alert">
