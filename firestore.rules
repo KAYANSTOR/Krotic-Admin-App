@@ -120,10 +120,8 @@ service cloud.firestore {
 
     // إعدادات التطبيق الجذرية تُقرأ من الحسابات المسجّلة، وتُكتب فقط عبر
     // نقطة النهاية الخادمية المقيّدة POST /api/settings.
-    // الإعدادات العامة: قراءة للمستخدمين المسجّلين فقط.
-    // الإعدادات والمستندات المتداخلة الأخرى تظل مقصورة على المدراء.
-    match /app_settings/global_config {
-      allow read: if signedIn();
+    match /app_settings/{document} {
+      allow read: if signedIn() && document == 'global_config';
       allow write: if false;
     }
 
