@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,7 +9,7 @@ import Button from './ui/Button';
 import { Field, Input } from './ui/Field';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
-const MIN_LENGTH = 6;
+const MIN_LENGTH = 8;
 
 export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
   const { currentUser, adminData } = useAuth();
@@ -19,6 +19,17 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
   const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [needsReauth, setNeedsReauth] = useState(false);
+
+  // Clear sensitive form values whenever the modal is opened, including when
+  // the parent controls isOpen directly instead of calling handleClose.
+  useEffect(() => {
+    if (!isOpen) return;
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setNeedsReauth(false);
+  }, [isOpen]);
 
   const resetForm = () => {
     setCurrentPassword('');
@@ -33,51 +44,62 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
     onClose();
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
+  const validate = () => {
+    if (!auth.currentUser) return 'لم يتم العثور على جلسة مدير نشطة';
+    if (needsReauth && !currentPassword) return 'أدخل كلمة المرور الحالية لتأكيد الهوية';
     if (newPassword.length < MIN_LENGTH) {
-      toast.error(`كلمة المرور الجديدة يجب أن تكون ${MIN_LENGTH} أحرف على الأقل`);
+      return `كلمة المرور الجديدة يجب أن تكون ${MIN_LENGTH} أحرف على الأقل`;
+    }
+    if (newPassword !== confirmPassword) return 'كلمتا المرور غير متطابقتين';
+    return null;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (saving) return;
+
+    const validationError = validate();
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      toast.error('كلمتا المرور غير متطابقتين');
-      return;
-    }
-
-    if (!auth.currentUser) {
+    const user = auth.currentUser;
+    if (!user) {
       toast.error('لم يتم العثور على جلسة مدير نشطة');
       return;
     }
 
     setSaving(true);
     try {
-      // إذا طُلب إعادة المصادقة، ننفذها أولاً
-      if (needsReauth || currentPassword) {
+      // Reauthentication is needed only when requested by Firebase or when
+      // the administrator has chosen to provide the current password.
+      if (needsReauth || currentPassword.length > 0) {
         if (!currentPassword) {
           toast.error('أدخل كلمة المرور الحالية لتأكيد الهوية');
-          setSaving(false);
           return;
         }
-        const userEmail = auth.currentUser?.email || currentUser?.email || adminData?.email || '';
-        const credential = EmailAuthProvider.credential(userEmail, currentPassword);
-        if (auth.currentUser) {
-          await reauthenticateWithCredential(auth.currentUser, credential);
+
+        const userEmail = user.email || currentUser?.email || adminData?.email || '';
+        if (!userEmail) {
+          toast.error('تعذر تحديد بريد الحساب للتحقق من الهوية');
+          return;
         }
+
+        const credential = EmailAuthProvider.credential(userEmail, currentPassword);
+        await reauthenticateWithCredential(user, credential);
       }
 
-      if (auth.currentUser) {
-        await updatePassword(auth.currentUser, newPassword);
-      }
+      await updatePassword(user, newPassword);
 
-      // توثيق في سجل العمليات
+      // Audit logging is best-effort; a logging failure must not undo a
+      // successful Firebase Authentication password change.
       await logAdminAction({
         action: AUDIT_ACTIONS.ADMIN_PASSWORD_CHANGE || 'admin:password_change',
         targetType: 'admin',
-        targetId: auth.currentUser?.uid || currentUser?.uid || 'admin',
-        targetLabel: adminData?.name || auth.currentUser?.email || currentUser?.email || 'المدير',
-      }).catch((err) => console.warn('Audit failed:', err));
+        targetId: user.uid,
+        targetLabel: adminData?.name || user.email || 'المدير',
+      }).catch((error) => console.warn('Audit failed:', error));
 
       toast.success('تم تغيير كلمة المرور بنجاح');
       handleClose();
@@ -90,8 +112,10 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
         toast.error('كلمة المرور الحالية غير صحيحة');
       } else if (error?.code === 'auth/weak-password') {
         toast.error('كلمة المرور ضعيفة، اختر كلمة مرور أقوى');
+      } else if (error?.code === 'auth/network-request-failed') {
+        toast.error('تعذر الاتصال بالخدمة. تحقق من الإنترنت ثم حاول مجدداً');
       } else {
-        toast.error(error.message || 'تعذر تغيير كلمة المرور');
+        toast.error('تعذر تغيير كلمة المرور. حاول مرة أخرى');
       }
     } finally {
       setSaving(false);
@@ -125,7 +149,7 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
     >
       <form id="change-admin-password-form" onSubmit={handleSubmit} className="space-y-4">
         {needsReauth && (
-          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-start gap-2.5">
+          <div className="p-3 rounded-xl bg-warning-soft border border-warning/30 text-warning-ink text-xs flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-bold">مطلوب التحقق من الهوية</p>
@@ -141,30 +165,28 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
             <Input
               type={showPassword ? 'text' : 'password'}
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(event) => setCurrentPassword(event.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
+              required={needsReauth}
             />
           </Field>
         )}
 
-        <Field
-          label="كلمة المرور الجديدة"
-          hint={`${MIN_LENGTH} أحرف على الأقل.`}
-          required
-        >
+        <Field label="كلمة المرور الجديدة" hint={`${MIN_LENGTH} أحرف على الأقل.`} required>
           <Input
             type={showPassword ? 'text' : 'password'}
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onChange={(event) => setNewPassword(event.target.value)}
             placeholder="••••••••"
             autoComplete="new-password"
             minLength={MIN_LENGTH}
+            required
             endAdornment={
               <button
                 type="button"
                 className="field-adorn"
-                onClick={() => setShowPassword((v) => !v)}
+                onClick={() => setShowPassword((visible) => !visible)}
                 aria-label={showPassword ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -177,9 +199,10 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
           <Input
             type={showPassword ? 'text' : 'password'}
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(event) => setConfirmPassword(event.target.value)}
             placeholder="••••••••"
             autoComplete="new-password"
+            required
           />
         </Field>
 
