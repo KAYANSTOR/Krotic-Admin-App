@@ -33,24 +33,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MAX_WARNING = 500;
 const BATCH_LIMIT = 200;
-const PROTECTED_PHONE_DIGITS = new Set([
-  '967771835552',
-  '967773086403',
-]);
-
-function phoneCandidates(value) {
-  const digits = String(value ?? '').replace(/\D/g, '');
-  if (!digits) return [];
-  const candidates = new Set([digits]);
-  if (digits.startsWith('00')) candidates.add(digits.slice(2));
-  if (digits.startsWith('0') && digits.length >= 9) candidates.add(`967${digits.slice(1)}`);
-  return [...candidates];
-}
-
-export function isProtectedPhone(value) {
-  return phoneCandidates(value).some((candidate) => PROTECTED_PHONE_DIGITS.has(candidate));
-}
-
 function normalizeBody(body) {
   if (typeof body === 'string') {
     try {
@@ -597,10 +579,6 @@ export async function deleteAccount(db, { uid, actorUid, now, authService = getA
   if (!userData) return { status: 'account_not_found', uid };
   const networkId = userData?.networkId || null;
   const phone = userData?.phone || userData?.phoneNumber || null;
-  if (isProtectedPhone(phone)) {
-    throw new Error('protected_account');
-  }
-
   // Discover all network documents before deleting anything. This avoids
   // starting a partial delete when a legacy account has multiple networks.
   const networksToDelete = new Map();
@@ -707,9 +685,6 @@ export default async function handler(req, res) {
     if (error?.message === 'network_secret_decryption_failed') {
       console.error('networks: stored network key could not be decrypted');
       return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
-    }
-    if (error?.message === 'protected_account') {
-      return res.status(403).json({ success: false, error: 'protected_account' });
     }
     console.error('networks action failed', error);
     return res.status(500).json({ success: false, error: 'network_action_failed' });
