@@ -282,10 +282,17 @@ test('repairLegacyAccess fixes previously suspended user and network records wit
 test('deleteAccount purges client, network documents, sales subcollections, phone index and aggregate records', async () => {
   const docs = new Map([
     ['users/user_del', { uid: 'user_del', networkId: 'NET-99999', phone: '967771234567' }],
+    ['users/user_del/template_acks/device-1', { uid: 'user_del' }],
+    ['users/user_del/account_feature_audit/change-1', { uid: 'user_del' }],
     ['networks/NET-99999', { owner_uid: 'user_del', networkId: 'NET-99999' }],
     ['networks/NET-99999/sales/sale_del', { saleId: 'sale_del' }],
     ['networks/NET-99999/payments/payment_del', { amount: 10 }],
+    ['networks/NET-99999/inventory_snapshot/current', { availableCount: 10 }],
+    ['networks/NET-99999/device_heartbeats/device-1', { accountId: 'user_del' }],
     ['admin_aggregates/user_del', { totalSales: 50 }],
+    ['sale_ingest_registry/user_del_sale_del', { uid: 'user_del', saleUuid: 'sale_del' }],
+    ['notification_requests/request_del', { targetUid: 'user_del' }],
+    ['notification_deliveries/delivery_del', { targetUid: 'user_del' }],
   ]);
   const deletedDocs = new Set();
   const audits = [];
@@ -307,7 +314,10 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
         return makeColRef(`${path}/${subName}`);
       },
       async listCollections() {
-        return ['sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications'].map((s) => makeColRef(`${path}/${s}`));
+        return [
+          'sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications',
+          'template_acks', 'account_feature_audit', 'device_heartbeats', 'inventory_snapshot',
+        ].map((s) => makeColRef(`${path}/${s}`));
       },
     };
   }
@@ -332,12 +342,17 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
       doc(id) {
         return makeDocRef(`${path}/${id ?? `generated-${++generatedId}`}`);
       },
-      where() {
-        return {
-          async get() {
-            return { empty: true, size: 0, docs: [] };
-          },
-        };
+        where() {
+          return {
+            limit() { return this; },
+            async get() {
+              const prefix = `${path}/`;
+              const matches = [...docs.entries()]
+                .filter(([key]) => key.startsWith(prefix) && key.split('/').length === path.split('/').length + 1)
+                .map(([key, value]) => ({ id: key.split('/').pop(), ref: makeDocRef(key), data: () => value }));
+              return { empty: matches.length === 0, size: matches.length, docs: matches };
+            },
+          };
       },
     };
   }
@@ -350,6 +365,7 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
         },
         where(field, op, val) {
           return {
+            limit() { return this; },
             async get() {
               const matches = [];
               for (const [k, v] of docs.entries()) {
@@ -402,7 +418,14 @@ test('deleteAccount purges client, network documents, sales subcollections, phon
   assert.equal(docs.has('networks/NET-99999'), false);
   assert.equal(docs.has('networks/NET-99999/sales/sale_del'), false);
   assert.equal(docs.has('networks/NET-99999/payments/payment_del'), false);
+  assert.equal(docs.has('networks/NET-99999/inventory_snapshot/current'), false);
+  assert.equal(docs.has('networks/NET-99999/device_heartbeats/device-1'), false);
+  assert.equal(docs.has('users/user_del/template_acks/device-1'), false);
+  assert.equal(docs.has('users/user_del/account_feature_audit/change-1'), false);
   assert.equal(docs.has('admin_aggregates/user_del'), false);
+  assert.equal(docs.has('sale_ingest_registry/user_del_sale_del'), false);
+  assert.equal(docs.has('notification_requests/request_del'), false);
+  assert.equal(docs.has('notification_deliveries/delivery_del'), false);
   const tombstones = [...docs.entries()]
     .filter(([path]) => path.startsWith('sync_tombstones/'))
     .map(([, value]) => value);

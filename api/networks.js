@@ -532,6 +532,34 @@ async function deleteSubcollection(db, colRef, { networkId = null, now }) {
   }
 }
 
+/** Deletes every document returned by a root-level query in bounded batches. */
+async function deleteRootQuery(db, query) {
+  while (true) {
+    const page = await query.limit(100).get();
+    if (!page.docs?.length) break;
+    const batch = db.batch();
+    page.docs.forEach((document) => batch.delete(document.ref));
+    await batch.commit();
+    if (page.docs.length < 100) break;
+  }
+}
+
+async function deleteAccountOwnedRootRecords(db, uid, phone) {
+  // Idempotency registry entries are root documents, not a user subcollection.
+  await deleteRootQuery(db, db.collection('sale_ingest_registry').where('uid', '==', uid));
+
+  // Remove queued and historical notifications addressed to this account.
+  await deleteRootQuery(db, db.collection('notification_requests').where('targetUid', '==', uid));
+  await deleteRootQuery(db, db.collection('notification_deliveries').where('targetUid', '==', uid));
+
+  // Remove every phone index variant for the account, including legacy duplicates.
+  if (phone) {
+    const hashedPhone = createHash('sha256').update(String(phone).trim(), 'utf8').digest('hex');
+    await db.collection('network_registration_phone_index').doc(hashedPhone).delete();
+  }
+  await deleteRootQuery(db, db.collection('network_registration_phone_index').where('uid', '==', uid));
+}
+
 async function purgeDocAndAllSubcollections(db, docRef, { collection, id, now }) {
   try {
     const subcollections = await docRef.listCollections();
@@ -542,7 +570,10 @@ async function purgeDocAndAllSubcollections(db, docRef, { collection, id, now })
       });
     }
   } catch {
-    for (const sub of ['sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications']) {
+    for (const sub of [
+      'sales', 'payments', 'settlements', '_metadata', 'devices', 'notifications',
+      'template_acks', 'account_feature_audit', 'device_heartbeats', 'inventory_snapshot',
+    ]) {
       await deleteSubcollection(db, docRef.collection(sub), {
         networkId: collection === 'networks' && (sub === 'sales' || sub === 'payments') ? id : null,
         now,
@@ -584,56 +615,24 @@ export async function deleteAccount(db, { uid, actorUid, now, authService = getA
   const ownedSnap2 = await db.collection('networks').where('ownerUid', '==', uid).get();
   (ownedSnap2?.docs || ownedSnap2 || []).forEach((d) => networksToDelete.set(d.id, d.ref));
 
-  // 1. Purge user document and all subcollections (devices, notifications, etc.)
-  await purgeDocAndAllSubcollections(db, userRef, { collection: 'users', id: uid, now });
-
-  // 2. Purge all network documents and their subcollections (sales, payments, settlements, _metadata)
+  // Purge all network documents and their subcollections first. Keeping the user
+  // document until the end makes a failed deletion retryable from the dashboard.
   for (const [, netRef] of networksToDelete.entries()) {
     await purgeDocAndAllSubcollections(db, netRef, { collection: 'networks', id: netRef.id, now });
   }
 
-  // 4. Purge admin billing aggregates
+  // Purge root-level records owned by or addressed to this account.
+  await deleteAccountOwnedRootRecords(db, uid, phone);
+
+  // Purge admin billing aggregates.
   const aggregateRef = db.collection('admin_aggregates').doc(uid);
   const aggregateBatch = db.batch();
   addSyncTombstone(db, aggregateBatch, { collection: 'admin_aggregates', id: uid, now });
   aggregateBatch.delete(aggregateRef);
   await aggregateBatch.commit();
 
-  // 5. Purge phone registration index if exists
-  if (phone) {
-    try {
-      const hashedPhone = createHash('sha256').update(String(phone).trim(), 'utf8').digest('hex');
-      await db.collection('network_registration_phone_index').doc(hashedPhone).delete().catch(() => {});
-    } catch {}
-  }
-  try {
-    const indexMatches = await db.collection('network_registration_phone_index').where('uid', '==', uid).get();
-    if (!indexMatches.empty) {
-      const batch = db.batch();
-      indexMatches.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-  } catch {}
-
-  // 6. Purge notification requests and deliveries targeting this user
-  try {
-    const notifReqs = await db.collection('notification_requests').where('targetUid', '==', uid).get();
-    if (!notifReqs.empty) {
-      const batch = db.batch();
-      notifReqs.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-  } catch {}
-  try {
-    const notifDels = await db.collection('notification_deliveries').where('targetUid', '==', uid).get();
-    if (!notifDels.empty) {
-      const batch = db.batch();
-      notifDels.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-  } catch {}
-
-  // 7. Delete Firebase Auth user
+  // Delete Firebase Auth user before the profile document. If Auth fails, the
+  // profile remains available so the administrator can retry safely.
   try {
     await authService.deleteUser(uid);
   } catch (authError) {
@@ -642,7 +641,10 @@ export async function deleteAccount(db, { uid, actorUid, now, authService = getA
     }
   }
 
-  // 8. Audit log
+  // Remove the user document and every user subcollection last.
+  await purgeDocAndAllSubcollections(db, userRef, { collection: 'users', id: uid, now });
+
+  // Keep one minimal audit event intentionally as the deletion audit trail.
   await audit(db, {
     action: 'NETWORK_DELETE',
     actorUid,
