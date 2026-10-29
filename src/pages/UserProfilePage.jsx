@@ -48,7 +48,7 @@ import { saleCommission, saleOutstanding, sumOutstanding, isServerVerifiedSale }
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
-import { loadLocalBillingHistory, loadLocalUsersWithBilling } from '../lib/localDb/localData';
+import { loadLocalBillingHistory, loadLocalUsersWithBilling, purgeDeletedAccountLocally } from '../lib/localDb/localData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { isUserPhoneVerified } from '../lib/accessStatus';
@@ -89,7 +89,7 @@ export default function UserProfilePage() {
   const [confirmAction, setConfirmAction] = useState(null);
   const [inventorySnapshot, setInventorySnapshot] = useState(null);
   const [inventoryLoading, setInventoryLoading] = useState(true);
-  const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const { localDb, runSync, syncing, lastSyncAt } = useLocalDb();
 
   // الملف والتاريخ المالي من القاعدة المحلية فقط.
   const usersQuery = useLocalQuery((localDb) => loadLocalUsersWithBilling(localDb), [], { enabled: Boolean(uid) });
@@ -335,6 +335,11 @@ export default function UserProfilePage() {
           toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
           return false;
         }
+        // احذف النسخة المحلية والسجلات المالية قبل العودة إلى قائمة المشتركين.
+        await purgeDeletedAccountLocally(localDb, {
+          uid,
+          networkIds: result.data?.networksPurged || [user?.networkId, uid],
+        }).catch((error) => console.error('Failed to purge deleted account from local cache:', error));
         await logAdminAction({
           action: AUDIT_ACTIONS.USER_DELETE,
           targetType: 'user',

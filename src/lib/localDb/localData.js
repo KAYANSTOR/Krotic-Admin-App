@@ -1,3 +1,4 @@
+import { emitSyncEvent } from './syncEvents.js';
 import {
   aggregateMapByUid,
   buildDashboardReport,
@@ -141,4 +142,30 @@ export async function loadLocalBillingHistory(localDb, uid) {
     sales: sortSalesByCreatedDesc(salesForNetwork(salesRows, networkId, uid)),
     payments: paymentsForNetwork(paymentRows, networkId, uid),
   };
+}
+
+
+/**
+ * Removes a successfully deleted account from this administrator's local cache immediately.
+ * Server tombstones remain responsible for synchronizing the deletion to other devices.
+ */
+export async function purgeDeletedAccountLocally(localDb, { uid, networkIds = [] } = {}) {
+  if (!localDb || typeof uid !== 'string' || !uid) return false;
+
+  const ids = [...new Set([uid, ...(Array.isArray(networkIds) ? networkIds : [])]
+    .filter((id) => typeof id === 'string' && id.trim())
+    .map((id) => id.trim()))];
+
+  await Promise.all([
+    localDb.users.delete(uid),
+    localDb.networks.bulkDelete(ids),
+    localDb.aggregates.delete(uid),
+    localDb.sales.where('networkId').anyOf(ids).delete(),
+    localDb.payments.where('networkId').anyOf(ids).delete(),
+  ]);
+
+  for (const key of ['users', 'networks', 'aggregates', 'sales', 'payments']) {
+    emitSyncEvent({ type: 'rows', key, changed: 1 });
+  }
+  return true;
 }

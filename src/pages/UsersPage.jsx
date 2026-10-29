@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
-import { loadLocalConfig, loadLocalUsersWithBilling } from '../lib/localDb/localData';
+import { loadLocalConfig, loadLocalUsersWithBilling, purgeDeletedAccountLocally } from '../lib/localDb/localData';
 import {
   Users, Search, UserCheck, Ban, RefreshCw, Edit,
   CheckCircle, DollarSign, CalendarPlus, AlertCircle, Inbox, Activity, KeyRound, ChevronDown, Download, ArrowUpLeft,
@@ -93,7 +93,7 @@ export default function UsersPage() {
   const hasLoadedUsers = useRef(false);
   const navigate = useNavigate();
 
-  const { runSync, syncing, lastSyncAt } = useLocalDb();
+  const { localDb, runSync, syncing, lastSyncAt } = useLocalDb();
 
   // القائمة والتقارير المالية من القاعدة المحلية: صفر قراءات عند التنقل.
   const usersQuery = useLocalQuery((localDb) => loadLocalUsersWithBilling(localDb), []);
@@ -367,6 +367,12 @@ export default function UsersPage() {
           toast.error(adminApiError(result.error, 'تعذر حذف الحساب'));
           return false;
         }
+        // احذف النسخة المحلية فور نجاح الخادم حتى لا يبقى الحساب ظاهراً بسبب تأخر المزامنة.
+        await purgeDeletedAccountLocally(localDb, {
+          uid: user.uid,
+          networkIds: result.data?.networksPurged || [user.networkId, user.uid],
+        }).catch((error) => console.error('Failed to purge deleted account from local cache:', error));
+        setUsers((prev) => prev.filter((item) => item.uid !== user.uid));
         await logAdminAction({
           action: AUDIT_ACTIONS.USER_DELETE,
           targetType: 'user',
@@ -375,7 +381,13 @@ export default function UsersPage() {
           details: { networkId: user.networkId || null },
         }).catch(() => {});
         toast.success(`تم حذف الحساب «${targetName}» بنجاح`);
-        await refresh();
+        try {
+          await refresh();
+        } catch (error) {
+          console.warn('Account deleted on server; local refresh will retry:', error);
+          usersQuery.refresh();
+          configQuery.refresh();
+        }
         return true;
       },
     });
