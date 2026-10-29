@@ -9,7 +9,8 @@ import Button from './ui/Button';
 import { Field, Input } from './ui/Field';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 
-const MIN_LENGTH = 8;
+// The current admin sign-in flow is password-only; keep the client minimum aligned with NIST SP 800-63B-4 guidance.
+const MIN_LENGTH = 15;
 
 export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
   const { currentUser, adminData } = useAuth();
