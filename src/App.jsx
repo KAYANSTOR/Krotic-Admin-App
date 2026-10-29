@@ -1,4 +1,4 @@
-import { lazy, useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8,7 +8,10 @@ import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute, preloadAllRoutes } from './lib/routeLoaders';
-import ReadMeterPanel from './components/ReadMeterPanel';
+// Load the diagnostic panel only in development so its code is excluded from production builds.
+const ReadMeterPanel = import.meta.env.DEV
+  ? lazy(() => import('./components/ReadMeterPanel'))
+  : null;
 import { LocalDbProvider } from './lib/localDb/LocalDbContext';
 
 const DashboardPage = lazy(() => loadRoute('/'));
@@ -105,7 +108,11 @@ export default function App() {
             error: { style: { background: '#8A2B2B' }, iconTheme: { primary: '#fff', secondary: '#8A2B2B' } },
           }}
         />
-        <ReadMeterPanel />
+        {import.meta.env.DEV && ReadMeterPanel ? (
+          <Suspense fallback={null}>
+            <ReadMeterPanel />
+          </Suspense>
+        ) : null}
         <LocalDbProvider>
           <AppRoutes />
         </LocalDbProvider>
