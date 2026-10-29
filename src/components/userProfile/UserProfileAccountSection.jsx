@@ -6,6 +6,7 @@ import Section from '../ui/Section';
 import { Card } from '../ui/Card';
 import Badge from '../ui/Badge';
 import { hasCustomCommission } from '../../lib/users/profileHelpers';
+import { formatDate } from '../../lib/format';
 
 export default function UserProfileAccountSection({
   user, uid, status, expired, isVerifiedPhone,
