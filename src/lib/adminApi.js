@@ -53,7 +53,6 @@ export const ADMIN_API_ERRORS = {
   no_fields: 'لم يتم إرسال أي حقل للتعديل.',
   account_not_found: 'لا يوجد حساب مطابق لهذا المعرّف.',
   account_not_eligible: 'هذا الحساب غير مؤهل لإصدار عقد الاستحقاق حالياً.',
-  protected_account: 'هذا الحساب محمي لأنه حساب حقيقي، ولا يمكن حذفه من لوحة الإدارة.',
   hmac_not_configured: 'الخادم غير مهيّأ: أضف KROTAK_HMAC_SECRET إلى بيئة Vercel ثم أعد النشر.',
   network_secret_unavailable: 'تعذر فك مفتاح الشبكة. تحقّق من Master Secret في Vercel قبل إعادة المحاولة.',
   network_secret_rotation_failed: 'تعذر تدوير مفتاح الشبكة على الخادم. لم يُغيَّر المفتاح الحالي.',
