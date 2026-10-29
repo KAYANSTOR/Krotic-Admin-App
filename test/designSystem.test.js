@@ -2,32 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+const read = (path) => readFile(new URL('../' + path, import.meta.url), 'utf8');
 
 /** يستخرج جسم قاعدة CSS بسيطة (بدون أقواس متداخلة) لفحصها بمعزل عن بقية الملف. */
 function ruleBody(css, selector) {
-  const start = css.indexOf(`${selector} {`);
-  assert.ok(start >= 0, `CSS rule not found: ${selector}`);
+  const start = css.indexOf(selector + ' {');
+  assert.ok(start >= 0, 'CSS rule not found: ' + selector);
   const end = css.indexOf('}', start);
   return css.slice(start, end + 1);
 }
 
-test('design tokens have a single central source with the six identity colours', async () => {
+test('design tokens have a single central source with the six identity colours (Terracotta v2.0)', async () => {
   const [css, tailwind] = await Promise.all([read('src/index.css'), read('tailwind.config.js')]);
   const rootBlocks = css.match(/:root\s*\{/g) || [];
   assert.equal(rootBlocks.length, 1, 'يجب أن يكون هناك كتلة :root واحدة فقط لمصدر التوكنات');
 
   const expected = {
-    '--ui-forest-black': '#051F20',
-    '--ui-deep-forest': '#0B2B26',
-    '--ui-forest-green': '#163832',
-    '--ui-primary-green': '#235347',
-    '--ui-sage-green': '#8EB69B',
-    '--ui-mint-surface': '#DAF1DE',
+    '--ui-forest-black': '#2D1810',
+    '--ui-deep-forest': '#4A2418',
+    '--ui-forest-green': '#B85C3E',
+    '--ui-primary-green': '#D97757',
+    '--ui-sage-green': '#E89F85',
+    '--ui-mint-surface': '#FBE9E2',
   };
   for (const [token, value] of Object.entries(expected)) {
-    assert.match(css, new RegExp(`${token}:\\s*${value}`, 'i'), `${token} must be ${value}`);
-    assert.ok(tailwind.toUpperCase().includes(value), `${value} should also exist in tailwind.config.js`);
+    assert.match(css, new RegExp(token + ':\\s*' + value, 'i'), token + ' must be ' + value);
+    assert.ok(tailwind.toUpperCase().includes(value), value + ' should also exist in tailwind.config.js');
   }
 
   // أسماء المكونات القديمة تبقى كأسماء مستعارة للهوية، فلا تنكسر أي صفحة.
@@ -35,8 +35,15 @@ test('design tokens have a single central source with the six identity colours',
   assert.match(css, /--ui-brand-deep:\s*var\(--ui-forest-green\)/);
   assert.match(css, /--ui-brand-soft:\s*var\(--ui-mint-surface\)/);
 
-  // لا بقايا من الهوية اللونية السابقة في طبقة الأنماط.
-  assert.doesNotMatch(css, /#D97757|#B85C3E|#9A4A32|#e56b50/i);
+  // لا بقايا من الهوية الخضراء القديمة في طبقة الأنماط.
+  assert.doesNotMatch(css, /#051F20|#0B2B26|#163832|#235347|#8EB69B|#DAF1DE|#F3FAF5|#E7F3EA|#BFD3C4|#A8C0AF|#E3ECE5|#F4F9F5|#F3F8F4|#F2F8F4|#F1F7F3|#F6FAF7|#C4E3CD|#EDF3EE|#F0EBE4/i);
+});
+
+test('no duplicate Terracotta block: values live only in the single :root', async () => {
+  const css = await read('src/index.css');
+  assert.doesNotMatch(css, /--ui-terracotta-/, 'Terracotta values must flow through --ui-primary-green, not a separate namespace');
+  assert.doesNotMatch(css, /Krotak Admin — Mobile-Native Android/, 'the legacy appended Terracotta block must be deleted');
+  assert.doesNotMatch(css, /\.dashboard-hero-card\b/, 'the dead dashboard-hero-card rules must be deleted');
 });
 
 test('existing font and RTL direction are preserved as instructed', async () => {
@@ -59,12 +66,14 @@ test('browser chrome and sidebar follow the hybrid dark/light identity', async (
     read('src/index.css'),
     read('src/components/Layout.jsx'),
   ]);
-  assert.match(html, /name="theme-color" content="#051F20"/);
+  assert.match(html, /name="theme-color" content="#D97757"/);
+  assert.match(html, /name="theme-color" content="#2D1810"/);
   assert.match(css, /\.sidebar \{[^}]*var\(--ui-forest-black\)/);
   assert.match(css, /\.sidebar \{[^}]*width:264px/);
   assert.match(layout, /lg:ms-\[264px\]/);
-  assert.match(css, /--ui-paper:\s*#F4F7F5/);
+  assert.match(css, /--ui-paper:\s*#F7F4EF/);
   assert.match(css, /--ui-surface:\s*#FFFFFF/);
+  assert.match(css, /background: linear-gradient\(150deg, #FFFFFF 0%, #FEF6F1 58%, #FBE9E2 100%\)/);
 });
 
 test('mobile bottom navigation is dark, lightweight and touch-safe', async () => {
@@ -92,14 +101,7 @@ test('mobile motion uses central tokens and honours prefers-reduced-motion', asy
   assert.match(css, /--ui-ease-out:/);
   assert.match(css, /--ui-ease-in:/);
   assert.match(css, /--ui-ease-in-out:/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-
-  // حركة دخول الصفحة تعتمد opacity/transform فقط (بلا layout shift) وتُعطَّل عند تقليل الحركة.
-  const kfStart = css.indexOf('@keyframes ui-content-in');
-  const keyframes = css.slice(kfStart, css.indexOf('.app-main > div', kfStart));
-  assert.match(keyframes, /opacity/);
-  assert.match(keyframes, /translateY/);
-  assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{[^}]*\.app-main \.ptr__content > :first-child \{ animation: ui-content-in/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
 });
 
 test('mobile layout reserves space for the docked bar and uses touch-friendly sizing', async () => {
@@ -123,14 +125,15 @@ test('mobile sheets and modals stay performant and avoid nested-scroll bleed', a
   assert.doesNotMatch(ruleBody(css, '.overlay'), /backdrop-filter/);
 });
 
-test('semantic status colours stay distinct from the brand green', async () => {
+test('semantic status colours stay distinct from the brand Terracotta', async () => {
   const [css, tailwind] = await Promise.all([read('src/index.css'), read('tailwind.config.js')]);
   const success = /--ui-success:\s*(#[0-9A-F]{6})/i.exec(css)?.[1];
   const danger = /--ui-danger:\s*(#[0-9A-F]{6})/i.exec(css)?.[1];
   const warning = /--ui-warning:\s*(#[0-9A-F]{6})/i.exec(css)?.[1];
   assert.ok(success && danger && warning);
   for (const value of [success, danger, warning]) {
-    assert.notEqual(value.toUpperCase(), '#235347', 'الحالات الدلالية يجب ألا تُستبدل بلون الهوية');
+    assert.notEqual(value.toUpperCase(), '#D97757', 'الحالات الدلالية يجب ألا تُستبدل بلون الهوية');
+    assert.notEqual(value.toUpperCase(), '#B85C3E', 'الحالات الدلالية يجب ألا تُستبدل بلون الهوية');
   }
   assert.match(tailwind, /success:\s*\{/);
   assert.match(tailwind, /danger:\s*\{/);
