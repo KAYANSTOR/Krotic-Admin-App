@@ -8,11 +8,12 @@ import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute, preloadAllRoutes } from './lib/routeLoaders';
+import { LocalDbProvider } from './lib/localDb/LocalDbContext';
+
 // Load the diagnostic panel only in development so its code is excluded from production builds.
 const ReadMeterPanel = import.meta.env.DEV
   ? lazy(() => import('./components/ReadMeterPanel'))
   : null;
-import { LocalDbProvider } from './lib/localDb/LocalDbContext';
 
 const DashboardPage = lazy(() => loadRoute('/'));
 const SettingsPage = lazy(() => loadRoute('/settings'));
