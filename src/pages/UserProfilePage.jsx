@@ -20,7 +20,7 @@ import UserProfileDeviceSection from '../components/userProfile/UserProfileDevic
 import UserProfileFinancialSummary from '../components/userProfile/UserProfileFinancialSummary';
 
 import { formatNumber, isExpired } from '../lib/format';
-import { saleCommission, saleFaceValue, isServerVerifiedSale } from '../lib/commission';
+import { saleCommission, saleFaceValue, saleOutstanding, isServerVerifiedSale } from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
