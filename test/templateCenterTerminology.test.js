@@ -223,7 +223,7 @@ test('admin API error glossary has no duplicate keys (last-wins bugs)', async ()
 test('account features UI keeps server collection paths out of primary copy', async () => {
   const page = await read('src/pages/PaidFeaturesPage.jsx');
   assert.doesNotMatch(page, /account_feature_audit|account_features_catalog|account_features_version/);
-  assert.match(page, /حُفظت مزايا الحساب على الخادم/);
+  assert.match(page, /يحفظ الخادم رقم نسخة الخريطة ووقت آخر تحديث/);
   // التحذير الدلالي يبقى: الاستحقاق على الحساب لا يعني تفعيله في Android.
   assert.match(page, /لا يفعّل ميزة في إصدار Android/);
 });

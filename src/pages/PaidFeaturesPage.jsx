@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, Save, RefreshCw, ShieldAlert, User, Info } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  Sparkles, Save, RefreshCw, ShieldAlert, User, Info, ToggleRight, ToggleLeft,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHero from '../components/ui/PageHero';
-import Section from '../components/ui/Section';
-import { Card, CardHeader } from '../components/ui/Card';
-import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import Switch from '../components/ui/Switch';
+
+import SearchHeader from '../components/ui/SearchHeader';
+import HeroMetric from '../components/ui/HeroMetric';
+import SettingsSection from '../components/ui/SettingsSection';
+import SettingField from '../components/ui/SettingField';
+import SaveBar from '../components/ui/SaveBar';
+import { SkeletonCard } from '../components/ui/Skeleton';
 import { Field, Select } from '../components/ui/Field';
-import DataFreshness from '../components/ui/DataFreshness';
-import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
+
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { loadLocalUserOptions } from '../lib/localDb/localData';
@@ -18,32 +20,40 @@ import {
 } from '../lib/adminApi';
 import useAppRefresh from '../lib/useAppRefresh';
 
-function FeaturesSkeleton() {
-  return <div className="space-y-4"><SkeletonPageHeader /><SkeletonCard lines={4} /></div>;
-}
-
 export default function PaidFeaturesPage() {
   const { runSync, syncing } = useLocalDb();
   const usersQuery = useLocalQuery((localDb) => loadLocalUserOptions(localDb), []);
   const users = usersQuery.data || [];
   const loadingUsers = usersQuery.loading;
+
   const [uid, setUid] = useState('');
   const [catalog, setCatalog] = useState(null);
   const [accountFeatures, setAccountFeatures] = useState({});
+  const [originalFeatures, setOriginalFeatures] = useState({});
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingFeatures, setLoadingFeatures] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(null);
   const [error, setError] = useState(null);
   const latestRequestId = useRef(0);
-  const activeFeatures = (catalog?.features || []).filter((feature) => feature.status === 'active');
+
+  const activeFeatures = (catalog?.features || []).filter((f) => f.status === 'active');
+
+  const dirty = useMemo(() => {
+    if (!uid) return false;
+    return activeFeatures.some((f) => Boolean(accountFeatures[f.key]) !== Boolean(originalFeatures[f.key]));
+  }, [accountFeatures, originalFeatures, activeFeatures, uid]);
+
+  const enabledCount = useMemo(
+    () => activeFeatures.filter((f) => accountFeatures[f.key] === true).length,
+    [activeFeatures, accountFeatures],
+  );
 
   const loadCatalog = useCallback(async () => {
     setLoadingCatalog(true);
     try {
       const result = await fetchAccountFeatureCatalog();
       if (!result.ok) {
-        setError(adminApiError(result.error, 'تعذر تحميل كتالوج المزايا'));
+        setError(adminApiError(result.error, 'تعذر تحميل الكتالوج'));
         return false;
       }
       setCatalog(result.data?.catalog || null);
@@ -62,13 +72,14 @@ export default function PaidFeaturesPage() {
       const result = await fetchAccountFeatures(targetUid);
       if (requestId !== latestRequestId.current) return;
       if (!result.ok) {
-        const message = adminApiError(result.error, 'تعذر قراءة مزايا الحساب');
-        setError(message);
+        setError(adminApiError(result.error, 'تعذر قراءة المزايا'));
         setAccountFeatures({});
+        setOriginalFeatures({});
         return;
       }
-      setAccountFeatures(result.data?.accountFeatures || {});
-      setUpdatedAt(result.data?.updatedAtMs || Date.now());
+      const next = result.data?.accountFeatures || {};
+      setAccountFeatures(next);
+      setOriginalFeatures(next);
     } finally {
       if (requestId === latestRequestId.current) setLoadingFeatures(false);
     }
@@ -77,7 +88,7 @@ export default function PaidFeaturesPage() {
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
   useEffect(() => {
     if (uid) loadAccountFeatureMap(uid);
-    else { setAccountFeatures({}); setError(null); }
+    else { setAccountFeatures({}); setOriginalFeatures({}); setError(null); }
   }, [uid, loadAccountFeatureMap]);
   useEffect(() => {
     if (usersQuery.error) toast.error('تعذر تحميل قائمة الحسابات');
@@ -89,7 +100,9 @@ export default function PaidFeaturesPage() {
   }, [runSync, loadCatalog, loadAccountFeatureMap, uid]);
   useAppRefresh(refresh);
 
-  const toggle = (key, value) => setAccountFeatures((current) => ({ ...current, [key]: value }));
+  const toggle = (key, value) => {
+    setAccountFeatures((current) => ({ ...current, [key]: value }));
+  };
 
   const save = async () => {
     if (!uid || saving) return;
@@ -98,112 +111,156 @@ export default function PaidFeaturesPage() {
     try {
       const result = await updateAccountFeatures({ uid, features: accountFeatures });
       if (!result.ok) {
-        const message = adminApiError(result.error, 'تعذر حفظ مزايا الحساب');
+        const message = adminApiError(result.error, 'تعذر حفظ المزايا');
         setError(message);
         toast.error(message);
         return;
       }
-      setAccountFeatures(result.data?.accountFeatures || accountFeatures);
-      setUpdatedAt(result.data?.updatedAtMs || Date.now());
-      toast.success('حُفظت مزايا الحساب على الخادم');
+      const next = result.data?.accountFeatures || accountFeatures;
+      setAccountFeatures(next);
+      setOriginalFeatures(next);
+      toast.success('تم حفظ المزايا');
     } finally {
       setSaving(false);
     }
   };
 
-  const selected = users.find((user) => user.uid === uid) || null;
+  const selected = users.find((u) => u.uid === uid) || null;
+
+  if (loadingCatalog && !catalog) {
+    return (
+      <div className="space-y-4 pb-24">
+        <div className="h-16 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <SkeletonCard lines={4} />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5" dir="rtl">
-      <PageHero
-        icon={Sparkles}
+    <div className="pb-32">
+      <SearchHeader
         title="مزايا الحساب"
-        subtitle="خريطة مزايا الحساب لكل حساب. الكتابة تمر عبر نقطة الخادم، ولا يكتب المتصفح مباشرة على قاعدة البيانات."
-        meta="الكتالوج الافتراضي مغلق؛ قيمة true الصريحة وحدها تمنح الميزة."
-        actions={(
-          <DataFreshness
-            updatedAt={updatedAt}
-            refreshing={loadingCatalog || loadingFeatures || syncing}
-            onRefresh={refresh}
-          />
-        )}
+        subtitle="خريطة مزايا الحساب — الكتابة عبر الخادم"
+        actions={
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={syncing || loadingFeatures}
+            className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)] hover:text-[var(--ui-ink)] disabled:opacity-50"
+            aria-label="تحديث"
+          >
+            <RefreshCw className={`w-4 h-4 ${(syncing || loadingFeatures) ? 'animate-spin' : ''}`} />
+          </button>
+        }
       />
 
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <p>تغيير هذه الخريطة يحفظ الاستحقاق على الحساب فقط؛ لا يفعّل ميزة في إصدار Android ما لم يكن ذلك الإصدار يقرأ عقد account_features.</p>
+      <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+        <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+        <p className="leading-relaxed">
+          تغيير الخريطة يحفظ الاستحقاق على الحساب فقط؛ لا يفعّل ميزة في إصدار Android
+          ما لم يكن ذلك الإصدار يقرأ عقد <code className="font-mono bg-amber-100 px-1 rounded">account_features</code>.
+        </p>
       </div>
 
-      <Section title="اختيار الحساب" description="اختر الحساب الذي تريد عرض مزاياه وتحديثها.">
-        <Card className="p-4">
-          <Field label="الحساب" htmlFor="account-feature-account" hint={loadingUsers ? 'جارٍ تحميل الحسابات…' : `${users.length} حساب متاح`}>
-            <Select id="account-feature-account" value={uid} disabled={loadingUsers} onChange={(event) => setUid(event.target.value)}>
-              <option value="">— اختر حسابًا —</option>
-              {users.map((user) => (
-                <option key={user.uid} value={user.uid}>{user.name}{user.phone ? ` — ${user.phone}` : ''}</option>
-              ))}
-            </Select>
-          </Field>
-          {selected && (
-            <p className="mt-3 flex items-center gap-2 text-xs text-stone-600">
-              <User className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="font-mono" dir="ltr">{selected.uid}</span>
-            </p>
-          )}
-        </Card>
-      </Section>
+      {/* اختيار الحساب */}
+      <div className="mt-3 rounded-2xl bg-[var(--ui-surface)] border border-line p-4">
+        <Field
+          label="الحساب"
+          hint={loadingUsers ? 'جارٍ التحميل…' : `${users.length} حساب متاح`}
+        >
+          <Select value={uid} disabled={loadingUsers} onChange={(e) => setUid(e.target.value)}>
+            <option value="">— اختر حساباً —</option>
+            {users.map((u) => (
+              <option key={u.uid} value={u.uid}>
+                {u.name}{u.phone ? ` — ${u.phone}` : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {selected && (
+          <p className="mt-2 flex items-center gap-2 text-[11px] text-[var(--ui-muted)]">
+            <User className="w-3.5 h-3.5" />
+            <span className="font-mono" dir="ltr">{selected.uid}</span>
+          </p>
+        )}
+      </div>
 
       {uid && (
-        <Section title="مزايا الحساب" description="المفاتيح غير الموجودة أو غير المفعّلة تظل مقفلة. لا تُنقل أي قيمة من الحقول القديمة.">
-          {loadingCatalog || loadingFeatures ? <FeaturesSkeleton /> : (
-            <Card className="p-4">
-              <CardHeader
-                title="الكتالوج النشط"
+        <>
+          <div className="mt-3">
+            <HeroMetric
+              label="المزايا المفعّلة"
+              value={enabledCount}
+              unit={`من ${activeFeatures.length}`}
+              icon={Sparkles}
+              trend={enabledCount > 0 ? 'up' : 'flat'}
+              trendLabel={enabledCount > 0 ? `${enabledCount} مفعّلة` : 'كل المزايا مقفلة'}
+              hint={catalog ? `كتالوج v${catalog.schema_version || 1}` : ''}
+              tone={enabledCount > 0 ? 'brand' : 'neutral'}
+            />
+          </div>
+
+          {loadingFeatures ? (
+            <div className="mt-3">
+              <SkeletonCard lines={3} />
+            </div>
+          ) : activeFeatures.length === 0 ? (
+            <div className="mt-3 p-6 rounded-2xl bg-amber-50 border border-amber-200 text-sm text-amber-900">
+              لا توجد مزايا نشطة في الكتالوج.
+            </div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              <SettingsSection
+                title="المزايا المتاحة"
+                description="المفاتيح غير الموجودة أو غير المفعّلة تظل مقفلة."
                 icon={Sparkles}
-                description="المزايا المعتمدة في كتالوج الخادم؛ كل مفتاح غير مفعّل يبقى مقفلًا."
-                action={<Badge tone="neutral">نسخة الكتالوج v{catalog?.schema_version || 1}</Badge>}
-              />
-              {activeFeatures.length === 0 ? (
-                <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">لا توجد مزايا نشطة في الكتالوج.</p>
-              ) : (
-                <div className="mt-4 divide-y divide-stone-100">
-                  {activeFeatures.map((feature) => (
-                    <div key={feature.key} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-stone-900">{feature.label_ar}</p>
-                        {feature.description_ar && <p className="mt-0.5 text-xs leading-5 text-stone-600">{feature.description_ar}</p>}
-                        <p className="mt-0.5 font-mono text-[11px] text-stone-400" dir="ltr">{feature.key}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge tone={accountFeatures[feature.key] === true ? 'success' : 'neutral'} dot>
-                          {accountFeatures[feature.key] === true ? 'مفتوحة' : 'مقفلة'}
-                        </Badge>
-                        <Switch
-                          id={`account-feature-${feature.key}`}
-                          checked={accountFeatures[feature.key] === true}
-                          onChange={(value) => toggle(feature.key, value)}
-                          disabled={saving}
-                          label={feature.label_ar}
-                        />
-                      </div>
-                    </div>
-                  ))}
+              >
+                {activeFeatures.map((feature) => {
+                  const enabled = accountFeatures[feature.key] === true;
+                  return (
+                    <SettingField
+                      key={feature.key}
+                      label={feature.label_ar}
+                      hint={feature.description_ar
+                        ? `${feature.description_ar} — ${feature.key}`
+                        : feature.key}
+                      switch={{
+                        checked: enabled,
+                        onChange: (v) => toggle(feature.key, v),
+                        disabled: saving,
+                      }}
+                    />
+                  );
+                })}
+              </SettingsSection>
+
+              {error && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                  <p className="flex-1">{error}</p>
                 </div>
               )}
 
-              {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{error}</p>}
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button icon={Save} loading={saving} disabled={saving || activeFeatures.length === 0} onClick={save}>حفظ على الخادم</Button>
-                <Button variant="secondary" icon={RefreshCw} disabled={loadingFeatures || saving} onClick={() => loadAccountFeatureMap(uid)}>إعادة القراءة</Button>
+              <div className="p-3 rounded-xl bg-[var(--ui-sunken)]/60 border border-line text-[11px] text-[var(--ui-muted)] flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <p className="leading-relaxed">
+                  يحفظ الخادم رقم نسخة الخريطة ووقت آخر تحديث، ويسجّل كل تغيير في سجل التدقيق.
+                </p>
               </div>
-              <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-stone-500">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>يحفظ الخادم رقم نسخة الخريطة ووقت آخر تحديث، ويسجّل كل تغيير في سجل تدقيق الحساب.</span>
-              </p>
-            </Card>
+            </div>
           )}
-        </Section>
+        </>
       )}
+
+      {!uid && (
+        <div className="mt-6 p-10 text-center rounded-2xl bg-[var(--ui-surface)] border border-line">
+          <Sparkles className="w-6 h-6 mx-auto mb-2 text-[var(--ui-muted)]" />
+          <p className="font-bold text-[var(--ui-ink)]">اختر حساباً للبدء</p>
+          <p className="text-xs text-[var(--ui-muted)] mt-1">ستظهر المزايا المتاحة بمجرد اختيار حساب.</p>
+        </div>
+      )}
+
+      {dirty && <SaveBar onSave={save} saving={saving} />}
     </div>
   );
 }
