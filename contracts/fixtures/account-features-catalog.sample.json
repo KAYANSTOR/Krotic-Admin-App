@@ -1,11 +1,1 @@
-{
-  "_synthetic": true,
-  "schema_version": 1,
-  "updated_at_ms": 1761177600000,
-  "features": [
-    { "key": "mikrotik_card_generator", "label_ar": "توليد وطباعة الكروت", "description_ar": "إنشاء وطباعة كروت ميكروتك.", "default": false, "status": "active", "min_app_build": 0 },
-    { "key": "hotspot_template_editor", "label_ar": "محرر صفحات الهوتسبوت", "description_ar": "تحرير قوالب وصفحات الهوتسبوت.", "default": false, "status": "active", "min_app_build": 0 },
-    { "key": "sms_auto_parser", "label_ar": "تحليل رسائل المحافظ والحوالات", "description_ar": "تحليل رسائل المحافظ والحوالات تلقائياً.", "default": false, "status": "active", "min_app_build": 0 },
-    { "key": "advanced_analytics", "label_ar": "التقارير المالية المتقدمة", "description_ar": "عرض التقارير والتحليلات المالية المتقدمة.", "default": false, "status": "active", "min_app_build": 0 }
-  ]
-}
+PLACEHOLDER_FIX
