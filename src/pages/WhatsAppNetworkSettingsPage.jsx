@@ -1,18 +1,16 @@
 import { useState, useCallback } from 'react';
-import { MessageCircle, ShieldAlert, RefreshCw, KeyRound, Unplug, Save } from 'lucide-react';
+import { MessageCircle, ShieldAlert, RefreshCw, KeyRound, Unplug, Save, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchHeader from '../components/ui/SearchHeader';
 import SettingsSection from '../components/ui/SettingsSection';
 import { Field, Select } from '../components/ui/Field';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
 
-/**
- * Limited admin UI for WhatsApp network config + sealed access token.
- * Token is never shown after save, never stored in localStorage.
- */
 export default function WhatsAppNetworkSettingsPage() {
   const [networkId, setNetworkId] = useState('');
   const [config, setConfig] = useState(null);
+  const [hasAccessToken, setHasAccessToken] = useState(false);
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
@@ -28,21 +26,25 @@ export default function WhatsAppNetworkSettingsPage() {
     }
     setLoading(true);
     try {
-      const result = await callAdminApi('/api/whatsapp/network-config', {
-        action: 'get',
-        networkId: id,
-      });
-      if (!result.ok) {
-        toast.error(adminApiError(result.error, 'تعذر التحميل'));
+      const [cfgRes, stRes] = await Promise.all([
+        callAdminApi('/api/whatsapp/network-config', { action: 'get', networkId: id }),
+        callAdminApi('/api/whatsapp/network-config', { action: 'status', networkId: id }),
+      ]);
+      if (!cfgRes.ok) {
+        toast.error(adminApiError(cfgRes.error, 'تعذر التحميل'));
         setConfig(null);
+        setStatus(null);
         return;
       }
-      const cfg = result.data?.config || {};
+      const cfg = cfgRes.data?.config || {};
       setConfig(cfg);
+      setHasAccessToken(Boolean(cfgRes.data?.hasAccessToken));
       setProvider(cfg.whatsappPrimaryProvider || 'cloud_api');
       setPhoneNumberId(cfg.whatsappPhoneNumberId || '');
       setLinkStatus(cfg.whatsappCloudLinkStatus || 'unlinked');
       setTokenInput('');
+      if (stRes.ok) setStatus(stRes.data);
+      else setStatus(null);
       toast.success('تم التحميل');
     } finally {
       setLoading(false);
@@ -98,6 +100,7 @@ export default function WhatsAppNetworkSettingsPage() {
         toast.error('استجابة غير آمنة من الخادم');
         return;
       }
+      setHasAccessToken(true);
       toast.success('تم حفظ التوكن مشفراً');
     } finally {
       setSaving(false);
@@ -119,11 +122,14 @@ export default function WhatsAppNetworkSettingsPage() {
         toast.error(adminApiError(result.error, 'تعذر الحذف'));
         return;
       }
+      setHasAccessToken(false);
       toast.success('تم حذف التوكن');
     } finally {
       setSaving(false);
     }
   };
+
+  const counts = status?.counts;
 
   return (
     <div className="pb-24" dir="rtl">
@@ -131,13 +137,7 @@ export default function WhatsAppNetworkSettingsPage() {
         title="إعدادات WhatsApp"
         subtitle="إدارة ربط الشبكة — التوكن لا يُعرض بعد الحفظ"
         actions={
-          <button
-            type="button"
-            onClick={load}
-            disabled={loading}
-            className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)]"
-            aria-label="تحديث"
-          >
+          <button type="button" onClick={load} disabled={loading} className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)]" aria-label="تحديث">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         }
@@ -145,9 +145,7 @@ export default function WhatsAppNetworkSettingsPage() {
 
       <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex gap-2">
         <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-        <p>
-          Access Token يُشفَّر على الخادم فقط. لن يظهر في الواجهة بعد الإدخال، ولا يُحفظ في المتصفح.
-        </p>
+        <p>Access Token يُشفَّر على الخادم فقط. لن يظهر في الواجهة بعد الإدخال، ولا يُحفظ في المتصفح.</p>
       </div>
 
       <div className="mt-3 rounded-2xl bg-[var(--ui-surface)] border border-line p-4 space-y-3">
@@ -161,18 +159,37 @@ export default function WhatsAppNetworkSettingsPage() {
             autoComplete="off"
           />
         </Field>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading || !networkId.trim()}
-          className="w-full py-2.5 rounded-xl bg-[var(--ui-ink)] text-white text-sm font-bold disabled:opacity-50"
-        >
-          تحميل الإعدادات
+        <button type="button" onClick={load} disabled={loading || !networkId.trim()} className="w-full py-2.5 rounded-xl bg-[var(--ui-ink)] text-white text-sm font-bold disabled:opacity-50">
+          تحميل الإعدادات والحالة
         </button>
       </div>
 
       {config && (
         <>
+          <div className="mt-3">
+            <SettingsSection title="حالة الربط والتشغيل" icon={Activity}>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">Cloud: {config.whatsappCloudLinkStatus || '—'}</div>
+                <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">التوكن: {hasAccessToken ? 'محفوظ مشفّر' : 'غير موجود'}</div>
+                <div className="p-2 rounded-lg bg-[var(--ui-sunken)] font-mono" dir="ltr">PN ID: {config.whatsappPhoneNumberId || '—'}</div>
+                <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">Webhook: مسجّل في الكود</div>
+              </div>
+              {counts ? (
+                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                  <div className="p-2 rounded-lg border border-line">إجمالي: {counts.deliveryTotal}</div>
+                  <div className="p-2 rounded-lg border border-line">مرسل: {counts.sent}</div>
+                  <div className="p-2 rounded-lg border border-line">واصل: {counts.delivered}</div>
+                  <div className="p-2 rounded-lg border border-line">مقروء: {counts.read}</div>
+                  <div className="p-2 rounded-lg border border-line">فشل: {counts.failed}</div>
+                  <div className="p-2 rounded-lg border border-line">SMS: {counts.smsSent}</div>
+                  <div className="p-2 rounded-lg border border-line col-span-1">معلّق: {counts.smsUnknown}</div>
+                  <div className="p-2 rounded-lg border border-line">طابور: {counts.queueQueued}</div>
+                  <div className="p-2 rounded-lg border border-line">جهاز: {counts.deviceTasksQueued}</div>
+                </div>
+              ) : null}
+            </SettingsSection>
+          </div>
+
           <div className="mt-3">
             <SettingsSection title="الربط والمزوّد" icon={MessageCircle}>
               <Field label="المزوّد الأساسي">
@@ -197,17 +214,7 @@ export default function WhatsAppNetworkSettingsPage() {
                   autoComplete="off"
                 />
               </Field>
-              {config.whatsappUpdatedAtMs ? (
-                <p className="text-[11px] text-[var(--ui-muted)]">
-                  آخر تحديث: {new Date(config.whatsappUpdatedAtMs).toLocaleString('ar')}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                onClick={saveConfig}
-                disabled={saving}
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-teal-700 text-white text-sm font-bold disabled:opacity-50"
-              >
+              <button type="button" onClick={saveConfig} disabled={saving} className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-teal-700 text-white text-sm font-bold disabled:opacity-50">
                 <Save className="w-4 h-4" />
                 حفظ الإعدادات
               </button>
@@ -228,20 +235,10 @@ export default function WhatsAppNetworkSettingsPage() {
                 />
               </Field>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={saveToken}
-                  disabled={saving || tokenInput.trim().length < 20}
-                  className="flex-1 py-2.5 rounded-xl bg-[var(--ui-ink)] text-white text-sm font-bold disabled:opacity-50"
-                >
+                <button type="button" onClick={saveToken} disabled={saving || tokenInput.trim().length < 20} className="flex-1 py-2.5 rounded-xl bg-[var(--ui-ink)] text-white text-sm font-bold disabled:opacity-50">
                   حفظ مشفّر
                 </button>
-                <button
-                  type="button"
-                  onClick={clearToken}
-                  disabled={saving}
-                  className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-rose-300 text-rose-800 text-sm"
-                >
+                <button type="button" onClick={clearToken} disabled={saving} className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-rose-300 text-rose-800 text-sm">
                   <Unplug className="w-4 h-4" />
                   حذف
                 </button>

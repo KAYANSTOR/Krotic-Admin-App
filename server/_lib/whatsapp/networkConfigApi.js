@@ -1,6 +1,7 @@
 /**
  * Admin API: get/set WhatsApp non-secret config on networks/{networkId}.
  * Optional action set_token seals Meta access token into whatsapp_network_secrets (ciphertext only).
+ * action status: aggregated metrics without secrets.
  */
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
@@ -8,7 +9,8 @@ import { authenticateAdmin, ensureFirebaseAdmin } from '../firebaseAdmin.js';
 import { parseNetworkId } from '../networkId.js';
 import { readNetworkWhatsappConfig, validateNetworkWhatsappInput } from './networkConfig.js';
 import { secretsReadinessReport } from './secrets.js';
-import { saveNetworkAccessToken, deleteNetworkAccessToken } from './networkTokenStore.js';
+import { saveNetworkAccessToken, deleteNetworkAccessToken, NETWORK_SECRETS_COLLECTION } from './networkTokenStore.js';
+import { collectNetworkWhatsappStatus } from './networkStatusMetrics.js';
 
 function respond(res, status, body) {
   return res.status(status).json(body);
@@ -25,6 +27,15 @@ function resolveNetworkId(raw) {
   const networkIdRaw = typeof raw === 'string' ? raw.trim() : '';
   const parsedNet = parseNetworkId(networkIdRaw);
   return parsedNet?.networkId || (/^[A-Za-z0-9_-]{6,128}$/.test(networkIdRaw) ? networkIdRaw : null);
+}
+
+async function detectHasAccessToken(db, networkId) {
+  try {
+    const sec = await db.collection(NETWORK_SECRETS_COLLECTION).doc(networkId).get();
+    return sec.exists && Boolean(sec.data()?.whatsappAccessTokenEnc);
+  } catch {
+    return false;
+  }
 }
 
 export default async function whatsappNetworkConfigHandler(req, res, dependencies = {}) {
@@ -46,7 +57,7 @@ export default async function whatsappNetworkConfigHandler(req, res, dependencie
   const input = bodyObject(req.body);
   if (!input) return respond(res, 400, { success: false, error: 'invalid_json' });
 
-  const action = ['get', 'set', 'readiness', 'set_token', 'clear_token'].includes(input.action)
+  const action = ['get', 'set', 'readiness', 'set_token', 'clear_token', 'status'].includes(input.action)
     ? input.action
     : null;
   if (!action) return respond(res, 400, { success: false, error: 'unknown_action' });
@@ -66,13 +77,20 @@ export default async function whatsappNetworkConfigHandler(req, res, dependencie
     const snap = await ref.get();
     if (!snap.exists) return respond(res, 404, { success: false, error: 'network_not_found' });
 
+    if (action === 'status') {
+      const report = await (dependencies.collectNetworkWhatsappStatus || collectNetworkWhatsappStatus)(db, networkId);
+      if (!report.ok) return respond(res, 400, { success: false, error: report.error });
+      return respond(res, 200, { success: true, ...report });
+    }
+
     if (action === 'get') {
+      const hasAccessToken = await detectHasAccessToken(db, networkId);
       return respond(res, 200, {
         success: true,
         networkId,
         config: readNetworkWhatsappConfig(snap.data() || {}),
-        // Never include access token or ciphertext in response
-        hasAccessToken: false,
+        hasAccessToken,
+        tokenPresence: hasAccessToken ? 'sealed_present' : 'missing',
       });
     }
 
@@ -81,7 +99,6 @@ export default async function whatsappNetworkConfigHandler(req, res, dependencie
       if (token.length < 20) {
         return respond(res, 400, { success: false, error: 'access_token_invalid' });
       }
-      // Reject accidental client echo fields
       if (input.pin || input.cardNumber || input.saleUuid) {
         return respond(res, 400, { success: false, error: 'client_payload_forbidden' });
       }
@@ -92,7 +109,6 @@ export default async function whatsappNetworkConfigHandler(req, res, dependencie
         { now, actorUid: caller.callerUid },
       );
       if (!saved.ok) return respond(res, 503, { success: false, error: saved.error });
-      // Do not echo token
       return respond(res, 200, {
         success: true,
         networkId,
@@ -109,7 +125,6 @@ export default async function whatsappNetworkConfigHandler(req, res, dependencie
     const validated = validateNetworkWhatsappInput(input.config || input);
     if (!validated.ok) return respond(res, 400, { success: false, error: validated.error });
 
-    // Strip any secret-looking keys from config write path
     const safe = { ...validated.value };
     delete safe.accessToken;
     delete safe.whatsappAccessToken;
