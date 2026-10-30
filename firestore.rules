@@ -195,6 +195,9 @@ service cloud.firestore {
     match /whatsapp_network_secrets/{networkId} {
       allow read, write: if false;
     }
+    match /whatsapp_status_events/{eventId} {
+      allow read, write: if false;
+    }
 
     match /users/{userId} {
       allow read: if isAdmin() || isSelf(userId);
