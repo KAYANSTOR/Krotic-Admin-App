@@ -1,7 +1,7 @@
 /**
  * Delivery dispatch — service secret only. Never trusts client saleUuid/card data.
  * Processes existing whatsapp_delivery_operations from DB.
- * Cloud Tasks/Scheduler wiring is a separate readiness step.
+ * Recovery via Firestore queue / external or Vercel cron — NOT a guarantee of exact 10s latency.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -10,7 +10,6 @@ import { getDispatchServiceSecret } from './secrets.js';
 import {
   DELIVERY_OPS_COLLECTION,
   tryStartSmsFallback,
-  transitionDeliveryStatus,
 } from './deliveryOperations.js';
 import { isWhatsappDeadlineExpired } from './deliveryState.js';
 import { isWhatsappCardDeliveryEnabled } from './entitlementsGate.js';
@@ -53,7 +52,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     return res.status(403).json({ success: false, error: 'dispatch_forbidden' });
   }
 
-  // Reject any client-style card/sale injection in body — dispatch only reads DB.
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   if (body.saleUuid || body.pin || body.cardNumber || body.cardPayload) {
     return res.status(400).json({ success: false, error: 'client_payload_forbidden' });
@@ -63,7 +61,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
   const now = dependencies.now ?? Date.now();
   const limit = Math.min(Number(body.limit) || 20, 50);
 
-  // Collect candidate ops from in-memory store or limited queries
   const candidates = [];
   if (db._store instanceof Map) {
     for (const [path, data] of db._store.entries()) {
@@ -81,7 +78,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     const { id, data } = item;
     processed += 1;
 
-    // Entitlement re-check (Fail-Closed)
     if (data.ownerUid) {
       const userSnap = await db.collection('users').doc(data.ownerUid).get();
       const features = userSnap.exists ? (userSnap.data() || {}).account_features : null;
@@ -110,6 +106,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     processed,
     smsStarted,
     skipped,
-    note: 'Cloud Tasks/Scheduler not wired until GCP readiness verified',
+    note: 'Firestore queue recovery path; exact 10s deadline requires an external wake-up (not claimed here)',
   });
 }
