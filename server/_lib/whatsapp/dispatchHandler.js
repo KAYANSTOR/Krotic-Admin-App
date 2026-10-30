@@ -1,7 +1,8 @@
 /**
- * Delivery dispatch — service secret only. Never trusts client saleUuid/card data.
- * Processes existing whatsapp_delivery_operations from DB.
- * Recovery via Firestore queue / external or Vercel cron — NOT a guarantee of exact 10s latency.
+ * Delivery dispatch — service secret only.
+ * 1) Drain Firestore queue jobs whose runAfterMs elapsed (deadline checks).
+ * 2) Scan delivery ops still in sent + past deadline (recovery if job missing).
+ * Exact 10s latency is NOT claimed without an external wake-up.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -13,6 +14,7 @@ import {
 } from './deliveryOperations.js';
 import { isWhatsappDeadlineExpired } from './deliveryState.js';
 import { isWhatsappCardDeliveryEnabled } from './entitlementsGate.js';
+import { claimNextJob, completeJob, failJob } from './deliveryQueue.js';
 
 function getHeader(req, name) {
   const headers = req.headers || {};
@@ -28,6 +30,41 @@ function safeEqualString(a, b) {
   const bb = Buffer.from(String(b || ''));
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
+}
+
+async function processDeadlineJob(db, job, now) {
+  const opId = job.deliveryOperationId || job.jobId;
+  if (!opId) return { smsStarted: false, reason: 'missing_op' };
+
+  const snap = await db.collection(DELIVERY_OPS_COLLECTION).doc(opId).get();
+  if (!snap.exists) return { smsStarted: false, reason: 'op_missing' };
+  const data = snap.data() || {};
+
+  if (data.ownerUid) {
+    const userSnap = await db.collection('users').doc(data.ownerUid).get();
+    const features = userSnap.exists ? (userSnap.data() || {}).account_features : null;
+    if (!isWhatsappCardDeliveryEnabled(features)) {
+      return { smsStarted: false, reason: 'entitlement_closed' };
+    }
+  }
+
+  if (data.smsFallbackSentAtMs != null) {
+    return { smsStarted: false, reason: 'sms_already_sent' };
+  }
+
+  if (data.status === 'delivered' || data.status === 'read' || data.status === 'delivered_late_after_sms') {
+    return { smsStarted: false, reason: 'already_delivered' };
+  }
+
+  if (
+    (data.status === 'sent' || data.status === 'sms_pending')
+    && isWhatsappDeadlineExpired(data.whatsappDeadlineAtMs, now)
+  ) {
+    const result = await tryStartSmsFallback(db, opId, now);
+    return { smsStarted: Boolean(result.ok), reason: result.ok ? 'sms_started' : result.error };
+  }
+
+  return { smsStarted: false, reason: 'not_due_or_wrong_status', status: data.status };
 }
 
 export default async function whatsappDispatchHandler(req, res, dependencies = {}) {
@@ -60,7 +97,34 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
   const db = dependencies.db || (dependencies.getFirestore || getFirestore)();
   const now = dependencies.now ?? Date.now();
   const limit = Math.min(Number(body.limit) || 20, 50);
+  const workerId = `dispatch-${now}`;
 
+  let queueProcessed = 0;
+  let smsStarted = 0;
+  let skipped = 0;
+
+  // Phase A: drain queue
+  for (let i = 0; i < limit; i += 1) {
+    const claim = await claimNextJob(db, { workerId, now, lockMs: 30_000 });
+    if (!claim.ok || !claim.jobId) break;
+    queueProcessed += 1;
+    try {
+      const outcome = await processDeadlineJob(db, claim.data, now);
+      if (outcome.smsStarted) smsStarted += 1;
+      else skipped += 1;
+      await completeJob(db, claim.jobId, { now, result: outcome });
+    } catch (error) {
+      await failJob(db, claim.jobId, {
+        now,
+        error: error?.message || 'process_failed',
+        requeue: true,
+        runAfterMs: now + 60_000,
+      });
+      skipped += 1;
+    }
+  }
+
+  // Phase B: recovery scan on delivery ops (if job was lost)
   const candidates = [];
   if (db._store instanceof Map) {
     for (const [path, data] of db._store.entries()) {
@@ -70,13 +134,10 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     }
   }
 
-  let smsStarted = 0;
-  let skipped = 0;
-  let processed = 0;
-
+  let recoveryProcessed = 0;
   for (const item of candidates.slice(0, limit)) {
     const { id, data } = item;
-    processed += 1;
+    recoveryProcessed += 1;
 
     if (data.ownerUid) {
       const userSnap = await db.collection('users').doc(data.ownerUid).get();
@@ -103,9 +164,10 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
 
   return res.status(200).json({
     success: true,
-    processed,
+    queueProcessed,
+    recoveryProcessed,
     smsStarted,
     skipped,
-    note: 'Firestore queue recovery path; exact 10s deadline requires an external wake-up (not claimed here)',
+    note: 'Queue + recovery path active in code; exact 10s wake-up not claimed without external scheduler',
   });
 }
