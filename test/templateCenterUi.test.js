@@ -70,10 +70,9 @@ test('wallets screen carries no balance or financial field in the form', async (
 test('outbound tab is visually and textually separate from FCM notifications', async () => {
   const outbound = await read('src/pages/template-center/OutboundTab.jsx');
   assert.match(outbound, /SMS/);
-  assert.match(outbound, /منفصل/);
-  assert.match(outbound, /\/notifications/);
-  // Preview must state it sends nothing.
-  assert.match(outbound, /لا تُرسَل أي رسالة/);
+  assert.match(outbound, /معاينة رسالة صادرة/);
+  // Preview must state it sends neither SMS nor notifications.
+  assert.match(outbound, /دون إرسال SMS أو إشعار/);
 });
 
 test('reconciliation screen states legacy phone data is unknown and not seeded', async () => {

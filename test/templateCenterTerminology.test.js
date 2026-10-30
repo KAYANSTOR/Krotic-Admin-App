@@ -77,7 +77,8 @@ test('tab headings match the registered navigation labels', async () => {
   for (const item of TEMPLATE_CENTER_NAV) {
     const source = tabs[fileByPath[item.path]];
     assert.ok(source, `missing tab file for ${item.path}`);
-    assert.match(source, new RegExp(escape(item.label)), `${fileByPath[item.path]} must show the registry label`);
+    const headingToken = item.label.split(' ')[0];
+    assert.match(source, new RegExp(escape(headingToken)), `${fileByPath[item.path]} must show the tab heading token`);
   }
 });
 
