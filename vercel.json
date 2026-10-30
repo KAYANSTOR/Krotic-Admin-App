@@ -68,6 +68,14 @@
     "api/manage-user-auth.js": {
       "maxDuration": 15,
       "memory": 512
+    },
+    "api/whatsapp/meta/webhook.js": {
+      "maxDuration": 15,
+      "memory": 256
+    },
+    "api/whatsapp/delivery/dispatch.js": {
+      "maxDuration": 30,
+      "memory": 256
     }
   }
 }
