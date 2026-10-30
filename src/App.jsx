@@ -10,7 +10,6 @@ import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute, preloadAllRoutes } from './lib/routeLoaders';
 import { LocalDbProvider } from './lib/localDb/LocalDbContext';
 
-// Load the diagnostic panel only in development so its code is excluded from production builds.
 const ReadMeterPanel = import.meta.env.DEV
   ? lazy(() => import('./components/ReadMeterPanel'))
   : null;
@@ -25,9 +24,9 @@ const AdminsPage = lazy(() => loadRoute('/admins'));
 const AuditPage = lazy(() => loadRoute('/audit'));
 const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
 const PaidFeaturesPage = lazy(() => loadRoute('/paid-features'));
+const WhatsAppNetworkSettingsPage = lazy(() => loadRoute('/whatsapp-settings'));
 const DevicesPage = lazy(() => loadRoute('/devices'));
 
-/** هيكل واحد لكل الصفحات: الشريط الجانبي يبقى ثابتاً أثناء تغيير الصفحة. */
 function AdminShell() {
   return (
     <ProtectedRoute>
@@ -41,7 +40,6 @@ function AdminShell() {
 function AppRoutes() {
   const { currentUser, loading } = useAuth();
 
-  // بعد تسجيل الدخول: تحميل بقية الصفحات في وقت الخمول (بلا سبينر كامل لاحقاً).
   useEffect(() => {
     if (!currentUser) return undefined;
     const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1200));
@@ -75,6 +73,7 @@ function AppRoutes() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/template-center/*" element={<TemplateCenterPage />} />
           <Route path="/paid-features" element={<PaidFeaturesPage />} />
+          <Route path="/whatsapp-settings" element={<WhatsAppNetworkSettingsPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/users/:uid" element={<UserProfilePage />} />
         </Route>
