@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import SearchHeader from '../components/ui/SearchHeader';
 import SettingsSection from '../components/ui/SettingsSection';
 import { Field, Select } from '../components/ui/Field';
-import { adminFetch } from '../lib/adminApi';
+import { callAdminApi, adminApiError } from '../lib/adminApi';
 
 /**
  * Limited admin UI for WhatsApp network config + sealed access token.
@@ -28,12 +28,12 @@ export default function WhatsAppNetworkSettingsPage() {
     }
     setLoading(true);
     try {
-      const result = await adminFetch('/api/whatsapp/network-config', {
-        method: 'POST',
-        body: { action: 'get', networkId: id },
+      const result = await callAdminApi('/api/whatsapp/network-config', {
+        action: 'get',
+        networkId: id,
       });
       if (!result.ok) {
-        toast.error(result.error || 'تعذر التحميل');
+        toast.error(adminApiError(result.error, 'تعذر التحميل'));
         setConfig(null);
         return;
       }
@@ -42,7 +42,7 @@ export default function WhatsAppNetworkSettingsPage() {
       setProvider(cfg.whatsappPrimaryProvider || 'cloud_api');
       setPhoneNumberId(cfg.whatsappPhoneNumberId || '');
       setLinkStatus(cfg.whatsappCloudLinkStatus || 'unlinked');
-      setTokenInput(''); // never refill token
+      setTokenInput('');
       toast.success('تم التحميل');
     } finally {
       setLoading(false);
@@ -54,20 +54,17 @@ export default function WhatsAppNetworkSettingsPage() {
     if (!id) return;
     setSaving(true);
     try {
-      const result = await adminFetch('/api/whatsapp/network-config', {
-        method: 'POST',
-        body: {
-          action: 'set',
-          networkId: id,
-          config: {
-            whatsappPrimaryProvider: provider,
-            whatsappPhoneNumberId: phoneNumberId || null,
-            whatsappCloudLinkStatus: linkStatus,
-          },
+      const result = await callAdminApi('/api/whatsapp/network-config', {
+        action: 'set',
+        networkId: id,
+        config: {
+          whatsappPrimaryProvider: provider,
+          whatsappPhoneNumberId: phoneNumberId || null,
+          whatsappCloudLinkStatus: linkStatus,
         },
       });
       if (!result.ok) {
-        toast.error(result.error || 'تعذر الحفظ');
+        toast.error(adminApiError(result.error, 'تعذر الحفظ'));
         return;
       }
       setConfig(result.data?.config || null);
@@ -86,17 +83,18 @@ export default function WhatsAppNetworkSettingsPage() {
     }
     setSaving(true);
     try {
-      const result = await adminFetch('/api/whatsapp/network-config', {
-        method: 'POST',
-        body: { action: 'set_token', networkId: id, accessToken: token },
+      const result = await callAdminApi('/api/whatsapp/network-config', {
+        action: 'set_token',
+        networkId: id,
+        accessToken: token,
       });
-      // Clear input immediately — do not keep secret in React state longer than needed
       setTokenInput('');
       if (!result.ok) {
-        toast.error(result.error || 'تعذر حفظ التوكن');
+        toast.error(adminApiError(result.error, 'تعذر حفظ التوكن'));
         return;
       }
-      if (result.data && (result.data.accessToken || result.data.token)) {
+      const body = result.data || {};
+      if (body.accessToken || body.token || body.plaintext) {
         toast.error('استجابة غير آمنة من الخادم');
         return;
       }
@@ -112,13 +110,13 @@ export default function WhatsAppNetworkSettingsPage() {
     if (!window.confirm('حذف توكن الوصول وفصل الربط السري؟')) return;
     setSaving(true);
     try {
-      const result = await adminFetch('/api/whatsapp/network-config', {
-        method: 'POST',
-        body: { action: 'clear_token', networkId: id },
+      const result = await callAdminApi('/api/whatsapp/network-config', {
+        action: 'clear_token',
+        networkId: id,
       });
       setTokenInput('');
       if (!result.ok) {
-        toast.error(result.error || 'تعذر الحذف');
+        toast.error(adminApiError(result.error, 'تعذر الحذف'));
         return;
       }
       toast.success('تم حذف التوكن');
