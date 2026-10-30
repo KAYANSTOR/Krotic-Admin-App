@@ -31,13 +31,7 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
     if (current.smsOutcomeUnknown === true) {
       return { ok: true, claimed: false, alreadySent: false, data: current, reason: 'outcome_unknown_no_resend' };
     }
-    if (
-      current.smsClaimOwner
-      && current.smsClaimOwner !== workerId
-      && Number(current.smsClaimUntilMs) > now
-    ) {
-      return { ok: true, claimed: false, alreadySent: false, data: current, reason: 'locked' };
-    }
+    // Provider already accepted: complete without re-send even if another worker still holds the lock.
     if (current.smsProviderAcceptedAtMs != null && current.smsFallbackSentAtMs == null) {
       return {
         ok: true,
@@ -46,6 +40,13 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
         data: current,
         reason: 'complete_after_crash',
       };
+    }
+    if (
+      current.smsClaimOwner
+      && current.smsClaimOwner !== workerId
+      && Number(current.smsClaimUntilMs) > now
+    ) {
+      return { ok: true, claimed: false, alreadySent: false, data: current, reason: 'locked' };
     }
     if (!canStartSmsFallback(current.status) && current.status !== 'sms_pending') {
       return { ok: false, error: 'sms_not_allowed_from_status', status: current.status };
@@ -104,10 +105,6 @@ export async function completeSmsFallback(db, deliveryOperationId, now = Date.no
   return transitionDeliveryStatus(db, deliveryOperationId, 'sms_sent', {}, now);
 }
 
-/**
- * Production entry: uses pipeline. Default provider is not configured (safe).
- * Tests pass providerDeps.simulateAccept or sendSms.
- */
 export async function tryStartSmsFallbackOnce(db, deliveryOperationId, {
   workerId = `sms-${Date.now()}`,
   now = Date.now(),
@@ -115,7 +112,6 @@ export async function tryStartSmsFallbackOnce(db, deliveryOperationId, {
   throwAfter = null,
   sendSms = null,
 } = {}) {
-  // Reconcile first if prior ambiguous state
   const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
   const snap = await ref.get();
   if (snap.exists) {
@@ -141,12 +137,8 @@ export async function tryStartSmsFallbackOnce(db, deliveryOperationId, {
       },
     });
   } catch (error) {
-    if (error?.phase === 'request_started' || error?.phase === 'provider_accepted') {
-      // Leave breadcrumbs; do not auto-resend blindly for request_started
-      if (error.phase === 'request_started') {
-        await markSmsOutcomeUnknown(db, deliveryOperationId, now, 'crash_after_request_started');
-      }
-      // provider_accepted: next recovery uses completeOnly
+    if (error?.phase === 'request_started') {
+      await markSmsOutcomeUnknown(db, deliveryOperationId, now, 'crash_after_request_started');
     }
     throw error;
   }
