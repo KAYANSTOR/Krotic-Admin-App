@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
-  ArrowDownToLine, Send, MessageSquare, Archive, ListChecks, Sparkles, Smartphone,
+  ArrowDownToLine, Send, MessageSquare, Archive, ListChecks, Sparkles, Smartphone, MessageCircle,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 import { TEMPLATE_CENTER_NAV, TEMPLATE_CENTER_ROOT } from '../lib/templateCenterRoutes';
@@ -14,7 +14,6 @@ const TEMPLATE_CENTER_ICONS = {
   '/template-center/reconciliation': ListChecks,
 };
 
-/** أقسام النظام الفعلية، مرتّبة حسب أولوية الاستخدام اليومي مع شاشات مخصصة لكل وظيفة. */
 const navGroups = [
   {
     label: 'نظرة عامة',
@@ -33,6 +32,7 @@ const navGroups = [
     items: [
       ...TEMPLATE_CENTER_NAV.map((item) => ({ ...item, icon: TEMPLATE_CENTER_ICONS[item.path] || Layers3 })),
       { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
+      { path: '/whatsapp-settings', label: 'إعدادات WhatsApp', icon: MessageCircle },
     ],
   },
   {
