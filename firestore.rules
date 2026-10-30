@@ -208,6 +208,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // WhatsApp inbound events + delivery ops: Admin SDK only (webhook/dispatch).
+    // Clients (including signed-in owners) cannot read secrets, message text, or reprocess.
+    match /whatsapp_inbound_events/{eventId} {
+      allow read, write: if false;
+    }
+    match /whatsapp_delivery_operations/{operationId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || isSelf(userId);
       allow create: if isSelf(userId) && validSelfRegistration(userId);
