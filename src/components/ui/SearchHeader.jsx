@@ -16,6 +16,8 @@ export default function SearchHeader({
   actions = null,
   className,
 }) {
+  const hasSearch = Boolean(onSearchChange && searchPlaceholder);
+
   return (
     <div className={cn('sticky top-0 z-20 -mx-4 px-4 pt-3 pb-2 bg-[var(--ui-paper)]/95 backdrop-blur-sm', className)}>
       {/* عنوان + إجراءات */}
@@ -36,6 +38,7 @@ export default function SearchHeader({
       )}
 
       {/* بحث + فلتر */}
+      {hasSearch && (
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ui-muted)] pointer-events-none" />
@@ -80,6 +83,7 @@ export default function SearchHeader({
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
