@@ -1,17 +1,18 @@
 /**
  * SMS fallback once-only claim — identity = deliveryOperationId (= networkId + saleUuid).
- * Reserve BEFORE external send (when real send exists). Crash after external send:
- * recovery sees smsClaimOwner without smsFallbackSentAtMs → complete without re-send.
+ * Reserve BEFORE external send. Crash recovery via smsProviderAcceptedAtMs / smsOutcomeUnknown.
+ * See smsProvider.js for idempotency key + reconciliation limits.
  */
 import { DELIVERY_OPS_COLLECTION, transitionDeliveryStatus } from './deliveryOperations.js';
 import { canStartSmsFallback } from './deliveryState.js';
+import {
+  executeSmsFallbackPipeline,
+  reconcileSmsAfterCrash,
+  markSmsOutcomeUnknown,
+} from './smsProvider.js';
 
 export const SMS_CLAIM_LOCK_MS = 60_000;
 
-/**
- * Atomically claim the right to send exactly one SMS for this delivery op.
- * @returns {{ ok: true, claimed: boolean, alreadySent?: boolean, data? } | { ok: false, error: string }}
- */
 export async function claimSmsFallbackSlot(db, deliveryOperationId, {
   workerId,
   now = Date.now(),
@@ -27,7 +28,9 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
     if (current.smsFallbackSentAtMs != null) {
       return { ok: true, claimed: false, alreadySent: true, data: current };
     }
-    // Active claim by another worker
+    if (current.smsOutcomeUnknown === true) {
+      return { ok: true, claimed: false, alreadySent: false, data: current, reason: 'outcome_unknown_no_resend' };
+    }
     if (
       current.smsClaimOwner
       && current.smsClaimOwner !== workerId
@@ -35,7 +38,6 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
     ) {
       return { ok: true, claimed: false, alreadySent: false, data: current, reason: 'locked' };
     }
-    // Expired claim: do NOT re-send if provider was already accepted
     if (current.smsProviderAcceptedAtMs != null && current.smsFallbackSentAtMs == null) {
       return {
         ok: true,
@@ -54,7 +56,7 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
       completeOnly: false,
       next: {
         ...current,
-        status: current.status === 'sms_pending' ? 'sms_pending' : 'sms_pending',
+        status: 'sms_pending',
         smsClaimOwner: workerId,
         smsClaimUntilMs: now + lockMs,
         smsFallbackScheduledAtMs: current.smsFallbackScheduledAtMs ?? now,
@@ -83,7 +85,6 @@ export async function claimSmsFallbackSlot(db, deliveryOperationId, {
   return { ok: true, claimed: true, completeOnly: false, data: result.next };
 }
 
-/** Mark SMS as accepted by provider (before or instead of final sms_sent). */
 export async function markSmsProviderAccepted(db, deliveryOperationId, now = Date.now()) {
   const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
   const snap = await ref.get();
@@ -99,29 +100,56 @@ export async function markSmsProviderAccepted(db, deliveryOperationId, now = Dat
   return { ok: true, data: next };
 }
 
-/** Finalize SMS sent — sets smsFallbackSentAtMs once. */
 export async function completeSmsFallback(db, deliveryOperationId, now = Date.now()) {
   return transitionDeliveryStatus(db, deliveryOperationId, 'sms_sent', {}, now);
 }
 
 /**
- * High-level: claim → (optional provider accept) → complete.
- * No real SMS send. Concurrent callers: only one claims.
+ * Production entry: uses pipeline. Default provider is not configured (safe).
+ * Tests pass providerDeps.simulateAccept or sendSms.
  */
 export async function tryStartSmsFallbackOnce(db, deliveryOperationId, {
   workerId = `sms-${Date.now()}`,
   now = Date.now(),
+  simulateAccept = true,
+  throwAfter = null,
+  sendSms = null,
 } = {}) {
-  const claim = await claimSmsFallbackSlot(db, deliveryOperationId, { workerId, now });
-  if (!claim.ok) return claim;
-  if (claim.alreadySent) return { ok: false, error: 'sms_already_sent' };
-  if (!claim.claimed) return { ok: false, error: claim.reason || 'sms_not_claimed' };
-
-  if (claim.completeOnly) {
-    return completeSmsFallback(db, deliveryOperationId, now);
+  // Reconcile first if prior ambiguous state
+  const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
+  const snap = await ref.get();
+  if (snap.exists) {
+    const plan = reconcileSmsAfterCrash(snap.data());
+    if (plan.action === 'manual_review') {
+      await markSmsOutcomeUnknown(db, deliveryOperationId, now, plan.reason);
+      return { ok: false, error: 'sms_outcome_unknown', reason: plan.reason };
+    }
+    if (plan.action === 'noop') return { ok: false, error: 'sms_already_sent' };
   }
 
-  // Future: external SMS API here. On success:
-  await markSmsProviderAccepted(db, deliveryOperationId, now);
-  return completeSmsFallback(db, deliveryOperationId, now);
+  try {
+    return await executeSmsFallbackPipeline(db, deliveryOperationId, {
+      workerId,
+      now,
+      claimSmsFallbackSlot,
+      markSmsProviderAccepted,
+      completeSmsFallback,
+      throwAfter,
+      providerDeps: {
+        simulateAccept,
+        sendSms,
+      },
+    });
+  } catch (error) {
+    if (error?.phase === 'request_started' || error?.phase === 'provider_accepted') {
+      // Leave breadcrumbs; do not auto-resend blindly for request_started
+      if (error.phase === 'request_started') {
+        await markSmsOutcomeUnknown(db, deliveryOperationId, now, 'crash_after_request_started');
+      }
+      // provider_accepted: next recovery uses completeOnly
+    }
+    throw error;
+  }
 }
+
+export { reconcileSmsAfterCrash, markSmsOutcomeUnknown };
