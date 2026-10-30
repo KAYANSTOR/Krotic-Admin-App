@@ -8,7 +8,6 @@ import { transitionDeliveryStatus, DELIVERY_OPS_COLLECTION } from './deliveryOpe
 
 export const STATUS_EVENTS_COLLECTION = 'whatsapp_status_events';
 
-/** Rank: higher = more advanced terminal progress (failed is parallel, not regress). */
 const STATUS_RANK = Object.freeze({
   accepted: 0,
   sent: 1,
@@ -48,7 +47,6 @@ export function buildStatusEventDocId({
   };
 }
 
-/** Extract status updates from Meta Cloud API payload (no body storage). */
 export function extractMetaStatusUpdates(payload) {
   const out = [];
   if (!payload || payload.object !== 'whatsapp_business_account') return out;
@@ -74,8 +72,9 @@ export function extractMetaStatusUpdates(payload) {
   return out;
 }
 
-async function findDeliveryByProviderMessageId(db, networkId, providerMessageId) {
+export async function findDeliveryByProviderMessageId(db, networkId, providerMessageId) {
   const matches = [];
+
   if (db._store instanceof Map) {
     for (const [path, data] of db._store.entries()) {
       if (
@@ -86,13 +85,24 @@ async function findDeliveryByProviderMessageId(db, networkId, providerMessageId)
         matches.push({ id: path.slice(DELIVERY_OPS_COLLECTION.length + 1), data });
       }
     }
+  } else {
+    try {
+      const q = await db.collection(DELIVERY_OPS_COLLECTION)
+        .where('networkId', '==', networkId)
+        .where('providerMessageId', '==', providerMessageId)
+        .limit(5)
+        .get();
+      for (const doc of q.docs || []) {
+        matches.push({ id: doc.id, data: doc.data() });
+      }
+    } catch {
+      // missing composite index — fall through empty
+    }
   }
+
   return matches.length === 1 ? matches[0] : null;
 }
 
-/**
- * Record status event once (create). Duplicate → skip processing.
- */
 export async function recordStatusEvent(db, {
   networkId,
   providerMessageId,
@@ -119,7 +129,6 @@ export async function recordStatusEvent(db, {
     deliveryOperationId,
     occurredAtMs: Number.isSafeInteger(occurredAtMs) ? occurredAtMs : null,
     receivedAtMs: now,
-    // no text / no raw body
   };
   try {
     await ref.create(data);
@@ -132,16 +141,12 @@ export async function recordStatusEvent(db, {
   }
 }
 
-/**
- * Apply one Meta status to a delivery operation without regressing state.
- */
 export async function applyStatusToDelivery(db, deliveryOperationId, current, internalStatus, {
   now = Date.now(),
   occurredAtMs = null,
 } = {}) {
   if (!current) return { ok: false, error: 'delivery_not_found' };
 
-  // Late WhatsApp confirmation after SMS
   if (current.status === 'sms_sent' || current.status === 'delivered_late_after_sms') {
     if (internalStatus === 'delivered' || internalStatus === 'read') {
       if (current.status === 'delivered_late_after_sms') {
@@ -154,17 +159,14 @@ export async function applyStatusToDelivery(db, deliveryOperationId, current, in
         }, now);
       }
     }
-    // failed after SMS: record only, do not change to failed (avoid confusion)
     return { ok: true, skipped: true, reason: 'post_sms_ignore', from: current.status, to: internalStatus };
   }
 
-  // delivered/read already terminal for WhatsApp path
   if (current.status === 'delivered' || current.status === 'read') {
     if (internalStatus === 'failed') {
       return { ok: true, skipped: true, reason: 'ignore_failed_after_success' };
     }
-    if (internalStatus === 'read' && current.status === 'delivered' && canTransition('delivered', 'read')) {
-      // delivered has empty transitions in machine — allow read as informational patch only
+    if (internalStatus === 'read' && current.status === 'delivered') {
       const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
       await ref.set({
         ...current,
@@ -181,12 +183,10 @@ export async function applyStatusToDelivery(db, deliveryOperationId, current, in
   }
 
   if (!canTransition(current.status, internalStatus)) {
-    // Out-of-order: e.g. delivered while accepted — try jump if rank increases and path makes sense
     if (
       (current.status === 'accepted' || current.status === 'sent')
       && (internalStatus === 'delivered' || internalStatus === 'read')
     ) {
-      // Force path: accepted→sent→delivered if needed is complex; allow direct patch when rank higher
       if (current.status === 'accepted' && internalStatus === 'delivered') {
         const sent = await transitionDeliveryStatus(db, deliveryOperationId, 'sent', {
           lastProviderStatusAtMs: occurredAtMs ?? now,
@@ -229,9 +229,6 @@ export async function applyStatusToDelivery(db, deliveryOperationId, current, in
   }, now);
 }
 
-/**
- * Full pipeline for one extracted status update.
- */
 export async function processMetaStatusUpdate(db, update, {
   resolveNetworkIdByPhoneNumberId,
   now = Date.now(),
@@ -247,7 +244,6 @@ export async function processMetaStatusUpdate(db, update, {
 
   const delivery = await findDeliveryByProviderMessageId(db, networkId, update.providerMessageId);
   if (!delivery) {
-    // Record orphan status for audit without mutating delivery
     const recorded = await recordStatusEvent(db, {
       networkId,
       providerMessageId: update.providerMessageId,

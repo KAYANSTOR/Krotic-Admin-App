@@ -1,24 +1,11 @@
 /**
  * Durable Firestore delivery queue (no Cloud Tasks / no paid GCP).
- *
- * Collection: whatsapp_delivery_queue/{jobId}
- * jobId is deterministic: same as deliveryOperationId when tied to a sale,
- * or explicit id for maintenance jobs.
- *
- * States: queued → processing → completed | failed
- * Lock: lockOwner + lockUntilMs — expired locks are reclaimable.
- *
- * Does NOT guarantee exact 10s latency by itself; pairs with deadline fields
- * on delivery operations and a recovery dispatcher.
  */
 
 export const QUEUE_COLLECTION = 'whatsapp_delivery_queue';
 export const QUEUE_STATUSES = Object.freeze(['queued', 'processing', 'completed', 'failed']);
 export const DEFAULT_LOCK_MS = 30_000;
 
-/**
- * Atomically enqueue a job. create() prevents duplicates for same jobId.
- */
 export async function enqueueDeliveryJob(db, {
   jobId,
   deliveryOperationId,
@@ -64,9 +51,57 @@ export async function enqueueDeliveryJob(db, {
   }
 }
 
-/**
- * Claim next eligible job with lock. Uses transaction when available.
- */
+/** Claim a known job by id (transactional) — used by workers and tests. */
+export async function claimJobById(db, jobId, {
+  workerId,
+  now = Date.now(),
+  lockMs = DEFAULT_LOCK_MS,
+} = {}) {
+  if (!jobId || !workerId) return { ok: false, error: 'job_or_worker_required' };
+  const ref = db.collection(QUEUE_COLLECTION).doc(jobId);
+
+  if (typeof db.runTransaction === 'function') {
+    const claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const cur = snap.data() || {};
+      const stillEligible = cur.status === 'queued'
+        || (cur.status === 'processing' && Number(cur.lockUntilMs) > 0 && cur.lockUntilMs <= now);
+      if (!stillEligible) return null;
+      if (Number.isSafeInteger(cur.runAfterMs) && cur.runAfterMs > now) return null;
+      const locked = {
+        ...cur,
+        status: 'processing',
+        lockOwner: workerId,
+        lockUntilMs: now + lockMs,
+        attempts: (Number(cur.attempts) || 0) + 1,
+        updatedAtMs: now,
+      };
+      tx.set(ref, locked, { merge: false });
+      return locked;
+    });
+    if (claimed) return { ok: true, jobId, data: claimed };
+    return { ok: true, jobId: null, data: null };
+  }
+
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: true, jobId: null, data: null };
+  const cur = snap.data() || {};
+  const stillEligible = cur.status === 'queued'
+    || (cur.status === 'processing' && Number(cur.lockUntilMs) > 0 && cur.lockUntilMs <= now);
+  if (!stillEligible) return { ok: true, jobId: null, data: null };
+  const locked = {
+    ...cur,
+    status: 'processing',
+    lockOwner: workerId,
+    lockUntilMs: now + lockMs,
+    attempts: (Number(cur.attempts) || 0) + 1,
+    updatedAtMs: now,
+  };
+  await ref.set(locked, { merge: false });
+  return { ok: true, jobId, data: locked };
+}
+
 export async function claimNextJob(db, {
   workerId,
   now = Date.now(),
@@ -81,53 +116,23 @@ export async function claimNextJob(db, {
         candidates.push({ id: path.slice(QUEUE_COLLECTION.length + 1), data });
       }
     }
+  } else {
+    // Production: scan recent queued/processing docs (bounded). Prefer claimJobById when id known.
+    try {
+      const q = await db.collection(QUEUE_COLLECTION).limit(40).get();
+      for (const doc of q.docs || []) {
+        candidates.push({ id: doc.id, data: doc.data() });
+      }
+    } catch {
+      return { ok: true, jobId: null, data: null };
+    }
   }
 
   candidates.sort((a, b) => (a.data.runAfterMs || 0) - (b.data.runAfterMs || 0));
 
   for (const item of candidates) {
-    const { id, data } = item;
-    const eligibleStatus = data.status === 'queued'
-      || (data.status === 'processing' && Number(data.lockUntilMs) > 0 && data.lockUntilMs <= now);
-    if (!eligibleStatus) continue;
-    if (Number.isSafeInteger(data.runAfterMs) && data.runAfterMs > now) continue;
-
-    const ref = db.collection(QUEUE_COLLECTION).doc(id);
-    const next = {
-      ...data,
-      status: 'processing',
-      lockOwner: workerId,
-      lockUntilMs: now + lockMs,
-      attempts: (Number(data.attempts) || 0) + 1,
-      updatedAtMs: now,
-    };
-
-    if (typeof db.runTransaction === 'function') {
-      const claimed = await db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists) return null;
-        const cur = snap.data() || {};
-        const stillEligible = cur.status === 'queued'
-          || (cur.status === 'processing' && Number(cur.lockUntilMs) > 0 && cur.lockUntilMs <= now);
-        if (!stillEligible) return null;
-        if (Number.isSafeInteger(cur.runAfterMs) && cur.runAfterMs > now) return null;
-        const locked = {
-          ...cur,
-          status: 'processing',
-          lockOwner: workerId,
-          lockUntilMs: now + lockMs,
-          attempts: (Number(cur.attempts) || 0) + 1,
-          updatedAtMs: now,
-        };
-        tx.set(ref, locked, { merge: false });
-        return locked;
-      });
-      if (claimed) return { ok: true, jobId: id, data: claimed };
-      continue;
-    }
-
-    await ref.set(next, { merge: false });
-    return { ok: true, jobId: id, data: next };
+    const result = await claimJobById(db, item.id, { workerId, now, lockMs });
+    if (result.ok && result.jobId) return result;
   }
 
   return { ok: true, jobId: null, data: null };
