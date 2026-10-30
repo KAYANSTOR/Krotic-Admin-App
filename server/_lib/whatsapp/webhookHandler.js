@@ -21,26 +21,34 @@ function getHeader(req, name) {
 /** Resolve networkId from Meta phone_number_id against networks collection. */
 export async function resolveNetworkIdByPhoneNumberId(db, phoneNumberId) {
   if (!phoneNumberId) return null;
-  // Prefer indexed query when available; fallback scan limited — production should index whatsappPhoneNumberId.
+  const target = String(phoneNumberId);
+  const matches = [];
+
+  // Prefer indexed query when available (production). Always re-filter by field
+  // because test doubles may implement where() as a no-op.
   if (typeof db.collection('networks').where === 'function') {
     try {
-      const q = await db.collection('networks').where('whatsappPhoneNumberId', '==', String(phoneNumberId)).limit(2).get();
-      if (q.docs?.length === 1) return q.docs[0].id;
-      if (q.docs?.length > 1) return null; // ambiguous
+      const q = await db.collection('networks').where('whatsappPhoneNumberId', '==', target).limit(5).get();
+      for (const doc of q.docs || []) {
+        const data = typeof doc.data === 'function' ? doc.data() : doc._data;
+        if (data?.whatsappPhoneNumberId === target) matches.push(doc.id);
+      }
     } catch {
-      // fake or missing index
+      // missing index or unsupported query
     }
   }
-  // Scan fake store / small sets
-  if (db._store instanceof Map) {
+
+  if (matches.length === 0 && db._store instanceof Map) {
     for (const [path, data] of db._store.entries()) {
       if (path.startsWith('networks/') && !path.slice('networks/'.length).includes('/')
-          && data?.whatsappPhoneNumberId === String(phoneNumberId)) {
-        return path.slice('networks/'.length);
+          && data?.whatsappPhoneNumberId === target) {
+        matches.push(path.slice('networks/'.length));
       }
     }
   }
-  return null;
+
+  if (matches.length === 1) return matches[0];
+  return null; // none or ambiguous
 }
 
 /** Extract inbound message candidates from Meta Cloud API payload (no secrets). */
