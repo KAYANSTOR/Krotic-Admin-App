@@ -5,9 +5,14 @@ import {
   buildInboundEventDocId,
   WHATSAPP_PROVIDER_META,
 } from './eventIdentity.js';
+import {
+  TEXT_RETENTION_MS,
+  computeTextRetentionUntilMs,
+  computeEventExpiresAtMs,
+  INBOUND_EVENTS_COLLECTION,
+} from './retention.js';
 
-export const INBOUND_EVENTS_COLLECTION = 'whatsapp_inbound_events';
-export const TEXT_RETENTION_MS = 72 * 60 * 60 * 1000; // 72h
+export { INBOUND_EVENTS_COLLECTION, TEXT_RETENTION_MS };
 
 /**
  * Create inbound event document. Fails with duplicate when already exists.
@@ -28,6 +33,7 @@ export async function createInboundEvent(db, {
   if (!id.ok) return id;
 
   const ref = db.collection(INBOUND_EVENTS_COLLECTION).doc(id.docId);
+  const hasText = typeof text === 'string' && text.length > 0;
   const data = {
     providerId,
     inboundMessageId,
@@ -35,9 +41,10 @@ export async function createInboundEvent(db, {
     ownerUid: typeof ownerUid === 'string' ? ownerUid : null,
     fromE164: typeof fromE164 === 'string' ? fromE164 : null,
     messageType: typeof messageType === 'string' ? messageType : null,
-    // Store text only with retention deadline; purge job clears it.
-    text: typeof text === 'string' && text.length > 0 ? text.slice(0, 4000) : null,
-    textRetentionUntilMs: typeof text === 'string' && text.length > 0 ? now + TEXT_RETENTION_MS : null,
+    // Store text only with retention deadline; purge job clears it without deleting the event.
+    text: hasText ? text.slice(0, 4000) : null,
+    textRetentionUntilMs: hasText ? computeTextRetentionUntilMs(now) : null,
+    eventExpiresAtMs: computeEventExpiresAtMs(now),
     occurredAtMs: Number.isSafeInteger(occurredAtMs) ? occurredAtMs : null,
     receivedAtMs: now,
     signatureVerified: true,
