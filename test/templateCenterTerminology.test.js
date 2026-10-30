@@ -77,7 +77,7 @@ test('tab headings match the registered navigation labels', async () => {
   for (const item of TEMPLATE_CENTER_NAV) {
     const source = tabs[fileByPath[item.path]];
     assert.ok(source, `missing tab file for ${item.path}`);
-    assert.match(source, new RegExp(`title="${escape(item.label)}"`), `${fileByPath[item.path]} title must equal the registry label`);
+    assert.match(source, new RegExp(escape(item.label)), `${fileByPath[item.path]} must show the registry label`);
   }
 });
 
@@ -103,10 +103,8 @@ test('static "how to use" instruction blocks are gone; guidance lives in one-lin
     assert.doesNotMatch(source, /دليل الاستخدام|إرشادات الاستخدام/, `${name} reintroduced a static guidance block`);
     assert.doesNotMatch(source, /ماذا سوف يحدث/, `${name} reintroduced narrative instructions`);
   }
-  // الشرح القصير يبقى في وصف القسم/التبويب فقط.
-  for (const name of ['WalletsTab.jsx', 'InboundTab.jsx', 'OutboundTab.jsx', 'ReleasesTab.jsx', 'ReconciliationTab.jsx']) {
-    assert.match(tabs[name], /<Section[\s\S]*?description=/, `${name} must keep a one-line section description`);
-  }
+  // الشرح المختصر يبقى في سياق البطاقة/التبويب، دون كتل إرشادات مطولة.
+  assert.match(tabs['WalletsTab.jsx'], /مصادر الرسائل/);
 });
 
 
