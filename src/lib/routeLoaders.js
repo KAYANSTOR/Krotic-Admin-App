@@ -15,6 +15,7 @@ const routeLoaders = {
   '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
   '/paid-features': () => import('../pages/PaidFeaturesPage'),
   '/whatsapp-settings': () => import('../pages/WhatsAppNetworkSettingsPage'),
+  '/whatsapp-unknown-outcomes': () => import('../pages/WhatsAppUnknownOutcomesPage'),
   '/devices': () => import('../pages/DevicesPage'),
 };
 
