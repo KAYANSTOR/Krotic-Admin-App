@@ -1,66 +1,89 @@
 /**
- * Secret access boundary for WhatsApp.
- * Production path: Google Secret Manager.
- * Until GCP/IAM is verified ready, accessors return not_configured — never invent secrets.
+ * Secret access boundary for WhatsApp (no GCP Secret Manager required).
+ *
+ * Shared Meta secrets: Vercel env vars (per Production / Preview / Development).
+ * Per-network Access Tokens: AES-256-GCM ciphertext on networks/{networkId}
+ *   field: whatsappAccessTokenEnc (envelope) — never plaintext in Firestore.
+ *
+ * Env (server only):
+ *   META_APP_SECRET | WHATSAPP_META_APP_SECRET
+ *   META_VERIFY_TOKEN | WHATSAPP_META_VERIFY_TOKEN
+ *   WHATSAPP_DISPATCH_SERVICE_SECRET
+ *   WHATSAPP_SECRETS_KEK (+ optional WHATSAPP_SECRETS_KEK_PREV)
  */
+import { encryptSecret, decryptSecret, cryptoReadiness } from './cryptoSecrets.js';
 
-export const SECRETS_BACKEND = {
-  /** @type {'secret_manager' | 'not_configured'} */
-  mode: process.env.WHATSAPP_SECRETS_BACKEND === 'secret_manager' ? 'secret_manager' : 'not_configured',
-};
-
-/**
- * @returns {Promise<{ ok: true, value: string } | { ok: false, error: string }>}
- */
-export async function getMetaAppSecret() {
-  if (SECRETS_BACKEND.mode !== 'secret_manager') {
-    // Dev-only escape hatch: WHATSAPP_META_APP_SECRET for unit tests / local emulator — never in client.
-    if (process.env.WHATSAPP_META_APP_SECRET && process.env.NODE_ENV !== 'production') {
-      return { ok: true, value: process.env.WHATSAPP_META_APP_SECRET };
-    }
-    return { ok: false, error: 'secret_manager_not_configured' };
+function envFirst(...names) {
+  for (const name of names) {
+    const v = process.env[name];
+    if (typeof v === 'string' && v.trim()) return v.trim();
   }
-  // Hook for future Secret Manager client — not implemented until IAM verified.
-  return { ok: false, error: 'secret_manager_client_not_wired' };
+  return null;
+}
+
+export async function getMetaAppSecret() {
+  const value = envFirst('META_APP_SECRET', 'WHATSAPP_META_APP_SECRET');
+  if (!value) return { ok: false, error: 'meta_app_secret_not_configured' };
+  return { ok: true, value };
 }
 
 export async function getMetaVerifyToken() {
-  if (SECRETS_BACKEND.mode !== 'secret_manager') {
-    if (process.env.WHATSAPP_META_VERIFY_TOKEN && process.env.NODE_ENV !== 'production') {
-      return { ok: true, value: process.env.WHATSAPP_META_VERIFY_TOKEN };
-    }
-    return { ok: false, error: 'secret_manager_not_configured' };
-  }
-  return { ok: false, error: 'secret_manager_client_not_wired' };
-}
-
-/** Per-network access token — never returned to clients. */
-export async function getNetworkMetaAccessToken(networkId) {
-  if (!networkId) return { ok: false, error: 'network_id_required' };
-  if (SECRETS_BACKEND.mode !== 'secret_manager') {
-    return { ok: false, error: 'secret_manager_not_configured' };
-  }
-  return { ok: false, error: 'secret_manager_client_not_wired' };
+  const value = envFirst('META_VERIFY_TOKEN', 'WHATSAPP_META_VERIFY_TOKEN');
+  if (!value) return { ok: false, error: 'meta_verify_token_not_configured' };
+  return { ok: true, value };
 }
 
 export async function getDispatchServiceSecret() {
-  if (process.env.WHATSAPP_DISPATCH_SERVICE_SECRET) {
-    return { ok: true, value: process.env.WHATSAPP_DISPATCH_SERVICE_SECRET };
+  const value = envFirst('WHATSAPP_DISPATCH_SERVICE_SECRET');
+  if (!value) return { ok: false, error: 'dispatch_secret_not_configured' };
+  return { ok: true, value };
+}
+
+/**
+ * Persist network access token as ciphertext only.
+ * @returns {{ ok: true, envelope: object } | { ok: false, error: string }}
+ */
+export function sealNetworkAccessToken(networkId, accessToken) {
+  if (!networkId) return { ok: false, error: 'network_id_required' };
+  return encryptSecret(accessToken, { aad: `network:${networkId}` });
+}
+
+/**
+ * Read and decrypt network access token from network document data.
+ * Never logs plaintext.
+ */
+export function openNetworkAccessToken(networkId, networkData) {
+  if (!networkId) return { ok: false, error: 'network_id_required' };
+  const envelope = networkData?.whatsappAccessTokenEnc;
+  if (!envelope) return { ok: false, error: 'network_token_missing' };
+  return decryptSecret(envelope, { aad: `network:${networkId}` });
+}
+
+/**
+ * Async helper used by call sites that pass db — decrypt from Firestore doc.
+ */
+export async function getNetworkMetaAccessToken(networkId, dependencies = {}) {
+  if (!networkId) return { ok: false, error: 'network_id_required' };
+  if (dependencies.networkData) {
+    return openNetworkAccessToken(networkId, dependencies.networkData);
   }
-  if (SECRETS_BACKEND.mode !== 'secret_manager') {
-    return { ok: false, error: 'dispatch_secret_not_configured' };
-  }
-  return { ok: false, error: 'secret_manager_client_not_wired' };
+  if (!dependencies.db) return { ok: false, error: 'db_required' };
+  const snap = await dependencies.db.collection('networks').doc(networkId).get();
+  if (!snap.exists) return { ok: false, error: 'network_not_found' };
+  return openNetworkAccessToken(networkId, snap.data() || {});
 }
 
 export function secretsReadinessReport() {
+  const crypto = cryptoReadiness();
   return {
-    backend: SECRETS_BACKEND.mode,
-    metaAppSecret: SECRETS_BACKEND.mode === 'secret_manager' ? 'pending_wire' : 'not_configured',
-    metaVerifyToken: SECRETS_BACKEND.mode === 'secret_manager' ? 'pending_wire' : 'not_configured',
-    networkAccessTokens: SECRETS_BACKEND.mode === 'secret_manager' ? 'pending_wire' : 'not_configured',
-    dispatchServiceSecret: process.env.WHATSAPP_DISPATCH_SERVICE_SECRET ? 'env_present' : 'not_configured',
-    cloudTasks: 'not_verified',
-    cloudScheduler: 'not_verified',
+    backend: 'vercel_env_plus_aes_gcm',
+    metaAppSecret: envFirst('META_APP_SECRET', 'WHATSAPP_META_APP_SECRET') ? 'env_present' : 'not_configured',
+    metaVerifyToken: envFirst('META_VERIFY_TOKEN', 'WHATSAPP_META_VERIFY_TOKEN') ? 'env_present' : 'not_configured',
+    networkAccessTokens: crypto.kekConfigured ? 'kek_ready_ciphertext_per_network' : 'kek_not_configured',
+    dispatchServiceSecret: envFirst('WHATSAPP_DISPATCH_SERVICE_SECRET') ? 'env_present' : 'not_configured',
+    crypto,
+    cloudTasks: 'replaced_by_firestore_queue',
+    cloudScheduler: 'optional_external_or_vercel_cron_recovery_only',
+    note: 'Do not put all network tokens in one env var; ciphertext lives under networks/{networkId}',
   };
 }
