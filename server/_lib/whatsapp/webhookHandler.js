@@ -1,5 +1,5 @@
 /**
- * Meta webhook: GET verification + POST signature + atomic inbound create.
+ * Meta webhook: GET verification + POST signature + inbound create + status updates.
  * Does not store raw body. Does not issue cards.
  */
 import { getFirestore } from 'firebase-admin/firestore';
@@ -8,6 +8,10 @@ import { verifyMetaSignature, verifyMetaSubscription } from './signature.js';
 import { getMetaAppSecret, getMetaVerifyToken } from './secrets.js';
 import { createInboundEvent } from './inboundEvents.js';
 import { WHATSAPP_PROVIDER_META } from './eventIdentity.js';
+import {
+  extractMetaStatusUpdates,
+  processMetaStatusUpdate,
+} from './statusEvents.js';
 
 function getHeader(req, name) {
   const headers = req.headers || {};
@@ -18,14 +22,11 @@ function getHeader(req, name) {
   return undefined;
 }
 
-/** Resolve networkId from Meta phone_number_id against networks collection. */
 export async function resolveNetworkIdByPhoneNumberId(db, phoneNumberId) {
   if (!phoneNumberId) return null;
   const target = String(phoneNumberId);
   const matches = [];
 
-  // Prefer indexed query when available (production). Always re-filter by field
-  // because test doubles may implement where() as a no-op.
   if (typeof db.collection('networks').where === 'function') {
     try {
       const q = await db.collection('networks').where('whatsappPhoneNumberId', '==', target).limit(5).get();
@@ -34,7 +35,7 @@ export async function resolveNetworkIdByPhoneNumberId(db, phoneNumberId) {
         if (data?.whatsappPhoneNumberId === target) matches.push(doc.id);
       }
     } catch {
-      // missing index or unsupported query
+      // missing index
     }
   }
 
@@ -48,10 +49,9 @@ export async function resolveNetworkIdByPhoneNumberId(db, phoneNumberId) {
   }
 
   if (matches.length === 1) return matches[0];
-  return null; // none or ambiguous
+  return null;
 }
 
-/** Extract inbound message candidates from Meta Cloud API payload (no secrets). */
 export function extractMetaInboundMessages(payload) {
   const out = [];
   if (!payload || payload.object !== 'whatsapp_business_account') return out;
@@ -81,7 +81,6 @@ export default async function whatsappWebhookHandler(req, res, dependencies = {}
     return res.status(503).json({ success: false, error: configured?.error || 'server_not_configured' });
   }
 
-  // —— GET: subscription verification ——
   if (req.method === 'GET') {
     const query = req.query || {};
     const tokenResult = await (dependencies.getMetaVerifyToken || getMetaVerifyToken)();
@@ -107,7 +106,6 @@ export default async function whatsappWebhookHandler(req, res, dependencies = {}
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
   }
 
-  // —— POST: signature + create events ——
   const secretResult = await (dependencies.getMetaAppSecret || getMetaAppSecret)();
   if (!secretResult.ok) {
     return res.status(503).json({ success: false, error: secretResult.error });
@@ -130,21 +128,20 @@ export default async function whatsappWebhookHandler(req, res, dependencies = {}
   }
 
   const messages = extractMetaInboundMessages(payload);
-  // Status-only callbacks: acknowledge without inbound create
-  if (messages.length === 0) {
-    return res.status(200).json({ success: true, accepted: 0, duplicates: 0, ignored: true });
-  }
-
+  const statuses = extractMetaStatusUpdates(payload);
   const db = dependencies.db || (dependencies.getFirestore || getFirestore)();
   const now = dependencies.now ?? Date.now();
+  const resolveNet = dependencies.resolveNetworkIdByPhoneNumberId || resolveNetworkIdByPhoneNumberId;
+
   let accepted = 0;
   let duplicates = 0;
   let unresolved = 0;
+  let statusesApplied = 0;
+  let statusesSkipped = 0;
 
   for (const msg of messages) {
     if (!msg.inboundMessageId) continue;
-    const networkId = await (dependencies.resolveNetworkIdByPhoneNumberId
-      || resolveNetworkIdByPhoneNumberId)(db, msg.phoneNumberId);
+    const networkId = await resolveNet(db, msg.phoneNumberId);
     if (!networkId) {
       unresolved += 1;
       continue;
@@ -163,11 +160,24 @@ export default async function whatsappWebhookHandler(req, res, dependencies = {}
     else if (result.ok) accepted += 1;
   }
 
-  // Always 200 after valid signature so Meta does not retry forever on business rejects
+  for (const st of statuses) {
+    const result = await processMetaStatusUpdate(db, st, {
+      resolveNetworkIdByPhoneNumberId: resolveNet,
+      now,
+    });
+    if (result.ok && result.applied?.ok && !result.applied?.skipped && !result.skipped) {
+      statusesApplied += 1;
+    } else {
+      statusesSkipped += 1;
+    }
+  }
+
   return res.status(200).json({
     success: true,
     accepted,
     duplicates,
     unresolved,
+    statusesApplied,
+    statusesSkipped,
   });
 }
