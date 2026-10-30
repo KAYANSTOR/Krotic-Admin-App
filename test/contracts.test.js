@@ -186,7 +186,7 @@ test('inventory snapshot contract is counts-only and rejects identity or secret 
   assert.ok(validateSchema({ ...base, generatedAt: 'yesterday' }, schema).length > 0);
 
   // نفس القواعد مفروضة فعلياً في نقطة النهاية الخادمية.
-  const { validateInventorySnapshot } = await import('../api/inventory/snapshot.js');
+  const { validateInventorySnapshot } = await import('../server/apiHandlers/inventory-snapshot.js');
   assert.equal(validateInventorySnapshot(base).ok, true);
   assert.equal(validateInventorySnapshot({ ...base, uid: 'spoofed' }).error, 'unknown_field');
   assert.equal(validateInventorySnapshot({ ...base, cardNumber: '1234' }).error, 'secret_field_forbidden');

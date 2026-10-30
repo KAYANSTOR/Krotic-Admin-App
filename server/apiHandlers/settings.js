@@ -12,13 +12,13 @@
 
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
-import templateCenterHandler from '../server/_lib/templateCenterApi.js';
-import activateEntitlement from '../server/_lib/entitlementActivation.js';
-import rebindEntitlementDevice from '../server/_lib/entitlementDeviceRebind.js';
-import accountFeaturesHandler from '../server/_lib/accountFeatures.js';
-import migrateHandler from '../server/_lib/migrationApi.js';
-import networkSecretHandler from '../server/_lib/networkSecretApi.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../_lib/firebaseAdmin.js';
+import templateCenterHandler from '../_lib/templateCenterApi.js';
+import activateEntitlement from '../_lib/entitlementActivation.js';
+import rebindEntitlementDevice from '../_lib/entitlementDeviceRebind.js';
+import accountFeaturesHandler from '../_lib/accountFeatures.js';
+import migrateHandler from '../_lib/migrationApi.js';
+import networkSecretHandler from '../_lib/networkSecretApi.js';
 
 export const SETTINGS_BOUNDS = {
   default_trial_days: { min: 0, max: 30, integer: true },

@@ -13,7 +13,7 @@ import {
   ensureFirebaseAdmin,
   getAppFirestore,
   isAdminUid,
-} from '../server/_lib/firebaseAdmin.js';
+} from '../_lib/firebaseAdmin.js';
 
 const DEFAULT_TOPIC = process.env.FCM_DEFAULT_TOPIC || 'krotak_all_users';
 const ANDROID_CHANNEL_ID = process.env.FCM_ANDROID_CHANNEL_ID || 'krotak_admin_v2';

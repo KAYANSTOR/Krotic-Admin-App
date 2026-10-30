@@ -44,13 +44,13 @@ test('missing uid is rejected', () => {
 });
 
 test('admin-session handler routes bootstrap through the decision helper', () => {
-  const source = readFileSync(new URL('../api/admin-session.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../server/apiHandlers/admin-session.js', import.meta.url), 'utf8');
   assert.match(source, /decideAdminBootstrap\(/);
   assert.doesNotMatch(source, /callerEmail === PRIMARY_ADMIN_EMAIL\.toLowerCase\(\) \|\|\s*\n?\s*callerUid === PRIMARY_ADMIN_UID \|\|\s*\n?\s*adminSnap\?\.exists/);
 });
 
 test('bootstrap admin documents carry updatedAtMs for the local admin list', () => {
-  for (const file of ['../api/admin-session.js', '../server/_lib/firebaseAdmin.js']) {
+  for (const file of ['../server/apiHandlers/admin-session.js', '../server/_lib/firebaseAdmin.js']) {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /updatedAtMs:/, `${file} must stamp updatedAtMs`);
   }

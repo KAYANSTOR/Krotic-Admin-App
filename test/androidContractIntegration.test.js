@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ingestSale,
-} from '../api/sales/ingest.js';
+} from '../server/apiHandlers/sales-ingest.js';
 import { isAdminUid } from '../server/_lib/firebaseAdmin.js';
 import {
   computePayloadHash,
   createInternalReceipt,
   verifyInternalReceipt,
   isSaleAllowedForAccount,
-} from '../api/sales/ingest.js';
+} from '../server/apiHandlers/sales-ingest.js';
 import {
   generateNetworkSecret,
   encryptNetworkSecret,

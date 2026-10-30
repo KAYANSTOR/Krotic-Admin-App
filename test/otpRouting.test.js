@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { dispatchPublicOtpRoute } from '../api/manage-user-auth.js';
+import { dispatchPublicOtpRoute } from '../server/apiHandlers/manage-user-auth.js';
 
 const vercelConfig = JSON.parse(
   readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'),
@@ -15,21 +15,21 @@ test('Vercel rewrites OTP and account-notification URLs to the existing auth fun
     vercelConfig.rewrites.find((entry) => entry.source === '/api/request-otp'),
     {
       source: '/api/request-otp',
-      destination: '/api/manage-user-auth?__apiRoute=request-otp',
+      destination: '/api/router?__router=manage-user-auth&__apiRoute=request-otp',
     },
   );
   assert.deepEqual(
     vercelConfig.rewrites.find((entry) => entry.source === '/api/verify-otp'),
     {
       source: '/api/verify-otp',
-      destination: '/api/manage-user-auth?__apiRoute=verify-otp',
+      destination: '/api/router?__router=manage-user-auth&__apiRoute=verify-otp',
     },
   );
   assert.deepEqual(
     vercelConfig.rewrites.find((entry) => entry.source === '/api/account-notifications'),
     {
       source: '/api/account-notifications',
-      destination: '/api/manage-user-auth?__apiRoute=account-notifications',
+      destination: '/api/router?__router=manage-user-auth&__apiRoute=account-notifications',
     },
   );
 });

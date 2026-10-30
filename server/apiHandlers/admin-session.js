@@ -10,8 +10,8 @@ import {
   PRIMARY_ADMIN_EMAIL,
   PRIMARY_ADMIN_UID,
   syncDatabaseInstancesIfNeeded,
-} from '../server/_lib/firebaseAdmin.js';
-import { decideAdminBootstrap } from '../server/_lib/adminBootstrap.js';
+} from '../_lib/firebaseAdmin.js';
+import { decideAdminBootstrap } from '../_lib/adminBootstrap.js';
 
 function extractPhoneFromEmail(email) {
   if (!email) return '';

@@ -3,24 +3,24 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // API Route Handlers
-import networksHandler from './api/networks.js';
-import adminsHandler from './api/admins.js';
-import manageUserAuthHandler from './api/manage-user-auth.js';
-import settingsHandler from './api/settings.js';
-import settlementHandler from './api/settlement.js';
+import networksHandler from './server/apiHandlers/networks.js';
+import adminsHandler from './server/apiHandlers/admins.js';
+import manageUserAuthHandler from './server/apiHandlers/manage-user-auth.js';
+import settingsHandler from './server/apiHandlers/settings.js';
+import settlementHandler from './server/apiHandlers/settlement.js';
 import recordPaymentHandler from './server/record-payment.js';
-import registerNetworkHandler from './api/register-network.js';
-import salesIngestHandler from './api/sales/ingest.js';
-import deviceHeartbeatHandler from './api/device-heartbeat.js';
-import sendFcmHandler from './api/send-fcm.js';
+import registerNetworkHandler from './server/apiHandlers/register-network.js';
+import salesIngestHandler from './server/apiHandlers/sales-ingest.js';
+import deviceHeartbeatHandler from './server/apiHandlers/device-heartbeat.js';
+import sendFcmHandler from './server/apiHandlers/send-fcm.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
 import migrateHandler from './server/_lib/migrationApi.js';
 import networkSecretHandler from './server/_lib/networkSecretApi.js';
-import adminSessionHandler from './api/admin-session.js';
+import adminSessionHandler from './server/apiHandlers/admin-session.js';
 import templateCenterHandler from './server/_lib/templateCenterApi.js';
 import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
 import rebindEntitlementDeviceHandler from './server/_lib/entitlementDeviceRebind.js';
-import inventorySnapshotHandler from './api/inventory/snapshot.js';
+import inventorySnapshotHandler from './server/apiHandlers/inventory-snapshot.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 

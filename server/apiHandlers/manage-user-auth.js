@@ -21,8 +21,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-import { handleRequestOtp, handleVerifyOtp } from '../server/_lib/phoneOtp.js';
-import { listGlobalNotifications } from '../server/_lib/accountNotifications.js';
+import { handleRequestOtp, handleVerifyOtp } from '../_lib/phoneOtp.js';
+import { listGlobalNotifications } from '../_lib/accountNotifications.js';
 
 const MIN_PASSWORD_LENGTH = 6;
 const MAX_PASSWORD_LENGTH = 128;

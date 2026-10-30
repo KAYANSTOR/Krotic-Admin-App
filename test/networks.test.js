@@ -12,7 +12,7 @@ import {
   isProtectedPhone,
   TRIAL_DAYS,
   RENEWAL_DAYS,
-} from '../api/networks.js';
+} from '../server/apiHandlers/networks.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

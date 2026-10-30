@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
-import { provisionSelfRegistration, RegistrationError, validateSelfRegistration } from '../api/register-network.js';
+import { provisionSelfRegistration, RegistrationError, validateSelfRegistration } from '../server/apiHandlers/register-network.js';
 
 process.env.KROTAK_HMAC_SECRET = 'test-only-secret-value-with-at-least-thirty-two-bytes';
 

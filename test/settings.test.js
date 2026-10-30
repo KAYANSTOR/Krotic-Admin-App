@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateSettingsInput, SETTINGS_BOUNDS } from '../api/settings.js';
+import { validateSettingsInput, SETTINGS_BOUNDS } from '../server/apiHandlers/settings.js';
 
 test('settings accept valid bounded fields', () => {
   const result = validateSettingsInput({

@@ -12,12 +12,12 @@
 import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseAdmin.js';
-import { isPositiveRiyal } from '../server/_lib/money.js';
-import { parseNetworkId } from '../server/_lib/networkId.js';
-import { monthlySalesQuery, settleNetworkPayment } from '../server/_lib/networkLedger.js';
-import { legacyAccessFields } from '../server/_lib/accessStatus.js';
-import recordPaymentHandler from '../server/record-payment.js';
+import { ensureFirebaseAdmin, authenticateAdmin } from '../_lib/firebaseAdmin.js';
+import { isPositiveRiyal } from '../_lib/money.js';
+import { parseNetworkId } from '../_lib/networkId.js';
+import { monthlySalesQuery, settleNetworkPayment } from '../_lib/networkLedger.js';
+import { legacyAccessFields } from '../_lib/accessStatus.js';
+import recordPaymentHandler from '../record-payment.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;

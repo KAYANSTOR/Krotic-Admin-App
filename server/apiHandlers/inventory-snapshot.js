@@ -20,7 +20,7 @@
 
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import { ensureFirebaseAdmin } from '../../server/_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const CURRENCY_PATTERN = /^[A-Za-z0-9]{1,8}$/;
