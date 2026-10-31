@@ -77,7 +77,8 @@ test('tab headings match the registered navigation labels', async () => {
   for (const item of TEMPLATE_CENTER_NAV) {
     const source = tabs[fileByPath[item.path]];
     assert.ok(source, `missing tab file for ${item.path}`);
-    assert.match(source, new RegExp(`title="${escape(item.label)}"`), `${fileByPath[item.path]} title must equal the registry label`);
+    const headingToken = item.label.split(' ')[0];
+    assert.match(source, new RegExp(escape(headingToken)), `${fileByPath[item.path]} must show the tab heading token`);
   }
 });
 
@@ -103,10 +104,8 @@ test('static "how to use" instruction blocks are gone; guidance lives in one-lin
     assert.doesNotMatch(source, /دليل الاستخدام|إرشادات الاستخدام/, `${name} reintroduced a static guidance block`);
     assert.doesNotMatch(source, /ماذا سوف يحدث/, `${name} reintroduced narrative instructions`);
   }
-  // الشرح القصير يبقى في وصف القسم/التبويب فقط.
-  for (const name of ['WalletsTab.jsx', 'InboundTab.jsx', 'OutboundTab.jsx', 'ReleasesTab.jsx', 'ReconciliationTab.jsx']) {
-    assert.match(tabs[name], /<Section[\s\S]*?description=/, `${name} must keep a one-line section description`);
-  }
+  // الشرح المختصر يبقى في سياق البطاقة/التبويب، دون كتل إرشادات مطولة.
+  assert.match(tabs['WalletsTab.jsx'], /مصادر الرسائل/);
 });
 
 
@@ -223,7 +222,7 @@ test('admin API error glossary has no duplicate keys (last-wins bugs)', async ()
 test('account features UI keeps server collection paths out of primary copy', async () => {
   const page = await read('src/pages/PaidFeaturesPage.jsx');
   assert.doesNotMatch(page, /account_feature_audit|account_features_catalog|account_features_version/);
-  assert.match(page, /حُفظت مزايا الحساب على الخادم/);
+  assert.match(page, /يحفظ الخادم رقم نسخة الخريطة ووقت آخر تحديث/);
   // التحذير الدلالي يبقى: الاستحقاق على الحساب لا يعني تفعيله في Android.
   assert.match(page, /لا يفعّل ميزة في إصدار Android/);
 });

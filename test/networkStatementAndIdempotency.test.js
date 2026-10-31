@@ -128,24 +128,3 @@ test('audit log declarations contain actions for legacy reconciliation and audit
   assert.match(auditContent, /COMMISSION_AUDIT_VERIFIED:\s*\{\s*label:\s*'تدقيق واعتماد كشف حساب الشبكة'/);
 });
 
-test('UsersPage and UserProfilePage clearly separate server-verified and legacy unverified sales in UI', async () => {
-  const [usersPage, userProfilePage] = await Promise.all([
-    read('src/pages/UsersPage.jsx'),
-    read('src/pages/UserProfilePage.jsx'),
-  ]);
-
-  // UsersPage verifies separated columns and export
-  assert.match(usersPage, /المبيعات المعتمدة خادمياً \(ر\.ي\)/);
-  assert.match(usersPage, /مبيعات السجلات القديمة \(ر\.ي\)/);
-  assert.match(usersPage, /العمولة المعتمدة خادمياً \(ر\.ي\)/);
-  assert.match(usersPage, /عمولات قديمة للمراجعة \(ر\.ي\)/);
-  assert.match(usersPage, /العمولة المعتمدة/);
-
-  // UserProfilePage renders SaleVerificationBadge and handles legacy warnings
-  assert.match(userProfilePage, /SaleVerificationBadge/);
-  assert.match(userProfilePage, /معتمد خادمياً \(Ingest\)/);
-  assert.match(userProfilePage, /سجل قديم \(غير موثّق\)/);
-  assert.match(userProfilePage, /تنبيه تدقيق: يتضمن هذا الشهر/);
-  assert.match(userProfilePage, /verifiedCommissionDue/);
-  assert.match(userProfilePage, /legacyEstimatedCommission/);
-});

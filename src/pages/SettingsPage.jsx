@@ -1,12 +1,12 @@
-// src/pages/SettingsPage.jsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Settings, Save, Power, MessageSquare, Calendar, RefreshCw,
-  ShieldCheck, AlertTriangle, Users, KeyRound,
-  Bell, Smartphone, Volume2, Vibrate, CheckCircle2, Send,
+  Settings as SettingsIcon, Power, MessageSquare, Calendar, RefreshCw,
+  ShieldCheck, AlertTriangle, Users, KeyRound, Bell, Smartphone,
+  Volume2, Vibrate, CheckCircle2, Send, Save, Cloud, Download,
 } from 'lucide-react';
+
 import {
   getNotificationPreferences,
   saveNotificationPreferences,
@@ -15,17 +15,19 @@ import {
   requestNotificationPermission,
   sendTestPhoneNotification,
 } from '../lib/phoneNotifications';
-import PageHero from '../components/ui/PageHero';
-import Section from '../components/ui/Section';
-import { Card, CardHeader } from '../components/ui/Card';
+
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
-import Switch from '../components/ui/Switch';
-import DataFreshness from '../components/ui/DataFreshness';
-import { Field, Input, Textarea } from '../components/ui/Field';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeAdminPasswordModal from '../components/ChangeAdminPasswordModal';
 import { SkeletonCard, SkeletonPageHeader } from '../components/ui/Skeleton';
+import SearchHeader from '../components/ui/SearchHeader';
+import SettingsSection from '../components/ui/SettingsSection';
+import SettingField from '../components/ui/SettingField';
+import DangerZone from '../components/ui/DangerZone';
+import SaveBar from '../components/ui/SaveBar';
+import AppStatusHero from '../components/settings/AppStatusHero';
+
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
 import { updateSettings, batchExpiry, adminApiError } from '../lib/adminApi';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
@@ -46,94 +48,45 @@ const DEFAULTS = {
   app_latest_version_code: '',
 };
 
-function SettingsSkeleton() {
-  return (
-    <div className="settings-page">
-      <SkeletonPageHeader />
-      <div className="settings-grid">
-        <SkeletonCard lines={4} />
-        <SkeletonCard lines={4} />
-      </div>
-    </div>
-  );
-}
-
+const TABS = [
+  { key: 'app', label: 'التطبيق', icon: SettingsIcon },
+  { key: 'notifications', label: 'الإشعارات', icon: Bell },
+  { key: 'security', label: 'الأمان', icon: ShieldCheck },
+  { key: 'advanced', label: 'متقدم', icon: Cloud },
+];
 
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState('app');
   const [config, setConfig] = useState(DEFAULTS);
+  const [serverConfig, setServerConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
-  // إعدادات وتفضيلات إشعارات الهاتف الحية
+  // Notifications
   const [notifPrefs, setNotifPrefs] = useState(() => getNotificationPreferences());
   const [notifPermission, setNotifPermission] = useState(() => getNotificationPermission());
   const [testingNotif, setTestingNotif] = useState(false);
 
-  useEffect(() => {
-    return subscribeNotificationPreferences((prefs) => {
-      setNotifPrefs(prefs);
-    });
-  }, []);
-
-  const handleNotifToggle = (key, value) => {
-    const next = { ...notifPrefs, [key]: value };
-    setNotifPrefs(next);
-    saveNotificationPreferences(next);
-    if (key === 'enabled') {
-      if (value) {
-        toast.success('تم تشغيل إشعارات الهاتف الحية');
-        if (notifPermission !== 'granted') {
-          handleRequestNotifPermission();
-        }
-      } else {
-        toast('تم إيقاف إشعارات الهاتف مؤقتاً', { icon: '🔕' });
-      }
-    }
-  };
-
-  const handleRequestNotifPermission = async () => {
-    const res = await requestNotificationPermission();
-    setNotifPermission(res);
-    if (res === 'granted') {
-      toast.success('تم منح إذن إشعارات الهاتف بنجاح!');
-    } else if (res === 'denied') {
-      toast.error('تم حظر الإشعارات في المتصفح. يرجى تفعيلها من إعدادات المتصفح');
-    }
-  };
-
-  const handleSendTestNotif = async () => {
-    setTestingNotif(true);
-    try {
-      const res = await sendTestPhoneNotification();
-      setNotifPermission(res.permission);
-      if (res.permission === 'denied') {
-        toast.error('يرجى السماح بالإشعارات من إعدادات المتصفح أو الموقع أولاً');
-      } else {
-        toast.success('تم إرسال إشعار تجريبي! تفقّد شريط إشعارات هاتفك');
-      }
-    } catch {
-      toast.error('حدث خطأ أثناء إرسال الإشعار التجريبي');
-    } finally {
-      setTestingNotif(false);
-    }
-  };
-
-  // For batch update expiry
+  // Batch expiry
   const [batchDate, setBatchDate] = useState('');
   const [updatingBatch, setUpdatingBatch] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
-  const [showFullSyncConfirm, setShowFullSyncConfirm] = useState(false);
+
+  // Full sync
   const [fullSyncing, setFullSyncing] = useState(false);
+  const [showFullSyncConfirm, setShowFullSyncConfirm] = useState(false);
+
   const savedAppStatus = useRef(DEFAULTS.is_app_active);
 
   const { runSync, syncing, lastSyncAt, localDb } = useLocalDb();
   const configQuery = useLocalQuery((localDb) => loadLocalConfig(localDb), []);
 
-  // الإعدادات تُقرأ من القاعدة المحلية، ويُحفظ تعديل النموذج في state مستقل.
+  // ==== Load ====
   useEffect(() => {
     const loaded = configQuery.data;
     if (!loaded) return;
+    setServerConfig(loaded);
     setConfig((prev) => ({
       ...prev,
       ...loaded,
@@ -149,17 +102,78 @@ export default function SettingsPage() {
     await runSync({ reason: 'manual' });
     configQuery.refresh();
   };
-
-  const handleRefresh = refresh;
-
-  // السحب للأسفل على الجوال يزامن التغييرات فقط.
   useAppRefresh(refresh);
 
+  // ==== Dirty check ====
+  const dirty = useMemo(() => {
+    if (!serverConfig) return false;
+    return (
+      Boolean(config.is_app_active) !== Boolean(serverConfig.is_app_active) ||
+      (config.maintenance_message || '') !== (serverConfig.maintenance_message || '') ||
+      Number(config.default_commission_rate) !== Number(serverConfig.default_commission_rate ?? 5) ||
+      Number(config.default_trial_days) !== Number(serverConfig.default_trial_days ?? 30) ||
+      (config.default_trial_warning || '') !== (serverConfig.default_trial_warning || '') ||
+      (config.global_official_warning || '') !== (serverConfig.global_official_warning || '') ||
+      Number(config.warning_days_before_expiry) !== Number(serverConfig.warning_days_before_expiry ?? 5) ||
+      (config.app_latest_version || '') !== (serverConfig.app_latest_version || '') ||
+      Number(config.app_latest_version_code || 0) !== Number(serverConfig.app_latest_version_code || 0)
+    );
+  }, [config, serverConfig]);
+
+  // ==== Notifications subscription ====
+  useEffect(() => subscribeNotificationPreferences(setNotifPrefs), []);
+
+  const handleNotifToggle = (key, value) => {
+    const next = { ...notifPrefs, [key]: value };
+    setNotifPrefs(next);
+    saveNotificationPreferences(next);
+    if (key === 'enabled') {
+      if (value) {
+        toast.success('تم تشغيل إشعارات الهاتف');
+        if (notifPermission !== 'granted') handleRequestNotifPermission();
+      } else {
+        toast('تم إيقاف إشعارات الهاتف', { icon: '🔕' });
+      }
+    }
+  };
+
+  const handleRequestNotifPermission = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPermission(res);
+    if (res === 'granted') toast.success('تم منح إذن الإشعارات');
+    else if (res === 'denied') toast.error('تم حظر الإشعارات من المتصفح');
+  };
+
+  const handleSendTestNotif = async () => {
+    setTestingNotif(true);
+    try {
+      const res = await sendTestPhoneNotification();
+      setNotifPermission(res.permission);
+      if (res.permission === 'denied') toast.error('يرجى السماح بالإشعارات');
+      else toast.success('تم إرسال إشعار تجريبي');
+    } catch {
+      toast.error('تعذر الإرسال');
+    } finally {
+      setTestingNotif(false);
+    }
+  };
+
+  // ==== App status toggle ====
+  const toggleAppStatus = () => {
+    if (config.is_app_active) setShowConfirm(true);
+    else setConfig((prev) => ({ ...prev, is_app_active: true }));
+  };
+
+  const confirmDisableApp = () => {
+    setConfig((prev) => ({ ...prev, is_app_active: false }));
+    setShowConfirm(false);
+  };
+
+  // ==== Save ====
   const handleSave = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      // كل الكتابات تمرّ عبر المسار الخادمي المقيّد POST /api/settings (قرار ح1/ح2).
       const patch = {
         is_app_active: config.is_app_active,
         maintenance_message: config.maintenance_message || '',
@@ -175,23 +189,24 @@ export default function SettingsPage() {
       };
       const result = await updateSettings(patch);
       if (!result.ok) {
-        toast.error(adminApiError(result.error, 'تعذر حفظ الإعدادات على الخادم'));
-        return false;
+        toast.error(adminApiError(result.error, 'تعذر حفظ الإعدادات'));
+        return;
       }
 
       await refresh();
-      const previousAppStatus = savedAppStatus.current;
+
+      const prevAppStatus = savedAppStatus.current;
       savedAppStatus.current = patch.is_app_active;
-      if (previousAppStatus !== patch.is_app_active) {
+      if (prevAppStatus !== patch.is_app_active) {
         await logAdminAction({
           action: AUDIT_ACTIONS.APP_STATUS_CHANGE,
           targetType: 'settings',
           targetId: 'global_config',
           targetLabel: 'حالة التطبيق',
           details: { is_app_active: patch.is_app_active },
-        });
+        }).catch(() => {});
       }
-      void logAdminAction({
+      logAdminAction({
         action: AUDIT_ACTIONS.SETTINGS_SAVE,
         targetType: 'settings',
         targetId: 'global_config',
@@ -202,48 +217,27 @@ export default function SettingsPage() {
           warning_days_before_expiry: patch.warning_days_before_expiry,
           is_app_active: patch.is_app_active,
         },
-      }).catch((error) => console.warn('Settings audit write failed:', error));
-      toast.success('تم حفظ الإعدادات بنجاح');
-      return true;
-    } catch (error) {
-      console.error('Settings save failed:', error);
-      toast.error('تعذر حفظ الإعدادات. تحقق من الاتصال ثم حاول مرة أخرى.');
-      return false;
+      }).catch(() => {});
+      toast.success('تم حفظ الإعدادات');
+    } catch (err) {
+      console.error('Settings save failed:', err);
+      toast.error('تعذر حفظ الإعدادات');
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleAppStatus = () => {
-    if (config.is_app_active) {
-      setShowConfirm(true);
-    } else {
-      setConfig((prev) => ({ ...prev, is_app_active: true }));
-    }
-  };
-
-  const confirmDisableApp = () => {
-    // This confirms the proposed form value only. The status is actually
-    // changed for users only after the global "Save changes" request succeeds.
-    setConfig((prev) => ({ ...prev, is_app_active: false }));
-    setShowConfirm(false);
-  };
-
+  // ==== Batch expiry ====
   const handleBatchUpdateExpiry = async () => {
-    if (!batchDate) {
-      toast.error('يرجى تحديد التاريخ أولاً');
-      return false;
-    }
+    if (!batchDate) { toast.error('حدد التاريخ أولاً'); return false; }
     setUpdatingBatch(true);
     try {
-      // توحيد تواريخ الانتهاء للحسابات الرسمية عبر الخادم (قرار ح/ي3).
       const subscriptionEndsAt = new Date(batchDate).getTime();
       const result = await batchExpiry(subscriptionEndsAt);
       if (!result.ok) {
-        toast.error(adminApiError(result.error, 'تعذر تحديث تواريخ الانتهاء'));
+        toast.error(adminApiError(result.error, 'تعذر تحديث التواريخ'));
         return false;
       }
-
       setShowBatchConfirm(false);
       const updated = Number(result.data?.updated) || 0;
       if (updated > 0) {
@@ -254,32 +248,25 @@ export default function SettingsPage() {
           targetId: 'global_config',
           targetLabel: 'تواريخ الانتهاء المجمّعة',
           details: { affected_users: updated, new_date: batchDate },
-        });
-        toast.success(`تم تحديث تاريخ الانتهاء لـ ${updated} حساب رسمي بنجاح`);
+        }).catch(() => {});
+        toast.success(`تم تحديث ${updated} حساب رسمي`);
       } else {
-        toast.error('لا يوجد حسابات رسمية لتحديثها');
+        toast.error('لا يوجد حسابات رسمية للتحديث');
       }
       setBatchDate('');
       return true;
-    } catch (error) {
-      console.error('Batch expiry update failed:', error);
-      toast.error('تعذر إكمال تحديث التواريخ. لم يتم تأكيد نجاح العملية.');
+    } catch (err) {
+      console.error('Batch expiry failed:', err);
+      toast.error('تعذر إكمال تحديث التواريخ');
       return false;
     } finally {
       setUpdatingBatch(false);
     }
   };
 
-  /**
-   * مزامنة كاملة يدوية: تُصفّر مؤشرات المزامنة ثم تعيد قراءة كل المصادر مرة
-   * واحدة. مطلوبة بعد ترحيل updatedAtMs للوثائق القديمة، أو إذا بدت القاعدة
-   * المحلية ناقصة. ليست بديلًا عن المزامنة التزايدية في الاستخدام اليومي.
-   */
+  // ==== Full sync ====
   const handleFullSync = async () => {
-    if (!localDb) {
-      toast.error('القاعدة المحلية غير متاحة في هذا المتصفح.');
-      return false;
-    }
+    if (!localDb) { toast.error('القاعدة المحلية غير متاحة'); return false; }
     if (fullSyncing) return false;
     setFullSyncing(true);
     try {
@@ -287,11 +274,11 @@ export default function SettingsPage() {
       await runSync({ reason: 'manual' });
       configQuery.refresh();
       setShowFullSyncConfirm(false);
-      toast.success('اكتملت المزامنة الكاملة من Firestore إلى القاعدة المحلية');
+      toast.success('اكتملت المزامنة الكاملة');
       return true;
-    } catch (error) {
-      console.error('Full sync failed:', error);
-      toast.error('تعذرت المزامنة الكاملة. لم تتأكد سلامة البيانات المحلية.');
+    } catch (err) {
+      console.error('Full sync failed:', err);
+      toast.error('تعذرت المزامنة الكاملة');
       return false;
     } finally {
       setFullSyncing(false);
@@ -299,425 +286,386 @@ export default function SettingsPage() {
   };
 
   const update = (patch) => setConfig((prev) => ({ ...prev, ...patch }));
-  const isActive = config.is_app_active;
 
-  if (loading) return <SettingsSkeleton />;
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <SkeletonPageHeader />
+        <SkeletonCard lines={4} />
+        <SkeletonCard lines={4} />
+      </div>
+    );
+  }
 
   return (
-    <div className="settings-page">
-      <PageHero
-        icon={Settings}
-        title="الإعدادات العامة"
-        subtitle="التحكم بإعدادات التطبيق، العمولات، والرسائل الموجّهة للمستخدمين."
+    <div className="pb-32">
+      <SearchHeader
+        title="الإعدادات"
+        subtitle={config.is_app_active ? 'التطبيق يعمل' : '⚠️ التطبيق متوقف'}
+        searchValue=""
+        onSearchChange={() => {}}
+        searchPlaceholder=""
+        onFilterClick={null}
         actions={
-          <>
-            <DataFreshness
-              lastSyncedAt={lastSyncAt}
-              refreshing={loading || refreshing}
-              onRefresh={handleRefresh}
-            />
-            <Button as={Link} to="/admins" variant="secondary" icon={ShieldCheck}>
-              إدارة المدراء
-            </Button>
-          </>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)] hover:text-[var(--ui-ink)] disabled:opacity-50"
+            aria-label="تحديث"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
         }
       />
 
-      <Section eyebrow="الإعدادات العامة" aria-label="إعدادات التطبيق">
-        {/* ===== حالة التطبيق ===== */}
-        <Card>
-          <CardHeader
-            icon={Power}
-            title="حالة التطبيق"
-            description="التحكم بتشغيل الخدمة والعمولة العامة الافتراضية."
-            action={
-              <Badge tone={isActive ? 'success' : 'danger'} dot>
-                {isActive ? 'يعمل' : 'متوقف'}
-              </Badge>
-            }
-          />
-
-          <div className="settings-row">
-            <div className="settings-row__body">
-              <p className="settings-row__title">تشغيل / إيقاف التطبيق</p>
-              <p className="settings-row__desc">
-                عند الإيقاف سيتم إغلاق التطبيق عند جميع المستخدمين.
-              </p>
-            </div>
-            <Switch
-              id="app-active-switch"
-              checked={isActive}
-              onChange={toggleAppStatus}
-            />
-          </div>
-
-          {!isActive && (
-            <div className="settings-field-block">
-              <Field label="رسالة الصيانة" hint="تظهر لجميع المستخدمين أثناء إيقاف التطبيق.">
-                <Textarea
-                  value={config.maintenance_message || ''}
-                  onChange={(e) => update({ maintenance_message: e.target.value })}
-                  rows={3}
-                  className="resize-none"
-                  placeholder="التطبيق متوقف مؤقتاً للصيانة..."
-                />
-              </Field>
-            </div>
-          )}
-
-          <div className="settings-field-block settings-divider">
-            <Field
-              label="العمولة العامة الافتراضية (%)"
-              hint="5% افتراضياً وقابلة للتعديل من لوحة الإدارة. لا يعيد تغييرها تسعير سجلات تاريخية تلقائياً."
-            >
-              <Input
-                type="number"
-                min="0"
-                max="20"
-                step="0.1"
-                inputMode="decimal"
-                value={config.default_commission_rate ?? ''}
-                onChange={(e) => update({ default_commission_rate: e.target.value === '' ? null : Number(e.target.value) })}
-                className="max-w-[10rem]"
-              />
-            </Field>
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader
-            icon={Smartphone}
-            title="إصدار التطبيق المنشور"
-            description="للمقارنة مع آخر نسخة أبلغت عنها الأجهزة؛ نشر APK وحده لا يثبت النسخة المثبتة."
-          />
-          <div className="settings-field-block">
-            <Field label="رقم الإصدار المنشور" hint="صيغة ثلاثية مثل 1.0.16">
-              <Input
-                value={config.app_latest_version || ''}
-                onChange={(e) => update({ app_latest_version: e.target.value })}
-                className="max-w-[14rem]"
-                dir="ltr"
-                placeholder="1.0.16"
-              />
-            </Field>
-          </div>
-          <div className="settings-field-block">
-            <Field label="versionCode المنشور" hint="عدد صحيح موجب عند توفره">
-              <Input
-                type="number"
-                min="1"
-                step="1"
-                inputMode="numeric"
-                value={config.app_latest_version_code || ''}
-                onChange={(e) => update({ app_latest_version_code: e.target.value === '' ? '' : Number(e.target.value) })}
-                className="max-w-[14rem]"
-                dir="ltr"
-                placeholder="16"
-              />
-            </Field>
-          </div>
-        </Card>
-
-        {/* ===== نظام التحذيرات ===== */}
-        <Card>
-          <CardHeader
-            icon={MessageSquare}
-            title="نظام التحذيرات"
-            description="الرسائل التي تُعرض للمستخدمين قبل انتهاء الاشتراك."
-          />
-
-          <div className="settings-field-block">
-            <Field
-              label="تفعيل التحذير قبل (أيام)"
-              hint="عدد الأيام التي يظهر فيها التحذير قبل إيقاف التطبيق."
-            >
-              <Input
-                type="number"
-                min="1"
-                max="7"
-                inputMode="numeric"
-                value={config.warning_days_before_expiry}
-                onChange={(e) => update({ warning_days_before_expiry: parseInt(e.target.value, 10) || 5 })}
-                className="max-w-[10rem]"
-              />
-            </Field>
-          </div>
-
-          <div className="settings-field-block">
-            <Field label="رسالة التحذير للرسميين (العامة)">
-              <Textarea
-                value={config.global_official_warning || ''}
-                onChange={(e) => update({ global_official_warning: e.target.value })}
-                rows={3}
-                className="resize-none"
-                placeholder="عزيزي المستخدم، اقترب موعد تصفية الحساب..."
-              />
-            </Field>
-          </div>
-
-          <div className="settings-field-block">
-            <Field label="رسالة التحذير للتجريبيين (العامة)">
-              <Textarea
-                value={config.default_trial_warning || ''}
-                onChange={(e) => update({ default_trial_warning: e.target.value })}
-                rows={3}
-                className="resize-none"
-                placeholder="أنت تستخدم النسخة التجريبية..."
-              />
-            </Field>
-          </div>
-
-          <div className="settings-field-block">
-            <Field
-              label="الأيام التجريبية الافتراضية للمسجلين الجدد"
-              hint="تُمنح تلقائياً لكل حساب تجريبي جديد."
-            >
-              <Input
-                type="number"
-                min="0"
-                max="30"
-                inputMode="numeric"
-                value={config.default_trial_days}
-                onChange={(e) => update({ default_trial_days: parseInt(e.target.value, 10) || 0 })}
-                className="max-w-[10rem]"
-              />
-            </Field>
-          </div>
-        </Card>
-      </Section>
-
-      {/* ===== شريط الحفظ ===== */}
-      <div className="settings-savebar">
-        <p className="settings-savebar__hint">
-          تُحفظ التغييرات في إعدادات التطبيق العامة وتُطبّق فوراً على المستخدمين.
-        </p>
-        <Button variant="primary" size="lg" icon={Save} loading={saving} onClick={handleSave}>
-          حفظ التغييرات
-        </Button>
+      <div className="mt-3">
+        <AppStatusHero
+          active={Boolean(config.is_app_active)}
+          onToggle={toggleAppStatus}
+          maintenanceMessage={config.maintenance_message}
+        />
       </div>
 
-      {/* ===== العمليات المجمعة ===== */}
-      <Section eyebrow="العمليات المجمّعة" aria-label="إدارة تواريخ الانتهاء المجمّعة">
-      <Card className="settings-batch">
-        <CardHeader
-          icon={Calendar}
-          title="إدارة تواريخ الانتهاء المجمّعة"
-          description="توحيد تاريخ انتهاء الاشتراك لجميع المستخدمين الرسميين دفعة واحدة."
-          action={
-            <Badge tone="warning">
-              <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-              عملية مؤثرة
-            </Badge>
-          }
-        />
-
-        <div className="settings-batch__form">
-          <Field label="تاريخ الانتهاء الموحّد الجديد" className="settings-batch__field">
-            <Input
-              type="date"
-              value={batchDate}
-              onChange={(e) => setBatchDate(e.target.value)}
-            />
-          </Field>
-          <Button
-            variant="primary"
-            icon={RefreshCw}
-            disabled={!batchDate || updatingBatch}
-            loading={updatingBatch}
-            onClick={() => setShowBatchConfirm(true)}
+      {/* Tabs */}
+      <div className="mt-3 android-tabs" role="group" aria-label="أقسام الإعدادات">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
+            className={`android-tab min-h-[44px] ${activeTab === tab.key ? 'is-active' : ''}`}
           >
-            تطبيق على جميع الرسميين
-          </Button>
-        </div>
+            <tab.icon className="w-4 h-4 ml-1" />
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-        <p className="settings-batch__note">
-          <Users className="w-4 h-4" aria-hidden="true" />
-          يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ الحسابات التجريبية.
-        </p>
-      </Card>
-
-      {/* ===== إعادة المزامنة الكاملة ===== */}
-      <Card className="mt-3">
-        <CardHeader
-          icon={RefreshCw}
-          title="إعادة المزامنة الكاملة"
-          description="تعيد قراءة جميع مجموعات Firestore إلى القاعدة المحلية مرة واحدة. استخدمها بعد ترحيل updatedAtMs للوثائق القديمة، أو إذا ظهرت القوائم ناقصة."
-          action={<Badge tone="warning">تستهلك قراءات</Badge>}
-        />
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[11px] leading-5 text-muted">
-            المزامنة اليومية تزايدية وتقرأ التغييرات فقط. هذه العملية تمسح مؤشرات
-            المزامنة المحلية ثم تعيد قراءة كل المصادر؛ لا تُستخدم في كل مرة.
-          </p>
-          <Button
-            variant="secondary"
-            icon={RefreshCw}
-            loading={fullSyncing}
-            disabled={fullSyncing || !localDb}
-            onClick={() => setShowFullSyncConfirm(true)}
-            className="shrink-0 font-bold"
-          >
-            بدء مزامنة كاملة
-          </Button>
-        </div>
-      </Card>
-
-      {/* ===== أمان حساب المدير ===== */}
-      <Card>
-        <CardHeader
-          icon={KeyRound}
-          title="أمان حساب المدير"
-          description="إدارة كلمة المرور وحماية لوحة الإدارة."
-        />
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-surface-sunken border border-line mt-2">
-          <div>
-            <p className="font-extrabold text-xs text-ink">تعديل كلمة مرور حساب المدير</p>
-            <p className="text-[11px] text-muted mt-0.5">يمكنك تغيير كلمة المرور الحالية وتحديثها فوراً لتأمين حسابك.</p>
-          </div>
-          <Button
-            variant="secondary"
-            icon={KeyRound}
-            onClick={() => setShowPasswordModal(true)}
-            className="font-bold shrink-0"
-          >
-            تعديل كلمة المرور
-          </Button>
-        </div>
-      </Card>
-
-      {/* ===== إشعارات الهاتف الحية ===== */}
-      <Card>
-        <CardHeader
-          icon={Smartphone}
-          title="إشعارات الهاتف الحية"
-          description="تصلك تنبيهات حية ومباشرة في شريط إشعارات هاتفك عند تسجيل أي مستخدم جديد أو وصول مبيعات جديدة."
-          action={
-            <Badge tone={notifPrefs.enabled ? 'success' : 'neutral'} dot>
-              {notifPrefs.enabled ? 'مفعّلة' : 'متوقفة'}
-            </Badge>
-          }
-        />
-
-        <div className="space-y-3.5 mt-3">
-          {/* المفتاح العام */}
-          <div className="p-3.5 rounded-2xl bg-brand/5 border border-brand/20 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${notifPrefs.enabled ? 'bg-brand text-white' : 'bg-line text-ink-muted'}`}>
-                <Bell className="w-4 h-4" />
-              </span>
-              <div>
-                <p className="font-extrabold text-xs text-ink">تشغيل إشعارات الهاتف الحية</p>
-                <p className="text-[11px] text-ink-muted">المفتاح الرئيسي لتشغيل أو إيقاف وصول الإشعارات إلى هاتفك.</p>
-              </div>
-            </div>
-            <Switch
-              checked={notifPrefs.enabled}
-              onChange={(val) => handleNotifToggle('enabled', val)}
-              aria-label="تشغيل إشعارات الهاتف الحية"
-            />
-          </div>
-
-          {/* الخيارات التفصيلية */}
-          <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity ${notifPrefs.enabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold text-ink">إشعارات المبيعات الحية 💰</p>
-                <p className="text-[10px] text-ink-muted">تنبيه فوري لشريط هاتفك عند بيع أي كرت في أي شبكة</p>
-              </div>
-              <Switch
-                checked={notifPrefs.salesAlerts}
-                onChange={(val) => handleNotifToggle('salesAlerts', val)}
-                disabled={!notifPrefs.enabled}
-                aria-label="إشعارات المبيعات الحية"
-              />
-            </div>
-
-            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold text-ink">إشعارات تسجيل مستخدم جديد 🎉</p>
-                <p className="text-[10px] text-ink-muted">تنبيه فوري لشريط هاتفك عندما يسجل أي شخص حسابه</p>
-              </div>
-              <Switch
-                checked={notifPrefs.userAlerts}
-                onChange={(val) => handleNotifToggle('userAlerts', val)}
-                disabled={!notifPrefs.enabled}
-                aria-label="إشعارات تسجيل مستخدم جديد"
-              />
-            </div>
-
-            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold text-ink">نغمة صوتية للتنبيه</p>
-                <p className="text-[10px] text-ink-muted">نغمة خفيفة ومبهجة عند وصول أي إشعار</p>
-              </div>
-              <Switch
-                checked={notifPrefs.sound}
-                onChange={(val) => handleNotifToggle('sound', val)}
-                disabled={!notifPrefs.enabled}
-                aria-label="نغمة صوتية للتنبيه"
-              />
-            </div>
-
-            <div className="p-3 rounded-xl bg-surface-sunken border border-line flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold text-ink">اهتزاز الهاتف</p>
-                <p className="text-[10px] text-ink-muted">اهتزاز الهاتف عند وصول التنبيه</p>
-              </div>
-              <Switch
-                checked={notifPrefs.vibrate}
-                onChange={(val) => handleNotifToggle('vibrate', val)}
-                disabled={!notifPrefs.enabled}
-                aria-label="اهتزاز الهاتف"
-              />
-            </div>
-          </div>
-
-          {/* فحص الإذن وزر الاختبار */}
-          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-line/60">
-            <div className="flex items-center gap-2 text-[11px]">
-              {notifPermission === 'granted' ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="text-emerald-700 font-bold">إذن إشعارات المتصفح/الهاتف مفعّل بنجاح</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="text-ink-muted">الإشعارات بحاجة إلى إذن من المتصفح لتظهر في شريط هاتفك</span>
-                  <button
-                    type="button"
-                    onClick={handleRequestNotifPermission}
-                    className="text-brand font-bold underline hover:text-brand-deep mr-1"
-                  >
-                    السماح الآن
-                  </button>
-                </>
-              )}
-            </div>
-
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Send}
-              loading={testingNotif}
-              onClick={handleSendTestNotif}
-              className="font-bold shrink-0"
+      <div className="mt-3 space-y-3">
+        {activeTab === 'app' && (
+          <>
+            <SettingsSection
+              title="الإصدار المنشور"
+              description="للمقارنة مع آخر نسخة أبلغت عنها الأجهزة."
+              icon={Smartphone}
             >
-              تجربة إشعار فوري على الهاتف
-            </Button>
-          </div>
-        </div>
-      </Card>
-      </Section>
+              <SettingField label="رقم الإصدار" hint="صيغة ثلاثية مثل 1.0.16">
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={config.app_latest_version || ''}
+                  onChange={(e) => update({ app_latest_version: e.target.value })}
+                  placeholder="1.0.16"
+                  className="input-field w-full min-h-[44px] text-sm"
+                />
+              </SettingField>
+              <SettingField label="versionCode المنشور" hint="عدد صحيح موجب">
+                <input
+                  type="number"
+                  dir="ltr"
+                  min="1"
+                  value={config.app_latest_version_code || ''}
+                  onChange={(e) => update({ app_latest_version_code: e.target.value === '' ? '' : Number(e.target.value) })}
+                  placeholder="16"
+                  className="input-field w-full min-h-[44px] text-sm"
+                />
+              </SettingField>
+            </SettingsSection>
 
-      {/* ===== نوافذ التأكيد ===== */}
+            <SettingsSection
+              title="العمولة والاشتراكات"
+              description="القيم الافتراضية للحسابات الجديدة."
+              icon={Power}
+            >
+              <SettingField
+                label="العمولة العامة (%)"
+                hint="5% افتراضياً. لا يعيد تسعير السجلات التاريخية."
+              >
+                <input
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="0.1"
+                  value={config.default_commission_rate ?? ''}
+                  onChange={(e) => update({ default_commission_rate: e.target.value === '' ? null : Number(e.target.value) })}
+                  className="input-field w-full max-w-[10rem] min-h-[44px] text-sm"
+                />
+              </SettingField>
+              <SettingField
+                label="أيام التحذير قبل الانتهاء"
+                hint="عدد الأيام التي يظهر فيها التحذير قبل الإيقاف."
+              >
+                <input
+                  type="number"
+                  min="1"
+                  max="7"
+                  value={config.warning_days_before_expiry}
+                  onChange={(e) => update({ warning_days_before_expiry: parseInt(e.target.value, 10) || 5 })}
+                  className="input-field w-full max-w-[10rem] min-h-[44px] text-sm"
+                />
+              </SettingField>
+              <SettingField
+                label="الأيام التجريبية الافتراضية"
+                hint="تُمنح تلقائياً لكل حساب تجريبي جديد."
+              >
+                <input
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={config.default_trial_days}
+                  onChange={(e) => update({ default_trial_days: parseInt(e.target.value, 10) || 0 })}
+                  className="input-field w-full max-w-[10rem] min-h-[44px] text-sm"
+                />
+              </SettingField>
+            </SettingsSection>
+
+            <SettingsSection
+              title="رسائل التحذير"
+              description="الرسائل التي تُعرض للمستخدمين قبل انتهاء الاشتراك."
+              icon={MessageSquare}
+            >
+              <SettingField label="رسالة الرسميين">
+                <textarea
+                  rows={3}
+                  value={config.global_official_warning || ''}
+                  onChange={(e) => update({ global_official_warning: e.target.value })}
+                  placeholder="عزيزي المستخدم، اقترب موعد تصفية الحساب..."
+                  className="input-field w-full resize-none text-sm"
+                />
+              </SettingField>
+              <SettingField label="رسالة التجريبيين">
+                <textarea
+                  rows={3}
+                  value={config.default_trial_warning || ''}
+                  onChange={(e) => update({ default_trial_warning: e.target.value })}
+                  placeholder="أنت تستخدم النسخة التجريبية..."
+                  className="input-field w-full resize-none text-sm"
+                />
+              </SettingField>
+            </SettingsSection>
+          </>
+        )}
+
+        {activeTab === 'notifications' && (
+          <>
+            <SettingsSection
+              title="إشعارات الهاتف الحية"
+              description="تنبيهات فورية في شريط إشعارات هاتفك عند المبيعات والتسجيل."
+              icon={Smartphone}
+            >
+              {notifPermission !== 'granted' && (
+                <div className="px-4 py-3 bg-amber-50">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-amber-900">إذن الإشعارات غير مفعّل</p>
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        {notifPermission === 'denied'
+                          ? 'تم حظر الإشعارات — يرجى السماح بها من إعدادات المتصفح.'
+                          : 'بحاجة إلى موافقة لإظهار الإشعارات.'}
+                      </p>
+                    </div>
+                    {notifPermission !== 'denied' && (
+                      <button
+                        type="button"
+                        onClick={handleRequestNotifPermission}
+                        className="text-[11px] font-bold text-amber-900 underline"
+                      >
+                        السماح
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <SettingField
+                label="تشغيل إشعارات الهاتف"
+                hint="المفتاح الرئيسي لجميع التنبيهات."
+                switch={{
+                  checked: notifPrefs.enabled,
+                  onChange: (v) => handleNotifToggle('enabled', v),
+                }}
+              />
+              <SettingField
+                label="إشعارات المبيعات 💰"
+                hint="تنبيه فوري عند بيع أي كرت في أي شبكة."
+                switch={{
+                  checked: notifPrefs.salesAlerts,
+                  onChange: (v) => handleNotifToggle('salesAlerts', v),
+                  disabled: !notifPrefs.enabled,
+                }}
+              />
+              <SettingField
+                label="إشعارات تسجيل مستخدم 🎉"
+                hint="تنبيه عند تسجيل أي شخص حساباً جديداً."
+                switch={{
+                  checked: notifPrefs.userAlerts,
+                  onChange: (v) => handleNotifToggle('userAlerts', v),
+                  disabled: !notifPrefs.enabled,
+                }}
+              />
+              <SettingField
+                label="نغمة صوتية"
+                hint="نغمة خفيفة عند وصول أي إشعار."
+                switch={{
+                  checked: notifPrefs.sound,
+                  onChange: (v) => handleNotifToggle('sound', v),
+                  disabled: !notifPrefs.enabled,
+                }}
+              />
+              <SettingField
+                label="اهتزاز الهاتف"
+                hint="اهتزاز الجهاز عند التنبيه."
+                switch={{
+                  checked: notifPrefs.vibrate,
+                  onChange: (v) => handleNotifToggle('vibrate', v),
+                  disabled: !notifPrefs.enabled,
+                }}
+              />
+            </SettingsSection>
+
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2 text-[11px]">
+                {notifPermission === 'granted' ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="text-emerald-700 font-bold">الإذن مفعّل</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <span className="text-[var(--ui-muted)]">الإذن غير مفعّل</span>
+                  </>
+                )}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Send}
+                loading={testingNotif}
+                onClick={handleSendTestNotif}
+              >
+                تجربة إشعار
+              </Button>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'security' && (
+          <>
+            <SettingsSection
+              title="أمان حساب المدير"
+              description="إدارة كلمة المرور وحماية لوحة الإدارة."
+              icon={KeyRound}
+            >
+              <div className="px-4 py-3">
+                <p className="text-sm font-bold text-[var(--ui-ink)]">كلمة مرور المدير</p>
+                <p className="text-[11px] text-[var(--ui-muted)] mt-0.5">
+                  يمكنك تغيير كلمة المرور الحالية لتأمين حسابك.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(true)}
+                  className="mt-3 inline-flex items-center gap-2 min-h-[44px] px-4 rounded-xl bg-[var(--ui-brand)] text-white font-bold text-sm active:scale-95 transition-transform"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  تغيير كلمة المرور
+                </button>
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title="حسابات المدراء"
+              description="إدارة المدراء الذين يمكنهم الوصول للوحة."
+              icon={Users}
+            >
+              <Link
+                to="/admins"
+                className="flex items-center justify-between gap-2 px-4 py-3 min-h-[56px] hover:bg-[var(--ui-sunken)] transition-colors"
+              >
+                <div>
+                  <p className="text-sm font-bold text-[var(--ui-ink)]">إدارة المدراء</p>
+                  <p className="text-[11px] text-[var(--ui-muted)] mt-0.5">
+                    إضافة، حذف، أو تعديل صلاحيات المدراء
+                  </p>
+                </div>
+                <ShieldCheck className="w-5 h-5 text-[var(--ui-muted)]" />
+              </Link>
+            </SettingsSection>
+          </>
+        )}
+
+        {activeTab === 'advanced' && (
+          <>
+            <DangerZone
+              title="تواريخ الانتهاء المجمّعة"
+              description="توحيد تاريخ انتهاء الاشتراك لجميع الحسابات الرسمية دفعة واحدة."
+              icon={Calendar}
+            >
+              <div>
+                <label className="text-xs font-bold text-rose-900 block mb-1.5">
+                  تاريخ الانتهاء الموحّد الجديد
+                </label>
+                <input
+                  type="date"
+                  value={batchDate}
+                  onChange={(e) => setBatchDate(e.target.value)}
+                  className="w-full min-h-[44px] px-3 rounded-xl border border-rose-300 bg-white text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatchConfirm(true)}
+                disabled={!batchDate || updatingBatch}
+                className="w-full min-h-[44px] rounded-xl bg-rose-600 text-white font-bold text-sm disabled:opacity-50 hover:bg-rose-700 transition-colors"
+              >
+                {updatingBatch ? 'جارٍ التحديث...' : 'تطبيق على جميع الرسميين'}
+              </button>
+              <p className="text-[11px] text-rose-700 flex items-start gap-1.5">
+                <Users className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                يؤثر هذا الإجراء على الحسابات الرسمية فقط، ولا يمسّ التجريبية.
+              </p>
+            </DangerZone>
+
+            <DangerZone
+              title="إعادة المزامنة الكاملة"
+              description="مسح مؤشرات المزامنة المحلية وإعادة قراءة كل البيانات من Firestore."
+              icon={RefreshCw}
+            >
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                استخدمها بعد ترحيل <code className="font-mono bg-rose-100 px-1 rounded">updatedAtMs</code> للوثائق القديمة،
+                أو إذا ظهرت القوائم ناقصة. المزامنة اليومية تزايدية وتقرأ التغييرات فقط.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowFullSyncConfirm(true)}
+                disabled={fullSyncing || !localDb}
+                className="w-full min-h-[44px] rounded-xl bg-rose-600 text-white font-bold text-sm disabled:opacity-50 hover:bg-rose-700 transition-colors"
+              >
+                {fullSyncing ? 'جارٍ المزامنة...' : 'بدء المزامنة الكاملة'}
+              </button>
+              <p className="text-[11px] text-rose-700 flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                قد تستهلك عدداً كبيراً من قراءات Firestore.
+              </p>
+            </DangerZone>
+          </>
+        )}
+      </div>
+
+      {/* Save Bar — يظهر فقط عند وجود تغييرات غير محفوظة */}
+      {dirty && <SaveBar onSave={handleSave} saving={saving} />}
+
+      {/* Modals */}
       <ConfirmDialog
         isOpen={showConfirm}
         onClose={() => setShowConfirm(false)}
         onConfirm={confirmDisableApp}
         title="إيقاف التطبيق"
-        message="سيتم تحديد حالة التطبيق كمتوقف في نموذج الإعدادات. لن يُطبَّق التغيير على المستخدمين إلا بعد الضغط على «حفظ التغييرات» بنجاح."
-        confirmText="تأكيد حالة الإيقاف"
+        message="سيتم تحديد حالة التطبيق كمتوقف في النموذج. لن يُطبَّق على المستخدمين إلا بعد الضغط على «حفظ الآن»."
+        confirmText="تأكيد الإيقاف"
         variant="danger"
       />
 
@@ -725,9 +673,9 @@ export default function SettingsPage() {
         isOpen={showBatchConfirm}
         onClose={() => setShowBatchConfirm(false)}
         onConfirm={handleBatchUpdateExpiry}
-        title="تحديث مجمع للتواريخ"
-        message={`سيتم تغيير تاريخ الانتهاء لجميع الحسابات الرسمية ليصبح: ${batchDate}. هذا الإجراء واسع الأثر ولا يمكن التراجع عنه دفعة واحدة.`}
-        confirmText="نعم، قم بالتحديث"
+        title="تحديث مجمّع للتواريخ"
+        message={`سيتم تغيير تاريخ الانتهاء لجميع الحسابات الرسمية إلى: ${batchDate}. لا يمكن التراجع.`}
+        confirmText="نعم، حدّث"
         variant="primary"
         requireText="تأكيد"
       />
@@ -736,9 +684,9 @@ export default function SettingsPage() {
         isOpen={showFullSyncConfirm}
         onClose={() => setShowFullSyncConfirm(false)}
         onConfirm={handleFullSync}
-        title="مزامنة كاملة من Firestore"
-        message="ستُمسح مؤشرات المزامنة المحلية وتُعاد قراءة جميع المجموعات مرة واحدة. قد تستهلك عددًا كبيرًا من قراءات Firestore، وقد يستغرق التحميل وقتًا على الشبكات البطيئة. هل تريد المتابعة؟"
-        confirmText="نعم، ابدأ المزامنة الكاملة"
+        title="مزامنة كاملة"
+        message="ستُمسح مؤشرات المزامنة المحلية وتُعاد قراءة كل المجموعات. قد تستهلك قراءات كثيرة."
+        confirmText="نعم، ابدأ"
         variant="primary"
         requireText="تأكيد"
       />

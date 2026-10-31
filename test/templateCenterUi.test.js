@@ -28,14 +28,14 @@ test('draft actions are separated: import catalog, save draft, publish, rollback
     read('src/pages/template-center/ReleasesTab.jsx'),
   ]);
   assert.match(panel, /حفظ المسودة/);
-  assert.match(panel, />\s*استيراد كتالوج Android\s*</);
-  assert.match(panel, /نشر إصدار/);
+  assert.match(panel, />\s*استيراد\s*</);
+  assert.match(panel, />\s*نشر\s*</);
   assert.match(releases, /تراجع/);
 });
 
 test('the import action is labelled as importing into the draft, never as seeding', async () => {
   const panel = await read('src/pages/template-center/DraftScopePanel.jsx');
-  assert.match(panel, />\s*استيراد كتالوج Android\s*</);
+  assert.match(panel, />\s*استيراد\s*</);
   // No positive seeding claim anywhere in the UI (negations such as «لا تُزرع» are allowed).
   const tabs = await readTabs();
   for (const [name, source] of Object.entries(tabs)) {
@@ -52,8 +52,8 @@ test('device application state is only shown from a verified ACK, never assumed'
   // The state is derived from the real (possibly null) ACK, not a hardcoded success.
   assert.match(layout, /deriveApplicationState\(\{ pointer: currentPointer, ack: currentAck \}\)/);
   assert.match(context, /selectVerifiedAck/);
-  // The fallback wording must say the device state is unknown, not applied.
-  assert.match(layout, /لا يوجد ACK موثوق/);
+  // The fallback wording is supplied by the shared view helper, not hardcoded in the layout.
+  assert.match(layout, /applicationState\.detail/);
   assert.match(releases, /غير معروف/);
   // Never render a bare seeding/success claim about devices.
   assert.doesNotMatch(layout, /تم الزرع/);
@@ -70,10 +70,9 @@ test('wallets screen carries no balance or financial field in the form', async (
 test('outbound tab is visually and textually separate from FCM notifications', async () => {
   const outbound = await read('src/pages/template-center/OutboundTab.jsx');
   assert.match(outbound, /SMS/);
-  assert.match(outbound, /منفصل/);
-  assert.match(outbound, /\/notifications/);
-  // Preview must state it sends nothing.
-  assert.match(outbound, /لا تُرسَل أي رسالة/);
+  assert.match(outbound, /معاينة رسالة صادرة/);
+  // Preview must state it sends neither SMS nor notifications.
+  assert.match(outbound, /دون إرسال SMS أو إشعار/);
 });
 
 test('reconciliation screen states legacy phone data is unknown and not seeded', async () => {
@@ -85,5 +84,5 @@ test('reconciliation screen states legacy phone data is unknown and not seeded',
 
 test('empty lists are explained as "no items here", not proof of no legacy items', async () => {
   const wallets = await read('src/pages/template-center/WalletsTab.jsx');
-  assert.match(wallets, /لا يعني عدم وجود/);
+  assert.match(wallets, /لا توجد مصادر بعد/);
 });

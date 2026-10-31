@@ -1,17 +1,14 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
-  Archive, ArrowDownToLine, Cloud, Layers3, ListChecks, MessageSquare, Send, ShieldAlert,
+  Archive, ArrowDownToLine, Layers3, ListChecks, MessageSquare, Send, RefreshCw,
 } from 'lucide-react';
-import PageHero from '../../components/ui/PageHero';
-import Section from '../../components/ui/Section';
-import { Card } from '../../components/ui/Card';
-import Badge from '../../components/ui/Badge';
-import Button from '../../components/ui/Button';
 import { useTemplateCenter } from './TemplateCenterContext';
-import {
-  APPLICATION_STATE_LABELS, deriveApplicationState, describeScope, formatTimestamp,
-} from '../../lib/templateCenterView';
 import { TEMPLATE_CENTER_NAV, TEMPLATE_CENTER_ROOT } from '../../lib/templateCenterRoutes';
+import SearchHeader from '../../components/ui/SearchHeader';
+import HeroMetric from '../../components/ui/HeroMetric';
+import {
+  APPLICATION_STATE_LABELS, deriveApplicationState, describeScope,
+} from '../../lib/templateCenterView';
 
 const TAB_ICONS = {
   '/template-center/wallets': MessageSquare,
@@ -23,140 +20,83 @@ const TAB_ICONS = {
 
 const TABS = TEMPLATE_CENTER_NAV.map((item) => ({ ...item, icon: TAB_ICONS[item.path] || Layers3 }));
 
-function toneForState(tone) {
-  return tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : tone === 'danger' ? 'danger' : 'neutral';
-}
-
 export default function TemplateCenterLayout() {
   const { loading, drafts, releases, pointers, networks, currentPointer, currentAck, scope, refresh } = useTemplateCenter();
-
   const applicationState = deriveApplicationState({ pointer: currentPointer, ack: currentAck });
 
   if (loading) {
     return (
       <div className="space-y-4 p-4" aria-busy="true">
-        <div className="h-32 animate-pulse rounded-2xl bg-stone-200" />
-        <div className="h-80 animate-pulse rounded-2xl bg-stone-200" />
+        <div className="h-16 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <div className="h-32 rounded-3xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <div className="h-16 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6" dir="rtl">
-      <PageHero
-        icon={Layers3}
+    <div className="pb-24" dir="rtl">
+      <SearchHeader
         title={TEMPLATE_CENTER_ROOT.label}
-        subtitle="مساحات مستقلة لمصادر الرسائل وقوالبها والرسائل الصادرة، مع سجل إصدارات مركزي وحالة تطبيق مشتقة من تأكيد الأجهزة."
-        meta="النشر مركزي فقط. لا تُطبَّق أي بيانات على أجهزة Android قبل وصول ACK موثوق؛ الحالة الافتراضية «غير معروف»."
-        actions={<Button variant="secondary" icon={Cloud} onClick={refresh} loading={loading}>تحديث</Button>}
+        subtitle={describeScope(scope, networks)}
+        actions={
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)] hover:text-[var(--ui-ink)] disabled:opacity-50"
+            aria-label="تحديث"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          { label: 'المسودات', value: drafts.length, icon: Layers3 },
-          { label: 'الإصدارات المنشورة', value: releases.length, icon: Archive },
-          { label: 'النطاقات المنشورة', value: pointers.length, icon: Cloud },
-        ].map(({ label, value, icon: Icon }) => (
-          <Card key={label} className="flex items-center gap-3 p-4">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-800">
-              <Icon className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-sm text-stone-600">{label}</p>
-              <p className="text-xl font-extrabold tabular-nums">{value}</p>
-            </div>
-          </Card>
-        ))}
+      <div className="mt-3">
+        <HeroMetric
+          label="حالة النطاق"
+          value={APPLICATION_STATE_LABELS[applicationState.state] || applicationState.state}
+          unit={currentPointer?.version || currentPointer?.releaseId ? `v${currentPointer.version || currentPointer.releaseId.slice(0, 8)}` : ''}
+          icon={Layers3}
+          tone={applicationState.tone === 'success' ? 'success' : applicationState.tone === 'danger' ? 'danger' : 'brand'}
+          trend="flat"
+          hint={applicationState.detail}
+        />
       </div>
 
-      <Section
-        title="حالة النطاق الحالي"
-        description="النطاق المحدد في محرر المسودة. النشر المركزي لا يعني تطبيقًا على الأجهزة."
-      >
-        <Card className="space-y-4 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="brand">{describeScope(scope, networks)}</Badge>
-            {currentPointer
-              ? <Badge tone="success" dot>إصدار نشط: {currentPointer.version || currentPointer.releaseId}</Badge>
-              : <Badge tone="neutral">لا يوجد إصدار نشط لهذا النطاق</Badge>}
-            <Badge tone={toneForState(applicationState.tone)}>
-              حالة الأجهزة: {APPLICATION_STATE_LABELS[applicationState.state] || applicationState.state}
-            </Badge>
-          </div>
-          <p className="text-sm leading-6 text-stone-700">{applicationState.detail}</p>
-          {currentPointer && (
-            <dl className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-lg bg-stone-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">معرّف الإصدار</dt>
-                <dd className="font-mono text-xs" dir="ltr">{currentPointer.releaseId}</dd>
-              </div>
-              <div className="rounded-lg bg-stone-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">versionCode</dt>
-                <dd className="tabular-nums">{currentPointer.versionCode ?? '—'}</dd>
-              </div>
-              <div className="rounded-lg bg-stone-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">أدنى توافق</dt>
-                <dd dir="ltr">Android ≥ {currentPointer.minAppVersion || '0.0.0'} · build {currentPointer.minAppBuild ?? 0}</dd>
-              </div>
-              <div className="rounded-lg bg-stone-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">آخر تحديث للمؤشر</dt>
-                <dd>{formatTimestamp(currentPointer.updatedAt)}</dd>
-              </div>
-              <div className="rounded-lg bg-stone-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">المُحدِّث</dt>
-                <dd className="font-mono text-xs" dir="ltr">{currentPointer.updatedBy || '—'}</dd>
-              </div>
-            </dl>
-          )}
-          {currentAck ? (
-            <dl className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">آخر تأكيد موثوق</dt>
-                <dd>{formatTimestamp(currentAck.appliedAt)}</dd>
-              </div>
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">الجهاز (installationId)</dt>
-                <dd className="font-mono text-xs" dir="ltr">{currentAck.installationId}</dd>
-              </div>
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">النتيجة</dt>
-                <dd>{currentAck.outcome === 'partially_applied' ? 'مطبَّق جزئيًا' : 'مطبَّق بالكامل'}{currentAck.parserRefreshed ? ' + أُعيد بناء المحلل' : ''}</dd>
-              </div>
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">العناصر المُدرجة</dt>
-                <dd className="tabular-nums">{currentAck.insertedCount ?? 0}</dd>
-              </div>
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">التعارضات المتروكة</dt>
-                <dd className="tabular-nums">{currentAck.conflictCount ?? 0}</dd>
-              </div>
-              <div className="rounded-lg bg-emerald-50 px-3 py-2">
-                <dt className="font-semibold text-stone-600">البصمة المطابقة</dt>
-                <dd className="font-mono text-xs" dir="ltr">{currentAck.payloadHash ? `${currentAck.payloadHash.slice(0, 12)}…` : '—'}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              لا يوجد ACK موثوق مطابق لهذا الإصدار بعد. تبقى حالة الجهاز «غير معروف» حتى يزامن تطبيق Android الإصدار ويرسل تأكيدًا مطابقًا.
-            </p>
-          )}
-        </Card>
-      </Section>
+      {/* شارة الإحصاءات */}
+      <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand/10 text-brand-deep text-xs font-bold border border-brand/20">
+          <Layers3 className="w-3.5 h-3.5" />
+          {drafts.length} مسودة
+        </span>
+        <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
+          <Archive className="w-3.5 h-3.5" />
+          {releases.length} إصدار
+        </span>
+        <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--ui-sunken)] text-[var(--ui-ink-soft)] text-xs font-bold border border-line">
+          <RefreshCw className="w-3.5 h-3.5" />
+          {pointers.length} نطاق
+        </span>
+      </div>
 
-      <nav className="flex flex-wrap gap-2 border-b border-stone-200 pb-3" aria-label="أقسام مركز القوالب">
+      {/* التبويبات */}
+      <nav className="mt-3 android-tabs" role="group" aria-label="أقسام مركز القوالب">
         {TABS.map(({ path, label, icon: Icon }) => (
           <NavLink
             key={path}
             to={path}
-            className={({ isActive }) => `inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-bold transition-colors ${isActive ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'}`}
+            className={({ isActive }) => `android-tab min-h-[44px] ${isActive ? 'is-active' : ''}`}
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />{label}
+            <Icon className="w-4 h-4 ml-1" />
+            <span className="text-[11px] sm:text-xs font-bold truncate">{label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <Outlet />
+      <div className="mt-3">
+        <Outlet />
+      </div>
     </div>
   );
 }

@@ -1,17 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ScrollText, Search, Download, Inbox, ShieldCheck, KeyRound,
+  ScrollText, Download, Inbox, ShieldCheck, KeyRound,
   UserCheck, DollarSign, Bell, Settings, ShieldAlert,
-  Calendar, Clock, X, ChevronDown, ChevronUp, User,
+  Calendar, Clock, User,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PageHero from '../components/ui/PageHero';
-import { Card } from '../components/ui/Card';
-import Badge from '../components/ui/Badge';
-import Button from '../components/ui/Button';
-import Section from '../components/ui/Section';
-import DataFreshness from '../components/ui/DataFreshness';
-import { SkeletonPageHeader, SkeletonCard } from '../components/ui/Skeleton';
+
+import SearchHeader from '../components/ui/SearchHeader';
+import HeroMetric from '../components/ui/HeroMetric';
+import StatPills from '../components/ui/StatPills';
+import DataCard from '../components/ui/DataCard';
+import FilterSheet from '../components/ui/FilterSheet';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
+
 import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
@@ -21,101 +22,71 @@ import { loadLocalAuditLogs } from '../lib/localDb/localData';
 import useAppRefresh from '../lib/useAppRefresh';
 
 const PAGE_SIZE = 30;
-/** سقف السجلات المحفوظة محلياً للعرض (يأتي من مزامنة admin_audit_logs). */
 const AUDIT_LOCAL_LIMIT = 200;
 const FILTER_STORAGE_KEY = 'krotak:audit-filter';
 
 const DETAIL_LABELS = {
-  amount: 'المبلغ',
-  month: 'الشهر',
-  title: 'العنوان',
-  sent: 'عدد الأجهزة',
-  affected_users: 'عدد الحسابات',
-  new_date: 'التاريخ الجديد',
-  commission_rate: 'العمولة',
-  has_custom_warning: 'تحذير مخصص',
-  subscription_end_date: 'تاريخ الانتهاء',
-  default_commission_rate: 'العمولة العامة',
-  default_trial_days: 'الأيام التجريبية',
-  warning_days_before_expiry: 'أيام التحذير',
-  is_app_active: 'حالة التطبيق',
-  saleUuid: 'معرّف البيع',
-  reason: 'سبب التعارض',
-  previousHash: 'الهاش السابق',
-  incomingHash: 'الهاش الوارد',
-  locked: 'الاشتراكات المقفلة',
-  networksUpdated: 'الشبكات المحدثة',
-  scanned: 'الحسابات المفحوصة',
-  extensionDays: 'أيام التمديد',
-  settlementId: 'معرّف التسوية',
-  settledSalesCount: 'عدد المبيعات المسوّاة',
-  unallocated: 'المبلغ المتبقي',
-  version: 'الإصدار',
-  scope: 'النطاق',
+  amount: 'المبلغ', month: 'الشهر', title: 'العنوان', sent: 'الأجهزة',
+  affected_users: 'الحسابات', new_date: 'التاريخ الجديد',
+  commission_rate: 'العمولة', has_custom_warning: 'تحذير مخصص',
+  subscription_end_date: 'الانتهاء', default_commission_rate: 'العمولة العامة',
+  default_trial_days: 'أيام تجريبية', warning_days_before_expiry: 'أيام التحذير',
+  is_app_active: 'حالة التطبيق', saleUuid: 'معرّف البيع', reason: 'السبب',
+  previousHash: 'الهاش السابق', incomingHash: 'الهاش الجديد',
+  locked: 'الاشتراكات المقفلة', networksUpdated: 'الشبكات المحدثة',
+  scanned: 'المفحوصة', extensionDays: 'أيام التمديد',
+  settlementId: 'معرّف التسوية', settledSalesCount: 'عدد المبيعات',
+  unallocated: 'المتبقي', version: 'الإصدار', scope: 'النطاق',
 };
 
 const ACTION_ICONS = {
-  USER_ACTIVATE: UserCheck,
-  USER_BLOCK: ShieldAlert,
-  USER_MAKE_OFFICIAL: ShieldCheck,
-  USER_RENEW: Calendar,
-  USER_EDIT: Settings,
-  PAYMENT_ADD: DollarSign,
-  NOTIFICATION_SEND: Bell,
-  NOTIFICATION_DELETE: Bell,
-  NOTIFICATION_SCHEDULE: Bell,
-  SETTINGS_SAVE: Settings,
-  APP_STATUS_CHANGE: ShieldAlert,
-  SUBSCRIPTION_BATCH: Calendar,
-  USER_PASSWORD_SET: KeyRound,
-  USER_RESET_LINK: KeyRound,
-  ADMIN_CREATE: ShieldCheck,
-  ADMIN_DELETE: ShieldAlert,
-  DEVICE_DELETE: Settings,
-  USER_DELETE: ShieldAlert,
-  ADMIN_PASSWORD_CHANGE: KeyRound,
-  SETTLEMENT_RECORD: DollarSign,
-  NETWORK_REGISTER: ShieldCheck,
-  NETWORK_RENEW: Calendar,
-  NETWORK_ACCESS_UPDATE: Settings,
-  NETWORK_DELETE: ShieldAlert,
-  SUBSCRIPTION_EXPIRY_CRON: Clock,
-  TEMPLATE_DRAFT_CREATE: ScrollText,
-  TEMPLATE_DRAFT_UPDATE: Settings,
-  TEMPLATE_DRAFT_DELETE: ShieldAlert,
-  TEMPLATE_RELEASE_PUBLISH: ShieldCheck,
-  TEMPLATE_RELEASE_ROLLBACK: Calendar,
+  USER_ACTIVATE: UserCheck, USER_BLOCK: ShieldAlert, USER_MAKE_OFFICIAL: ShieldCheck,
+  USER_RENEW: Calendar, USER_EDIT: Settings, PAYMENT_ADD: DollarSign,
+  NOTIFICATION_SEND: Bell, NOTIFICATION_DELETE: Bell, NOTIFICATION_SCHEDULE: Bell,
+  SETTINGS_SAVE: Settings, APP_STATUS_CHANGE: ShieldAlert, SUBSCRIPTION_BATCH: Calendar,
+  USER_PASSWORD_SET: KeyRound, USER_RESET_LINK: KeyRound, ADMIN_CREATE: ShieldCheck,
+  ADMIN_DELETE: ShieldAlert, DEVICE_DELETE: Settings, USER_DELETE: ShieldAlert,
+  ADMIN_PASSWORD_CHANGE: KeyRound, SETTLEMENT_RECORD: DollarSign,
+  NETWORK_REGISTER: ShieldCheck, NETWORK_RENEW: Calendar,
+  NETWORK_ACCESS_UPDATE: Settings, NETWORK_DELETE: ShieldAlert,
+  SUBSCRIPTION_EXPIRY_CRON: Clock, TEMPLATE_DRAFT_CREATE: ScrollText,
+  TEMPLATE_DRAFT_UPDATE: Settings, TEMPLATE_DRAFT_DELETE: ShieldAlert,
+  TEMPLATE_RELEASE_PUBLISH: ShieldCheck, TEMPLATE_RELEASE_ROLLBACK: Calendar,
   SALE_CONFLICT_DETECTED: ShieldAlert,
 };
 
 function formatDetails(details) {
   if (!details || typeof details !== 'object') return '—';
   const parts = Object.entries(details)
-    .filter(([, value]) => value !== null && value !== undefined && value !== '')
-    .map(([key, value]) => {
-      const label = DETAIL_LABELS[key] || key;
-      const shown = typeof value === 'boolean' ? (value ? 'نعم' : 'لا') : String(value);
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => {
+      const label = DETAIL_LABELS[k] || k;
+      const shown = typeof v === 'boolean' ? (v ? 'نعم' : 'لا') : String(v);
       return `${label}: ${shown}`;
     });
   return parts.length ? parts.join(' • ') : '—';
 }
 
 function loadSavedFilter() {
-  try {
-    return window.localStorage.getItem(FILTER_STORAGE_KEY) || 'all';
-  } catch {
-    return 'all';
-  }
+  try { return window.localStorage.getItem(FILTER_STORAGE_KEY) || 'all'; }
+  catch { return 'all'; }
 }
 
 const CATEGORY_CHIPS = [
-  { key: 'all', label: 'كل العمليات' },
-  { key: 'users', label: 'المستخدمين والاشتراكات', actions: ['USER_ACTIVATE', 'USER_BLOCK', 'USER_MAKE_OFFICIAL', 'USER_RENEW', 'USER_EDIT', 'USER_DELETE', 'NETWORK_ACCESS_UPDATE', 'NETWORK_RENEW', 'NETWORK_DELETE', 'NETWORK_REGISTER'] },
-  { key: 'financial', label: 'الدفعات والتسويات', actions: ['PAYMENT_ADD', 'SETTLEMENT_RECORD', 'SUBSCRIPTION_BATCH'] },
-  { key: 'security', label: 'الأمان والتعارضات', actions: ['USER_PASSWORD_SET', 'USER_RESET_LINK', 'ADMIN_PASSWORD_CHANGE', 'ADMIN_CREATE', 'ADMIN_DELETE', 'SALE_CONFLICT_DETECTED'] },
-  { key: 'templates', label: 'مركز القوالب', actions: ['TEMPLATE_DRAFT_CREATE', 'TEMPLATE_DRAFT_UPDATE', 'TEMPLATE_DRAFT_DELETE', 'TEMPLATE_RELEASE_PUBLISH', 'TEMPLATE_RELEASE_ROLLBACK'] },
-  { key: 'system', label: 'إعدادات النظام والكرون', actions: ['SETTINGS_SAVE', 'APP_STATUS_CHANGE', 'DEVICE_DELETE', 'SUBSCRIPTION_EXPIRY_CRON'] },
+  { key: 'all', label: 'الكل' },
+  {
+    key: 'users', label: 'المستخدمون',
+    actions: ['USER_ACTIVATE', 'USER_BLOCK', 'USER_MAKE_OFFICIAL', 'USER_RENEW', 'USER_EDIT', 'USER_DELETE', 'NETWORK_ACCESS_UPDATE', 'NETWORK_RENEW', 'NETWORK_DELETE', 'NETWORK_REGISTER'],
+  },
+  { key: 'financial', label: 'مالية', actions: ['PAYMENT_ADD', 'SETTLEMENT_RECORD', 'SUBSCRIPTION_BATCH'] },
+  { key: 'security', label: 'أمان', actions: ['USER_PASSWORD_SET', 'USER_RESET_LINK', 'ADMIN_PASSWORD_CHANGE', 'ADMIN_CREATE', 'ADMIN_DELETE', 'SALE_CONFLICT_DETECTED'] },
+  { key: 'templates', label: 'القوالب', actions: ['TEMPLATE_DRAFT_CREATE', 'TEMPLATE_DRAFT_UPDATE', 'TEMPLATE_DRAFT_DELETE', 'TEMPLATE_RELEASE_PUBLISH', 'TEMPLATE_RELEASE_ROLLBACK'] },
+  { key: 'system', label: 'نظام', actions: ['SETTINGS_SAVE', 'APP_STATUS_CHANGE', 'DEVICE_DELETE', 'SUBSCRIPTION_EXPIRY_CRON'] },
 ];
+
+const TONE_MAP = {
+  success: 'success', danger: 'danger', warning: 'warning', brand: 'brand', neutral: 'neutral',
+};
 
 export default function AuditPage() {
   const [actionFilter, setActionFilter] = useState(loadSavedFilter);
@@ -123,282 +94,252 @@ export default function AuditPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
   const { runSync, syncing, lastSyncAt } = useLocalDb();
 
-  // السجل يُقرأ من القاعدة المحلية (آخر 200 سجل)؛ لا استعلام Firestore في الشاشة.
   const logsQuery = useLocalQuery((localDb) => loadLocalAuditLogs(localDb, AUDIT_LOCAL_LIMIT), []);
   const allLogs = useMemo(() => logsQuery.data || [], [logsQuery.data]);
   const logs = useMemo(() => allLogs.slice(0, visibleCount), [allLogs, visibleCount]);
   const loading = logsQuery.loading;
-  const error = logsQuery.error
-    ? 'تعذر قراءة سجل العمليات من القاعدة المحلية. أعد المحاولة.'
-    : null;
+  const error = logsQuery.error ? 'تعذر قراءة سجل العمليات.' : null;
   const hasMore = allLogs.length > visibleCount;
-  const loadingMore = false;
-
-  const loadMore = () => setVisibleCount((count) => count + PAGE_SIZE);
 
   const refresh = async () => {
     await runSync({ reason: 'manual' });
     logsQuery.refresh();
   };
-
   useAppRefresh(refresh);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(FILTER_STORAGE_KEY, actionFilter);
-    } catch {
-      // Ignored
-    }
+    try { window.localStorage.setItem(FILTER_STORAGE_KEY, actionFilter); } catch { /* noop */ }
   }, [actionFilter]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    CATEGORY_CHIPS.forEach((c) => {
+      if (c.key === 'all') counts[c.key] = allLogs.length;
+      else if (c.actions) counts[c.key] = allLogs.filter((log) => c.actions.includes(log.action)).length;
+      else counts[c.key] = 0;
+    });
+    return counts;
+  }, [allLogs]);
 
   const filteredLogs = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    const categoryDef = CATEGORY_CHIPS.find((c) => c.key === activeCategory);
-
+    const cat = CATEGORY_CHIPS.find((c) => c.key === activeCategory);
     return logs.filter((entry) => {
-      // Category filter
-      if (categoryDef && categoryDef.actions && !categoryDef.actions.includes(entry.action)) {
-        return false;
-      }
-      // Specific action dropdown filter
+      if (cat?.actions && !cat.actions.includes(entry.action)) return false;
       if (actionFilter !== 'all' && entry.action !== actionFilter) return false;
-      // Search term
       if (!term) return true;
       return [
-        entry.targetLabel,
-        entry.targetId,
-        entry.actorEmail,
-        entry.actorUid,
-        auditActionLabel(entry.action),
-        JSON.stringify(entry.details || {}),
-      ]
-        .filter(Boolean)
-        .some((val) => String(val).toLowerCase().includes(term));
+        entry.targetLabel, entry.targetId, entry.actorEmail, entry.actorUid,
+        auditActionLabel(entry.action), JSON.stringify(entry.details || {}),
+      ].filter(Boolean).some((v) => String(v).toLowerCase().includes(term));
     });
   }, [logs, actionFilter, activeCategory, searchTerm]);
 
   const handleExport = useCallback(() => {
-    if (!filteredLogs.length) {
-      toast.error('لا توجد بيانات للتصدير');
-      return;
-    }
+    if (!filteredLogs.length) { toast.error('لا توجد بيانات للتصدير'); return; }
     downloadCsv(`audit-log-${csvStamp()}`, filteredLogs, [
-      { label: 'الوقت', value: (row) => formatDate(row.createdAtMs || row.createdAt, { withTime: true }) },
-      { label: 'المدير', value: (row) => row.actorEmail || row.actorUid || '' },
-      { label: 'الإجراء', value: (row) => auditActionLabel(row.action) },
-      { label: 'الهدف', value: (row) => row.targetLabel || row.targetId || '' },
-      { label: 'التفاصيل', value: (row) => formatDetails(row.details) },
+      { label: 'الوقت', value: (r) => formatDate(r.createdAtMs || r.createdAt, { withTime: true }) },
+      { label: 'المدير', value: (r) => r.actorEmail || r.actorUid || '' },
+      { label: 'الإجراء', value: (r) => auditActionLabel(r.action) },
+      { label: 'الهدف', value: (r) => r.targetLabel || r.targetId || '' },
+      { label: 'التفاصيل', value: (r) => formatDetails(r.details) },
     ]);
-    toast.success('تم تصدير سجل العمليات');
+    toast.success('تم التصدير');
   }, [filteredLogs]);
+
+  const activeFiltersCount = (actionFilter !== 'all' ? 1 : 0) + (activeCategory !== 'all' ? 1 : 0);
+
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: () => setVisibleCount((v) => v + PAGE_SIZE),
+    hasMore,
+  });
 
   if (loading && logs.length === 0) {
     return (
-      <div className="audit-page pb-16">
-        <SkeletonPageHeader />
-        <div className="space-y-3 mt-4">
-          <SkeletonCard lines={2} />
-          <SkeletonCard lines={2} />
-          <SkeletonCard lines={2} />
-        </div>
+      <div className="space-y-4 pb-24">
+        <div className="h-16 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <div className="h-32 rounded-3xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <div className="h-20 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
+        <div className="h-20 rounded-2xl bg-[var(--ui-sunken)]/60 animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="audit-page pb-16">
-      <PageHero
-        icon={ScrollText}
+    <div className="pb-24">
+      <SearchHeader
         title="سجل العمليات"
-        subtitle="توثيق زمني فوري لكل إجراء إداري: الوقت، المنفّذ، والهدف."
-        meta={`${filteredLogs.length} من ${logs.length} عملية مسجلة`}
+        subtitle={lastSyncAt
+          ? `آخر مزامنة: ${formatDate(lastSyncAt, { withTime: true })}`
+          : `${filteredLogs.length} من ${allLogs.length}`}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="ابحث في السجل..."
+        onFilterClick={() => setFilterSheetOpen(true)}
+        filterCount={activeFiltersCount}
         actions={
-          <div className="flex items-center gap-2">
-            <DataFreshness lastSyncedAt={lastSyncAt} refreshing={loading || syncing} onRefresh={refresh} />
-            <Button variant="secondary" size="sm" icon={Download} onClick={handleExport} className="font-bold">
-              تصدير CSV
-            </Button>
-          </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)] hover:text-[var(--ui-ink)]"
+            aria-label="تصدير CSV"
+          >
+            <Download className="w-4 h-4" />
+          </button>
         }
       />
 
       {error && (
-        <div className="users-error mb-4" role="alert">
-          <span className="users-error__icon"><ShieldCheck className="w-5 h-5" /></span>
-          <div className="users-error__body">
-            <p className="users-error__title">تعذر تحميل السجل</p>
-            <p className="users-error__msg">{error}</p>
-          </div>
-          <Button variant="secondary" size="sm" onClick={refresh}>إعادة المحاولة</Button>
+        <div className="mt-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+          <p className="flex-1">{error}</p>
+          <button type="button" onClick={refresh} className="font-bold underline">إعادة المحاولة</button>
         </div>
       )}
 
-      {/* شريط البحث وفلاتر الأندرويد المحمولة */}
-      <div className="space-y-3 mb-4">
-        {/* حقل البحث الأندرويد السلس */}
-        <div className="relative flex items-center bg-surface border border-line rounded-2xl px-3.5 py-1.5 shadow-xs focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 transition-all">
-          <Search className="w-4 h-4 text-muted shrink-0 ml-2" />
-          <input
-            type="text"
-            placeholder="ابحث بالهدف، المدير، الإجراء أو التفاصيل..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-transparent border-0 text-sm text-ink placeholder:text-muted focus:outline-none"
-            aria-label="بحث في سجل العمليات"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              className="p-1 rounded-full text-muted hover:text-ink shrink-0"
-              aria-label="مسح البحث"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* أشرطة التصنيف الأفقية (Android Filter Chips) */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-          {CATEGORY_CHIPS.map((cat) => {
-            const isActive = activeCategory === cat.key;
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => {
-                  setActiveCategory(cat.key);
-                  setActionFilter('all');
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border shrink-0 ${
-                  isActive
-                    ? 'bg-brand text-white border-brand shadow-xs shadow-brand/20'
-                    : 'bg-surface text-ink-soft border-line hover:border-brand/40'
-                }`}
-              >
-                {cat.label}
-              </button>
-            );
-          })}
-        </div>
+      <div className="mt-3">
+        <HeroMetric
+          label="إجمالي العمليات"
+          value={allLogs.length}
+          unit="عملية"
+          icon={ScrollText}
+          trend="flat"
+          hint={filteredLogs.length !== allLogs.length
+            ? `مُصفّى: ${filteredLogs.length} من ${allLogs.length}`
+            : 'كل العمليات المعروضة'}
+          tone="brand"
+        />
       </div>
 
-      {/* قائمة بطاقات العمليات بنمط أندرويد الحديث والمريح */}
-      {filteredLogs.length === 0 ? (
-        <Card>
-          <div className="empty-state py-10">
-            <span className="empty-state__icon icon-tile icon-tile--neutral icon-tile--lg">
-              <Inbox className="w-6 h-6" />
-            </span>
-            <p className="empty-state__title font-extrabold text-ink mt-2">لا توجد عمليات مطابقة</p>
-            <p className="empty-state__desc text-muted text-xs max-w-sm mx-auto mt-1">
-              {searchTerm
-                ? 'لم يتم العثور على أي عملية تطابق معايير البحث الحالية.'
-                : 'ستظهر هنا كل العمليات الإدارية فور تنفيذها.'}
+      <div className="mt-3">
+        <StatPills
+          items={CATEGORY_CHIPS.map((c) => ({
+            key: c.key,
+            label: c.label,
+            value: categoryCounts[c.key] ?? 0,
+            tone: activeCategory === c.key ? 'brand' : 'neutral',
+          }))}
+          onItemClick={(item) => setActiveCategory(item.key)}
+        />
+      </div>
+
+      <div className="mt-3 space-y-2.5">
+        {filteredLogs.length === 0 ? (
+          <div className="p-10 text-center rounded-2xl bg-[var(--ui-surface)] border border-line">
+            <Inbox className="w-6 h-6 mx-auto mb-2 text-[var(--ui-muted)]" />
+            <p className="font-bold text-[var(--ui-ink)]">لا نتائج</p>
+            <p className="text-xs text-[var(--ui-muted)] mt-1">
+              {searchTerm ? 'لا توجد عمليات مطابقة للبحث.' : 'لم تُسجّل عمليات بعد.'}
             </p>
           </div>
-        </Card>
-      ) : (
-        <div className="space-y-2.5">
-          {filteredLogs.map((entry) => {
-            const Icon = ACTION_ICONS[entry.action] || ScrollText;
-            const tone = auditActionTone(entry.action);
-            const isExpanded = expandedId === entry.id;
-            const detailsText = formatDetails(entry.details);
+        ) : (
+          <>
+            {filteredLogs.map((entry) => {
+              const Icon = ACTION_ICONS[entry.action] || ScrollText;
+              const tone = auditActionTone(entry.action);
+              const hasDetails = entry.details && typeof entry.details === 'object' && Object.keys(entry.details).length > 0;
+              const isExpanded = expandedId === entry.id;
 
-            return (
-              <div
-                key={entry.id}
-                className="p-3.5 rounded-2xl bg-surface border border-line hover:border-brand/30 transition-all shadow-xs"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                      tone === 'success'
-                        ? 'bg-emerald-500/10 text-emerald-600'
-                        : tone === 'danger'
-                        ? 'bg-rose-500/10 text-rose-600'
-                        : tone === 'warning'
-                        ? 'bg-amber-500/10 text-amber-600'
-                        : 'bg-brand/10 text-brand'
-                    }`}>
-                      <Icon className="w-4 h-4" />
-                    </span>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-xs text-ink">
-                          {auditActionLabel(entry.action)}
-                        </span>
-                        <Badge tone={tone}>{auditActionLabel(entry.action)}</Badge>
-                      </div>
-
-                      <p className="text-xs text-ink-secondary mt-1 font-medium truncate">
-                        الهدف: <strong className="text-ink font-bold">{entry.targetLabel || entry.targetId || '—'}</strong>
-                      </p>
-
-                      <div className="flex items-center gap-3 text-[11px] text-muted mt-1.5 flex-wrap">
-                        <span className="flex items-center gap-1 font-mono text-[10px]" dir="ltr">
-                          <User className="w-3 h-3 text-muted" />
-                          {entry.actorEmail || entry.actorUid || 'مدير'}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1 text-[10px]">
-                          <Clock className="w-3 h-3 text-muted" />
-                          {formatDate(entry.createdAtMs || entry.createdAt, { withTime: true })}
-                        </span>
-                      </div>
+              return (
+                <div key={entry.id}>
+                  <DataCard
+                    avatar={{ node: <Icon className="w-4 h-4" />, tone: TONE_MAP[tone] || 'neutral' }}
+                    title={auditActionLabel(entry.action)}
+                    subtitle={entry.targetLabel || entry.targetId || '—'}
+                    facts={[
+                      { icon: User, label: 'المدير', value: entry.actorEmail || entry.actorUid || '—' },
+                      { icon: Clock, value: formatDate(entry.createdAtMs || entry.createdAt, { withTime: true }) },
+                    ]}
+                    onClick={hasDetails ? () => setExpandedId(isExpanded ? null : entry.id) : undefined}
+                  />
+                  {isExpanded && hasDetails && (
+                    <div className="mt-1.5 p-3 rounded-xl bg-[var(--ui-sunken)]/60 border border-line text-[11px] text-[var(--ui-ink-soft)] leading-relaxed font-mono break-words">
+                      {formatDetails(entry.details)}
                     </div>
-                  </div>
-
-                  {entry.details && typeof entry.details === 'object' && Object.keys(entry.details).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setExpandedId(isExpanded ? null : entry.id)}
-                      className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface-sunken shrink-0 transition-colors"
-                      aria-label="عرض التفاصيل"
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
                   )}
                 </div>
+              );
+            })}
 
-                {/* تفاصيل موسعة عند الطلب */}
-                {isExpanded && entry.details && (
-                  <div className="mt-3 pt-3 border-t border-line/60 bg-surface-sunken/60 p-2.5 rounded-xl text-xs space-y-1">
-                    <p className="font-bold text-[10px] text-muted mb-1">تفاصيل العملية:</p>
-                    <p className="text-ink text-[11px] font-medium leading-relaxed font-mono" dir="rtl">
-                      {detailsText}
-                    </p>
-                  </div>
-                )}
+            {hasMore && (
+              <div ref={sentinelRef} className="py-6 flex justify-center" role="status" aria-live="polite">
+                <div className="flex items-center gap-2 text-xs text-[var(--ui-muted)] font-bold">
+                  <Clock className="w-4 h-4 animate-spin" />
+                  جارٍ التحميل...
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
 
-      {/* زر تحميل المزيد في نهاية القائمة */}
-      {logs.length > 0 && (
-        <div className="mt-6 flex flex-col items-center gap-2">
-          <p className="text-xs text-muted">
-            يُعرض {filteredLogs.length} من {logs.length} سجل محمّل
-          </p>
-          {hasMore && (
-            <Button
-              variant="secondary"
-              loading={loadingMore}
-              disabled={loadingMore || !hasMore}
-              onClick={loadMore}
-              className="font-bold min-w-[160px]"
+            {!hasMore && filteredLogs.length > 0 && (
+              <p className="text-center text-[11px] text-[var(--ui-faint)] py-4">
+                وصلت للنهاية — {filteredLogs.length} عملية
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <FilterSheet
+        isOpen={filterSheetOpen}
+        onClose={() => setFilterSheetOpen(false)}
+        title="فلترة السجل"
+        footer={
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setActionFilter('all'); setActiveCategory('all'); }}
+              className="flex-1 min-h-[48px] rounded-xl border border-line font-bold text-sm text-[var(--ui-ink-soft)] hover:bg-[var(--ui-sunken)]"
             >
-              {loadingMore ? 'جارٍ تحميل السجلات...' : 'عرض المزيد'}
-            </Button>
-          )}
+              إعادة تعيين
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterSheetOpen(false)}
+              className="flex-1 min-h-[48px] rounded-xl bg-[var(--ui-brand)] text-white font-bold text-sm"
+            >
+              تطبيق
+            </button>
+          </div>
+        }
+      >
+        <div>
+          <label className="text-xs font-black text-[var(--ui-ink)] block mb-2">إجراء محدد</label>
+          <select
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            className="w-full min-h-[48px] px-4 rounded-xl border border-line bg-[var(--ui-surface)] text-sm"
+          >
+            <option value="all">كل الإجراءات</option>
+            {Object.entries(AUDIT_ACTIONS).map(([key, meta]) => (
+              <option key={key} value={key}>{meta.label}</option>
+            ))}
+          </select>
         </div>
-      )}
+
+        <div>
+          <label className="text-xs font-black text-[var(--ui-ink)] block mb-2">الفئة</label>
+          <div className="grid grid-cols-2 gap-2">
+            {CATEGORY_CHIPS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setActiveCategory(c.key)}
+                className={`min-h-[44px] rounded-xl border font-bold text-xs ${
+                  activeCategory === c.key
+                    ? 'bg-[var(--ui-brand)] text-white border-[var(--ui-brand)]'
+                    : 'bg-[var(--ui-surface)] text-[var(--ui-ink-soft)] border-line'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </FilterSheet>
     </div>
   );
 }

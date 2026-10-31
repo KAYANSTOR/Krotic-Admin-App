@@ -181,6 +181,15 @@ export async function repairAccessPage(cursor = null, limit = 100) {
   return callAdminApi('/api/networks', { action: 'repair-access', cursor, limit });
 }
 
+/** يعيد بناء المجاميع المالية على دفعات صغيرة عبر مسار الترحيل الخادمي. */
+export async function rebuildFinancialAggregatesPage({ cursor = null, limit = 1 } = {}) {
+  return callAdminApi('/api/migrate', {
+    action: 'rebuild-all',
+    limit,
+    ...(cursor ? { cursor } : {}),
+  });
+}
+
 /** حذف حساب المشترك والشبكة بالكامل مع كل سجلاتها من قاعدة البيانات */
 export async function deleteNetworkAccount(uid) {
   // الحذف الكامل (المستخدم + الشبكات + المجموعات الفرعية + الفهرس + التدقيق)
@@ -227,6 +236,74 @@ export async function triggerScheduledDispatch() {
     return await response.json().catch(() => null);
   } catch {
     return null;
+  }
+}
+
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+/** إرسال إشعار فوري عبر المسار الخادمي المحمي بصلاحيات المدير. */
+export async function sendPushNotification({ title, body, targetUid = null }) {
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return { ok: false, error: 'missing_token' };
+
+    const response = await fetch('/api/send-fcm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        title,
+        body,
+        data: {
+          route: '/account-notifications',
+          click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        ...(targetUid ? { targetUid } : {}),
+      }),
+    });
+    const data = await readJsonResponse(response);
+    return {
+      ok: response.ok && data.success === true,
+      data,
+      error: data.error || (response.ok ? null : `http_${response.status}`),
+    };
+  } catch (error) {
+    return { ok: false, error: 'network_error', errorObject: error };
+  }
+}
+
+/** حذف سجل إشعار من الخادم؛ قواعد Firestore لا تسمح للعميل بحذف سجل التسليم مباشرة. */
+export async function deleteNotification({ id }) {
+  if (!String(id || '').trim()) return { ok: false, error: 'id_required' };
+
+  try {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) return { ok: false, error: 'missing_token' };
+
+    const response = await fetch('/api/send-fcm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ action: 'delete', id }),
+    });
+    const data = await readJsonResponse(response);
+    return {
+      ok: response.ok && data.success === true,
+      data,
+      error: data.error || (response.ok ? null : `http_${response.status}`),
+    };
+  } catch (error) {
+    return { ok: false, error: 'network_error', errorObject: error };
   }
 }
 

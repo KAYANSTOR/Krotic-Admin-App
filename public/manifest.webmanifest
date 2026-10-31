@@ -1,16 +1,25 @@
 {
-  "name": "كروتك برو — لوحة التحكم",
-  "short_name": "كروتك برو",
-  "description": "لوحة التحكم الإدارية لتطبيق كروتك برو",
+  "name": "كروتك برو — لوحة الإدارة",
+  "short_name": "كروتك",
+  "description": "إدارة شبكات كروت الإنترنت والمبيعات والعمولات",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "any",
-  "background_color": "#FDF8EE",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "portrait",
+  "background_color": "#F7F4EF",
   "theme_color": "#D97757",
-  "categories": ["business", "productivity"],
+  "categories": [
+    "business",
+    "productivity",
+    "finance"
+  ],
   "icons": [
     {
       "src": "/icons/krotak-pro-192.png",
@@ -35,6 +44,32 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "المشتركون",
+      "short_name": "المشتركون",
+      "url": "/users",
+      "icons": [
+        {
+          "src": "/icons/krotak-pro-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "الإشعارات",
+      "short_name": "إشعارات",
+      "url": "/notifications",
+      "icons": [
+        {
+          "src": "/icons/krotak-pro-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

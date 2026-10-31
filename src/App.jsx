@@ -1,4 +1,4 @@
-import { lazy, useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8,8 +8,12 @@ import LoginPage from './pages/LoginPage';
 import LoadingSpinner from './components/LoadingSpinner';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { loadRoute, preloadAllRoutes } from './lib/routeLoaders';
-import ReadMeterPanel from './components/ReadMeterPanel';
 import { LocalDbProvider } from './lib/localDb/LocalDbContext';
+
+// Load the diagnostic panel only in development so its code is excluded from production builds.
+const ReadMeterPanel = import.meta.env.DEV
+  ? lazy(() => import('./components/ReadMeterPanel'))
+  : null;
 
 const DashboardPage = lazy(() => loadRoute('/'));
 const SettingsPage = lazy(() => loadRoute('/settings'));
@@ -85,16 +89,31 @@ export default function App() {
     <Router future={{ v7_startTransition: true }}>
       <AuthProvider>
         <Toaster
-          position="top-center"
+          position="bottom-center"
+          containerStyle={{ bottom: 'calc(68px + env(safe-area-inset-bottom) + 16px)' }}
           toastOptions={{
-            duration: 3000,
+            duration: 3500,
             style: {
               fontFamily: 'Tajawal, sans-serif',
               direction: 'rtl',
+              background: '#322B24',
+              color: '#fff',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              fontSize: '14px',
+              fontWeight: 500,
+              maxWidth: 'calc(100vw - 32px)',
+              boxShadow: '0 6px 10px 4px rgba(26,20,16,.12), 0 2px 3px rgba(26,20,16,.10)',
             },
+            success: { style: { background: '#1F5138' }, iconTheme: { primary: '#fff', secondary: '#1F5138' } },
+            error: { style: { background: '#8A2B2B' }, iconTheme: { primary: '#fff', secondary: '#8A2B2B' } },
           }}
         />
-        <ReadMeterPanel />
+        {import.meta.env.DEV && ReadMeterPanel ? (
+          <Suspense fallback={null}>
+            <ReadMeterPanel />
+          </Suspense>
+        ) : null}
         <LocalDbProvider>
           <AppRoutes />
         </LocalDbProvider>
