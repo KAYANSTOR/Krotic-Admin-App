@@ -1,5 +1,5 @@
 /**
- * Delivery dispatch — service secret only.
+ * Delivery dispatch — service secret or Vercel CRON_SECRET Bearer.
  * 1) Drain Firestore queue jobs whose runAfterMs elapsed (deadline checks).
  * 2) On SMS fallback: sms_pending + enqueue whatsapp_sms_device_tasks (no sms_sent).
  * 3) Settle terminal device task outcomes → completeSmsFallbackFromDevice.
@@ -34,6 +34,18 @@ function safeEqualString(a, b) {
   const bb = Buffer.from(String(b || ''));
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
+}
+
+function isAuthorizedDispatch(req, dispatchSecret) {
+  const provided = getHeader(req, 'x-dispatch-service-secret') || getHeader(req, 'x-whatsapp-dispatch-secret');
+  if (dispatchSecret && safeEqualString(provided, dispatchSecret)) return true;
+
+  const authHeader = String(getHeader(req, 'authorization') || '');
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && bearer && safeEqualString(bearer, cronSecret)) return true;
+
+  return false;
 }
 
 async function enqueueSmsTaskFromOp(db, opId, data, now) {
@@ -98,8 +110,8 @@ async function processDeadlineJob(db, job, now) {
 }
 
 export default async function whatsappDispatchHandler(req, res, dependencies = {}) {
-  if (req.method !== 'POST') {
-    res.setHeader?.('Allow', 'POST');
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    res.setHeader?.('Allow', 'POST, GET');
     return res.status(405).json({ success: false, error: 'method_not_allowed' });
   }
 
@@ -110,12 +122,11 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
   }
 
   const secretResult = await (dependencies.getDispatchServiceSecret || getDispatchServiceSecret)();
-  if (!secretResult.ok) {
-    return res.status(503).json({ success: false, error: secretResult.error });
+  if (!secretResult.ok && !process.env.CRON_SECRET) {
+    return res.status(503).json({ success: false, error: secretResult.error || 'dispatch_secret_not_configured' });
   }
 
-  const provided = getHeader(req, 'x-dispatch-service-secret') || getHeader(req, 'x-whatsapp-dispatch-secret');
-  if (!safeEqualString(provided, secretResult.value)) {
+  if (!isAuthorizedDispatch(req, secretResult.ok ? secretResult.value : null)) {
     return res.status(403).json({ success: false, error: 'dispatch_forbidden' });
   }
 
@@ -134,7 +145,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
   let tasksEnqueued = 0;
   let skipped = 0;
 
-  // Phase A: drain queue
   for (let i = 0; i < limit; i += 1) {
     const claim = await claimNextJob(db, { workerId, now, lockMs: 30_000 });
     if (!claim.ok || !claim.jobId) break;
@@ -156,7 +166,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     }
   }
 
-  // Phase B: recovery scan on delivery ops (if job was lost)
   const candidates = [];
   if (db._store instanceof Map) {
     for (const [path, data] of db._store.entries()) {
@@ -199,7 +208,6 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
     skipped += 1;
   }
 
-  // Phase C: device task outcomes → sms_sent / failed
   const settle = await (dependencies.settleTerminalSmsDeviceTasks || settleTerminalSmsDeviceTasks)(db, {
     now,
     limit,
