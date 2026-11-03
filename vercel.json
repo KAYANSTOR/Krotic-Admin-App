@@ -113,7 +113,7 @@
     },
     {
       "path": "/api/whatsapp/delivery/dispatch",
-      "schedule": "0 */6 * * *"
+      "schedule": "30 6 * * *"
     }
   ],
   "functions": {
