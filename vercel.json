@@ -110,6 +110,10 @@
     {
       "path": "/api/dispatch-notifications",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/whatsapp/delivery/dispatch",
+      "schedule": "0 */6 * * *"
     }
   ],
   "functions": {
