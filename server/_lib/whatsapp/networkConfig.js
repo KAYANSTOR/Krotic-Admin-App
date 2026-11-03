@@ -1,19 +1,30 @@
 /**
  * WhatsApp settings on networks/{networkId} only (non-secret fields).
- * Secrets never live here — Secret Manager only.
+ * Secrets never live here — Secret Manager / gateway vault only.
+ *
+ * Contract: docs/contracts/whatsapp-gateway-api.md
+ * Session status (gateway): docs/contracts/whatsapp-gateway-session-status.md
  */
 
-export const WHATSAPP_PROVIDERS = Object.freeze(['cloud_api', 'local_gateway']);
+export const WHATSAPP_PROVIDERS = Object.freeze(['cloud_api', 'local_gateway_qr']);
+
+/** @deprecated alias — prefer local_gateway_qr */
+export const LEGACY_LOCAL_GATEWAY = 'local_gateway';
+
 export const WHATSAPP_LINK_STATUSES = Object.freeze(['unlinked', 'linked', 'error']);
 
 const PHONE_NUMBER_ID_PATTERN = /^[0-9]{5,32}$/;
 const WABA_ID_PATTERN = /^[0-9]{5,32}$/;
 
+function normalizeProvider(raw) {
+  if (raw === LEGACY_LOCAL_GATEWAY) return 'local_gateway_qr';
+  if (WHATSAPP_PROVIDERS.includes(raw)) return raw;
+  return null;
+}
+
 /** Normalize stored network WhatsApp config for API responses (no secrets). */
 export function readNetworkWhatsappConfig(networkData = {}) {
-  const provider = WHATSAPP_PROVIDERS.includes(networkData.whatsappPrimaryProvider)
-    ? networkData.whatsappPrimaryProvider
-    : null;
+  const provider = normalizeProvider(networkData.whatsappPrimaryProvider);
   const linkStatus = WHATSAPP_LINK_STATUSES.includes(networkData.whatsappCloudLinkStatus)
     ? networkData.whatsappCloudLinkStatus
     : 'unlinked';
@@ -46,9 +57,9 @@ export function validateNetworkWhatsappInput(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, error: 'payload_invalid' };
   }
-  const forbidden = ['accessToken', 'appSecret', 'verifyToken', 'token', 'secret', 'password'];
+  const forbidden = ['accessToken', 'appSecret', 'verifyToken', 'token', 'secret', 'password', 'qr', 'session'];
   for (const key of Object.keys(raw)) {
-    if (forbidden.includes(key) || /secret|token|password/i.test(key)) {
+    if (forbidden.includes(key) || /secret|token|password|qr|session/i.test(key)) {
       return { ok: false, error: `secret_field_forbidden:${key}` };
     }
   }
@@ -57,13 +68,16 @@ export function validateNetworkWhatsappInput(raw) {
   if ('whatsappPrimaryProvider' in raw) {
     if (raw.whatsappPrimaryProvider === null) {
       value.whatsappPrimaryProvider = null;
-    } else if (!WHATSAPP_PROVIDERS.includes(raw.whatsappPrimaryProvider)) {
-      return { ok: false, error: 'provider_invalid' };
-    } else if (raw.whatsappPrimaryProvider === 'local_gateway') {
-      // D4: Local Gateway not implemented — reject activation until specs approved.
-      return { ok: false, error: 'local_gateway_not_enabled' };
     } else {
-      value.whatsappPrimaryProvider = raw.whatsappPrimaryProvider;
+      const normalized = normalizeProvider(raw.whatsappPrimaryProvider);
+      if (!normalized) {
+        return { ok: false, error: 'provider_invalid' };
+      }
+      if (normalized === 'local_gateway_qr') {
+        // Gateway service not production-ready — reject activation until PoC gate passes.
+        return { ok: false, error: 'local_gateway_qr_not_enabled' };
+      }
+      value.whatsappPrimaryProvider = normalized;
     }
   }
   if ('whatsappCloudLinkStatus' in raw) {
