@@ -18,12 +18,15 @@ export const DELIVERY_OPS_COLLECTION = 'whatsapp_delivery_operations';
 
 /**
  * Create delivery operation once for networkId + saleUuid.
+ * Optional toLocalPhone + messageBody enable SMS device task enqueue later.
  */
 export async function createDeliveryOperation(db, {
   networkId,
   ownerUid,
   saleUuid,
   inboundEventId = null,
+  toLocalPhone = null,
+  messageBody = null,
   now = Date.now(),
 }) {
   const id = buildDeliveryOperationId({ networkId, saleUuid });
@@ -39,6 +42,8 @@ export async function createDeliveryOperation(db, {
     providerId: 'meta',
     providerMessageId: null,
     status: 'accepted',
+    toLocalPhone: typeof toLocalPhone === 'string' ? toLocalPhone : null,
+    messageBody: typeof messageBody === 'string' ? messageBody.slice(0, 1000) : null,
     smsFallbackScheduledAtMs: null,
     smsFallbackSentAtMs: null,
     whatsappDeadlineAtMs: null,
@@ -180,8 +185,6 @@ export async function completeSmsFallbackFromDevice(db, deliveryOperationId, dev
   }
 
   if (deviceOutcome === 'failed') {
-    // Stay observable as failed-after-sms-attempt; do not invent sms_sent.
-    // Mark unknown-style fields for admin review; no auto-resend.
     const next = {
       ...current,
       status: 'failed',
