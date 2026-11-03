@@ -93,7 +93,14 @@ sms_pending   (قبل نتيجة الجهاز)
 | `users/{uid}` | `account_features.whatsapp_card_delivery` | boolean — اللوحة فقط |
 | `users/{uid}` | `accessStatus` | `TRIAL` \| `ACTIVE_PAID` \| `SUSPENDED_GRACE` \| `LOCKED_EXPIRED` |
 | `networks/{networkId}` | `whatsappPrimaryProvider` | `cloud_api` \| `local_gateway_qr` — لا يكتبه العميل |
-| `whatsapp_sms_device_tasks` | — | كما في `whatsapp-sms-device-task.md` (قراءة المالك + كتابة حقول الجهاز فقط) |
+| `whatsapp_sms_device_tasks` | — | كما في `whatsapp-sms-device-task.md` |
+| `whatsapp_gateway_sessions/{networkId}` | حالة غير سرّية | انظر `whatsapp-gateway-session-status.md` |
+
+### حالة الجلسة للوحة (خيار المالك 1 — معتمد)
+
+- الخدمة تكتب إلى `whatsapp_gateway_sessions/{networkId}` فقط: `status`, `lastSeenAtMs`, `reasonCode`, `deviceName`, `linkedAtMs`, `updatedAtMs`, `engineVersion`.
+- **لا** مسار `/v1/admin/...`.
+- **لا** QR ولا أسرار في الوثيقة.
 
 ---
 
@@ -112,21 +119,19 @@ sms_pending   (قبل نتيجة الجهاز)
 ## 8. اللوحة (مسؤوليات)
 
 - تفعيل/تعطيل المزود لكل شبكة.
-- عرض: `status` / `lastSeenAt` / `reasonCode` / `deviceName`.
-- إلغاء جلسة بصلاحية.
+- عرض: `status` / `lastSeenAt` / `reasonCode` / `deviceName` من `whatsapp_gateway_sessions`.
+- إلغاء جلسة بصلاحية (يستدعي مسار البوابة المصادق عليه).
 - مراقبة حالات الرسائل و`unknown` كحالة تحتاج تدخلًا.
-- إحصاءات.
+- إحصاءات عبر `collectNetworkWhatsappStatus`.
 - **ممنوع** عرض أو تخزين QR أو مفاتيح أو أسرار Meta.
 
 ---
 
-## 9. قرار مطلوب قبل شاشات المراقبة
+## 9. قرار المراقبة — مُغلق
 
-إما:
-- الخدمة تكتب حالة غير سرّية فقط إلى وثيقة تقرأها اللوحة، **أو**
-- مسار `/v1/admin/...` بمصادقة خدمة.
-
-لا يُنفَّذ أيّ منهما قبل اختيار موثّق — لا اختراع حقول.
+**الخيار 1 معتمد:** الخدمة تكتب حالة غير سرّية إلى `whatsapp_gateway_sessions/{networkId}`.
+لا مسار `/v1/admin/...`.
+التفاصيل: `docs/contracts/whatsapp-gateway-session-status.md`.
 
 ---
 
