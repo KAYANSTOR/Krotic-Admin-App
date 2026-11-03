@@ -1,5 +1,10 @@
 /**
  * Delivery operations — deterministic id + transactional state transitions.
+ *
+ * Contract (docs/contracts/whatsapp-gateway-api.md):
+ * - Operation stays sms_pending until real device result or reliable ACK.
+ * - tryStartSmsFallback only moves to sms_pending (and caller enqueues task).
+ * - completeSmsFallbackFromDevice is the only path to sms_sent from device.
  */
 import { buildDeliveryOperationId } from './eventIdentity.js';
 import {
@@ -127,6 +132,11 @@ export async function transitionDeliveryStatus(db, deliveryOperationId, toStatus
   return { ok: true, data: next };
 }
 
+/**
+ * Start SMS fallback path: move to sms_pending ONLY.
+ * Does NOT mark sms_sent. Caller must enqueue whatsapp_sms_device_tasks.
+ * sms_sent happens only via completeSmsFallbackFromDevice after real device result.
+ */
 export async function tryStartSmsFallback(db, deliveryOperationId, now = Date.now()) {
   const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
   const snap = await ref.get();
@@ -136,9 +146,53 @@ export async function tryStartSmsFallback(db, deliveryOperationId, now = Date.no
   if (!canStartSmsFallback(current.status)) {
     return { ok: false, error: 'sms_not_allowed_from_status', status: current.status };
   }
-  if (current.status !== 'sms_pending') {
-    const pending = await transitionDeliveryStatus(db, deliveryOperationId, 'sms_pending', {}, now);
-    if (!pending.ok) return pending;
+  if (current.status === 'sms_pending') {
+    return { ok: true, data: current, alreadyPending: true };
   }
-  return transitionDeliveryStatus(db, deliveryOperationId, 'sms_sent', {}, now);
+  return transitionDeliveryStatus(db, deliveryOperationId, 'sms_pending', {}, now);
+}
+
+/**
+ * Complete SMS fallback after real device outcome (task status sent|failed)
+ * or reliable provider ACK. This is the ONLY path that sets sms_sent.
+ *
+ * @param {'sent'|'failed'} deviceOutcome
+ * @param {{ deviceSentAtMs?: number, deviceError?: string|null }} meta
+ */
+export async function completeSmsFallbackFromDevice(db, deliveryOperationId, deviceOutcome, meta = {}, now = Date.now()) {
+  const ref = db.collection(DELIVERY_OPS_COLLECTION).doc(deliveryOperationId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, error: 'delivery_not_found' };
+  const current = snap.data() || {};
+
+  if (current.smsFallbackSentAtMs != null || current.status === 'sms_sent') {
+    return { ok: true, data: current, alreadySent: true };
+  }
+  if (current.status !== 'sms_pending') {
+    return { ok: false, error: 'not_sms_pending', status: current.status };
+  }
+
+  if (deviceOutcome === 'sent') {
+    return transitionDeliveryStatus(db, deliveryOperationId, 'sms_sent', {
+      deviceSentAtMs: meta.deviceSentAtMs ?? now,
+      deviceError: null,
+    }, now);
+  }
+
+  if (deviceOutcome === 'failed') {
+    // Stay observable as failed-after-sms-attempt; do not invent sms_sent.
+    // Mark unknown-style fields for admin review; no auto-resend.
+    const next = {
+      ...current,
+      status: 'failed',
+      smsOutcomeUnknown: false,
+      deviceError: meta.deviceError ? String(meta.deviceError).slice(0, 120) : 'sms_device_failed',
+      deviceFailedAtMs: now,
+      updatedAtMs: now,
+    };
+    await ref.set(next, { merge: false });
+    return { ok: true, data: next, deviceFailed: true };
+  }
+
+  return { ok: false, error: 'invalid_device_outcome', deviceOutcome };
 }
