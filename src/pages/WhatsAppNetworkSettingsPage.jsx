@@ -1,10 +1,30 @@
 import { useState, useCallback } from 'react';
-import { MessageCircle, ShieldAlert, RefreshCw, KeyRound, Unplug, Save, Activity } from 'lucide-react';
+import { MessageCircle, ShieldAlert, RefreshCw, KeyRound, Unplug, Save, Activity, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchHeader from '../components/ui/SearchHeader';
 import SettingsSection from '../components/ui/SettingsSection';
 import { Field, Select } from '../components/ui/Field';
 import { callAdminApi, adminApiError } from '../lib/adminApi';
+
+const GATEWAY_STATUS_LABELS = {
+  unlinked: 'غير مربوط',
+  qr_pending: 'بانتظار QR',
+  linking: 'جاري الربط',
+  linked: 'مربوط',
+  disconnected: 'مفصول',
+  relink_required: 'يتطلب إعادة ربط',
+  error: 'خطأ',
+  unknown: 'غير معروف — يحتاج تدخل',
+};
+
+function formatMs(ms) {
+  if (!Number.isSafeInteger(ms) || ms <= 0) return '—';
+  try {
+    return new Date(ms).toLocaleString('ar-YE', { dateStyle: 'short', timeStyle: 'medium' });
+  } catch {
+    return String(ms);
+  }
+}
 
 export default function WhatsAppNetworkSettingsPage() {
   const [networkId, setNetworkId] = useState('');
@@ -39,7 +59,8 @@ export default function WhatsAppNetworkSettingsPage() {
       const cfg = cfgRes.data?.config || {};
       setConfig(cfg);
       setHasAccessToken(Boolean(cfgRes.data?.hasAccessToken));
-      setProvider(cfg.whatsappPrimaryProvider || 'cloud_api');
+      const p = cfg.whatsappPrimaryProvider;
+      setProvider(p === 'local_gateway' ? 'local_gateway_qr' : (p || 'cloud_api'));
       setPhoneNumberId(cfg.whatsappPhoneNumberId || '');
       setLinkStatus(cfg.whatsappCloudLinkStatus || 'unlinked');
       setTokenInput('');
@@ -130,12 +151,15 @@ export default function WhatsAppNetworkSettingsPage() {
   };
 
   const counts = status?.counts;
+  const gateway = status?.gateway || null;
+  const gatewayStatusKey = gateway?.status || 'unlinked';
+  const gatewayNeedsAttention = gatewayStatusKey === 'unknown' || gatewayStatusKey === 'error' || gatewayStatusKey === 'relink_required';
 
   return (
     <div className="pb-24" dir="rtl">
       <SearchHeader
         title="إعدادات WhatsApp"
-        subtitle="إدارة ربط الشبكة — التوكن لا يُعرض بعد الحفظ"
+        subtitle="إدارة ربط الشبكة — التوكن وQR لا يُعرضان بعد الحفظ"
         actions={
           <button type="button" onClick={load} disabled={loading} className="p-2.5 rounded-full text-[var(--ui-muted)] hover:bg-[var(--ui-sunken)]" aria-label="تحديث">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -145,7 +169,7 @@ export default function WhatsAppNetworkSettingsPage() {
 
       <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex gap-2">
         <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-        <p>Access Token يُشفَّر على الخادم فقط. لن يظهر في الواجهة بعد الإدخال، ولا يُحفظ في المتصفح.</p>
+        <p>Access Token يُشفَّر على الخادم فقط. حالة جلسة البوابة تُقرأ من وثيقة غير سرّية — بلا QR ولا أسرار في الواجهة.</p>
       </div>
 
       <div className="mt-3 rounded-2xl bg-[var(--ui-surface)] border border-line p-4 space-y-3">
@@ -167,12 +191,50 @@ export default function WhatsAppNetworkSettingsPage() {
       {config && (
         <>
           <div className="mt-3">
+            <SettingsSection title="جلسة البوابة (غير سرّية)" icon={Smartphone}>
+              <div className={`p-3 rounded-xl border text-sm ${gatewayNeedsAttention ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-line bg-[var(--ui-sunken)]'}`}>
+                <div className="font-bold">
+                  {GATEWAY_STATUS_LABELS[gatewayStatusKey] || gatewayStatusKey}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[var(--ui-muted)]">آخر ظهور: </span>
+                    {formatMs(gateway?.lastSeenAtMs)}
+                  </div>
+                  <div>
+                    <span className="text-[var(--ui-muted)]">آخر تحديث: </span>
+                    {formatMs(gateway?.updatedAtMs)}
+                  </div>
+                  <div>
+                    <span className="text-[var(--ui-muted)]">رمز السبب: </span>
+                    <span className="font-mono" dir="ltr">{gateway?.reasonCode || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--ui-muted)]">الجهاز: </span>
+                    {gateway?.deviceName || '—'}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-[var(--ui-muted)]">ربط أول مرة: </span>
+                    {formatMs(gateway?.linkedAtMs)}
+                  </div>
+                </div>
+                {gatewayNeedsAttention ? (
+                  <p className="mt-2 text-[11px] font-medium">حالة تحتاج تدخلاً — لا إعادة إرسال آلية.</p>
+                ) : null}
+                {!gateway?.present ? (
+                  <p className="mt-2 text-[11px] text-[var(--ui-muted)]">لا وثيقة جلسة بعد — الخدمة لم تكتب حالة بعد.</p>
+                ) : null}
+              </div>
+            </SettingsSection>
+          </div>
+
+          <div className="mt-3">
             <SettingsSection title="حالة الربط والتشغيل" icon={Activity}>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">Cloud: {config.whatsappCloudLinkStatus || '—'}</div>
                 <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">التوكن: {hasAccessToken ? 'محفوظ مشفّر' : 'غير موجود'}</div>
                 <div className="p-2 rounded-lg bg-[var(--ui-sunken)] font-mono" dir="ltr">PN ID: {config.whatsappPhoneNumberId || '—'}</div>
-                <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">Webhook: مسجّل في الكود</div>
+                <div className="p-2 rounded-lg bg-[var(--ui-sunken)]">المزوّد: {config.whatsappPrimaryProvider || '—'}</div>
               </div>
               {counts ? (
                 <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
@@ -181,8 +243,9 @@ export default function WhatsAppNetworkSettingsPage() {
                   <div className="p-2 rounded-lg border border-line">واصل: {counts.delivered}</div>
                   <div className="p-2 rounded-lg border border-line">مقروء: {counts.read}</div>
                   <div className="p-2 rounded-lg border border-line">فشل: {counts.failed}</div>
-                  <div className="p-2 rounded-lg border border-line">SMS: {counts.smsSent}</div>
-                  <div className="p-2 rounded-lg border border-line col-span-1">معلّق: {counts.smsUnknown}</div>
+                  <div className="p-2 rounded-lg border border-line">SMS معلّق: {counts.smsPending ?? 0}</div>
+                  <div className="p-2 rounded-lg border border-line">SMS أُرسل: {counts.smsSent}</div>
+                  <div className="p-2 rounded-lg border border-line">مراجعة: {counts.smsUnknown}</div>
                   <div className="p-2 rounded-lg border border-line">طابور: {counts.queueQueued}</div>
                   <div className="p-2 rounded-lg border border-line">جهاز: {counts.deviceTasksQueued}</div>
                 </div>
@@ -195,10 +258,10 @@ export default function WhatsAppNetworkSettingsPage() {
               <Field label="المزوّد الأساسي">
                 <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
                   <option value="cloud_api">Cloud API</option>
-                  <option value="local_gateway">Local Gateway (موقوف)</option>
+                  <option value="local_gateway_qr">بوابة خادمية QR (موقوف حتى PoC)</option>
                 </Select>
               </Field>
-              <Field label="حالة الربط">
+              <Field label="حالة الربط (Cloud)">
                 <Select value={linkStatus} onChange={(e) => setLinkStatus(e.target.value)}>
                   <option value="unlinked">غير مربوط</option>
                   <option value="linked">مربوط</option>
