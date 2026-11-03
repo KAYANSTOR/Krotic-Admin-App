@@ -1,7 +1,9 @@
 /**
  * Delivery dispatch — service secret only.
  * 1) Drain Firestore queue jobs whose runAfterMs elapsed (deadline checks).
- * 2) Scan delivery ops still in sent + past deadline (recovery if job missing).
+ * 2) On SMS fallback: sms_pending + enqueue whatsapp_sms_device_tasks (no sms_sent).
+ * 3) Settle terminal device task outcomes → completeSmsFallbackFromDevice.
+ * 4) Recovery scan for lost jobs.
  * Exact 10s latency is NOT claimed without an external wake-up.
  */
 import { timingSafeEqual } from 'node:crypto';
@@ -15,6 +17,8 @@ import {
 import { isWhatsappDeadlineExpired } from './deliveryState.js';
 import { isWhatsappCardDeliveryEnabled } from './entitlementsGate.js';
 import { claimNextJob, completeJob, failJob } from './deliveryQueue.js';
+import { enqueueSmsDeviceTask } from './smsDeviceTaskContract.js';
+import { settleTerminalSmsDeviceTasks } from './smsDeviceCompletion.js';
 
 function getHeader(req, name) {
   const headers = req.headers || {};
@@ -32,28 +36,45 @@ function safeEqualString(a, b) {
   return timingSafeEqual(ba, bb);
 }
 
+async function enqueueSmsTaskFromOp(db, opId, data, now) {
+  if (!data?.ownerUid || !data?.networkId) {
+    return { ok: false, error: 'missing_owner_or_network' };
+  }
+  if (typeof data.toLocalPhone !== 'string' || typeof data.messageBody !== 'string') {
+    return { ok: false, error: 'missing_sms_payload' };
+  }
+  return enqueueSmsDeviceTask(db, {
+    deliveryOperationId: opId,
+    networkId: data.networkId,
+    ownerUid: data.ownerUid,
+    toLocalPhone: data.toLocalPhone,
+    body: data.messageBody,
+    now,
+  });
+}
+
 async function processDeadlineJob(db, job, now) {
   const opId = job.deliveryOperationId || job.jobId;
-  if (!opId) return { smsStarted: false, reason: 'missing_op' };
+  if (!opId) return { smsStarted: false, taskEnqueued: false, reason: 'missing_op' };
 
   const snap = await db.collection(DELIVERY_OPS_COLLECTION).doc(opId).get();
-  if (!snap.exists) return { smsStarted: false, reason: 'op_missing' };
+  if (!snap.exists) return { smsStarted: false, taskEnqueued: false, reason: 'op_missing' };
   const data = snap.data() || {};
 
   if (data.ownerUid) {
     const userSnap = await db.collection('users').doc(data.ownerUid).get();
     const features = userSnap.exists ? (userSnap.data() || {}).account_features : null;
     if (!isWhatsappCardDeliveryEnabled(features)) {
-      return { smsStarted: false, reason: 'entitlement_closed' };
+      return { smsStarted: false, taskEnqueued: false, reason: 'entitlement_closed' };
     }
   }
 
   if (data.smsFallbackSentAtMs != null) {
-    return { smsStarted: false, reason: 'sms_already_sent' };
+    return { smsStarted: false, taskEnqueued: false, reason: 'sms_already_sent' };
   }
 
   if (data.status === 'delivered' || data.status === 'read' || data.status === 'delivered_late_after_sms') {
-    return { smsStarted: false, reason: 'already_delivered' };
+    return { smsStarted: false, taskEnqueued: false, reason: 'already_delivered' };
   }
 
   if (
@@ -61,10 +82,19 @@ async function processDeadlineJob(db, job, now) {
     && isWhatsappDeadlineExpired(data.whatsappDeadlineAtMs, now)
   ) {
     const result = await tryStartSmsFallback(db, opId, now);
-    return { smsStarted: Boolean(result.ok), reason: result.ok ? 'sms_started' : result.error };
+    if (!result.ok) {
+      return { smsStarted: false, taskEnqueued: false, reason: result.error };
+    }
+    const after = result.data || data;
+    const enq = await enqueueSmsTaskFromOp(db, opId, after, now);
+    return {
+      smsStarted: true,
+      taskEnqueued: Boolean(enq.ok),
+      reason: enq.ok ? (enq.duplicate ? 'sms_pending_task_exists' : 'sms_pending_task_created') : (enq.error || 'task_enqueue_failed'),
+    };
   }
 
-  return { smsStarted: false, reason: 'not_due_or_wrong_status', status: data.status };
+  return { smsStarted: false, taskEnqueued: false, reason: 'not_due_or_wrong_status', status: data.status };
 }
 
 export default async function whatsappDispatchHandler(req, res, dependencies = {}) {
@@ -101,6 +131,7 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
 
   let queueProcessed = 0;
   let smsStarted = 0;
+  let tasksEnqueued = 0;
   let skipped = 0;
 
   // Phase A: drain queue
@@ -112,6 +143,7 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
       const outcome = await processDeadlineJob(db, claim.data, now);
       if (outcome.smsStarted) smsStarted += 1;
       else skipped += 1;
+      if (outcome.taskEnqueued) tasksEnqueued += 1;
       await completeJob(db, claim.jobId, { now, result: outcome });
     } catch (error) {
       await failJob(db, claim.jobId, {
@@ -154,20 +186,33 @@ export default async function whatsappDispatchHandler(req, res, dependencies = {
       && data.smsFallbackSentAtMs == null
     ) {
       const result = await tryStartSmsFallback(db, id, now);
-      if (result.ok) smsStarted += 1;
-      else skipped += 1;
+      if (result.ok) {
+        smsStarted += 1;
+        const enq = await enqueueSmsTaskFromOp(db, id, result.data || data, now);
+        if (enq.ok) tasksEnqueued += 1;
+      } else {
+        skipped += 1;
+      }
       continue;
     }
 
     skipped += 1;
   }
 
+  // Phase C: device task outcomes → sms_sent / failed
+  const settle = await (dependencies.settleTerminalSmsDeviceTasks || settleTerminalSmsDeviceTasks)(db, {
+    now,
+    limit,
+  });
+
   return res.status(200).json({
     success: true,
     queueProcessed,
     recoveryProcessed,
     smsStarted,
+    tasksEnqueued,
+    deviceSettled: settle.settled || 0,
     skipped,
-    note: 'Queue + recovery path active in code; exact 10s wake-up not claimed without external scheduler',
+    note: 'Queue + SMS task enqueue + device settle; exact 10s wake-up not claimed without external scheduler',
   });
 }
