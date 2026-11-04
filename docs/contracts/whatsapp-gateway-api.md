@@ -165,6 +165,27 @@ sms_pending   (قبل نتيجة الجهاز)
 
 ## 12. الحالة الصادقة الحالية
 
-كل ما سبق مختبر آليًا فقط حتى الآن.
-لا ربط QR حقيقي، لا إرسال WhatsApp فعلي، لا Staging.
-بوابة PoC للمحرك (رقم اختبار + بيئة بناء) ما زالت شرطًا قبل وصف البوابة بأنها جاهزة للإنتاج.
+واجهات الإدارة الوسيطة واختبار عقودها الآلية أضيفت في فرع `تكامل-مزايا-المدفوعة`؛ هذا لا يعني نشر المحرك الدائم.
+لا ربط QR حقيقي، ولا إرسال عبر محرك QR، ولا اختبار Staging موثق حتى الآن.
+بوابة PoC للمحرك (رقم اختبار + بيئة بناء + استعادة بعد إعادة التشغيل + عزل شبكتين) ما زالت شرطًا قبل وصف QR بأنه جاهز للإنتاج. Cloud API يحتاج كذلك إعداد Meta/Vercel واختباراً فعلياً مستقلاً.
+
+---
+
+## 13. واجهات التطبيق على Vercel (facade)
+
+هذه المسارات في مستودع الإدارة لا تُشغّل محرك WhatsApp؛ إنها تصادق مالك الشبكة/المدير، وتتحقق من `account_features.whatsapp_card_delivery` ومن `accessStatus ∈ {TRIAL, ACTIVE_PAID}`، ثم تستدعي Meta أو الخدمة الدائمة:
+
+| Method | المسار | التوجيه |
+|---|---|---|
+| `POST` | `/api/whatsapp/meta/exchange-token` | تبادل Embedded Signup code والتحقق من WABA/phone ID، ثم حفظ ciphertext. |
+| `GET` | `/api/whatsapp/session?networkId=…` | قراءة لقطة `whatsapp_gateway_sessions/{networkId}` غير السرية. |
+| `POST` | `/api/whatsapp/session/start` | استدعاء `POST /v1/session/link` ثم `POST /v1/session/qr` إلى الخدمة الدائمة. |
+| `POST` | `/api/whatsapp/session/unlink` | استدعاء `POST /v1/session/unlink`. |
+| `GET` | `/api/whatsapp/qr/generate?networkId=…` | مسار توافق لتوليد QR عبر الخدمة الدائمة؛ لا يخزن QR في Firestore. |
+| `GET` | `/api/whatsapp/qr/status?networkId=…` | قراءة الحالة غير السرية. |
+| `POST` | `/api/whatsapp/deliver` | عقد التطبيق الحالي: `networkId`, `deliveryId`, `destination`, `body`, `templateKey?`. |
+| `POST` | `/api/messages/send` | الإرسال الموحد؛ اختيار مزود من `networks/{networkId}.whatsappPrimaryProvider`. |
+
+الاستجابة المقبولة للإرسال تتطلب `{ "ok": true, "providerMessageId": "…" }`. يرفض الخادم إعادة استعمال `deliveryId` مع محتوى مختلف، ولا يخزن نص الرسالة أو رقم الوجهة في `whatsapp_message_requests`. يحول Meta Webhook حالات الرسائل إلى هذا السجل عندما تتوفر `biz_opaque_callback_data` أو معرّف المزود. قرار SMS الاحتياطي يبقى في التطبيق؛ خدمة Vercel لا تزعم تنفيذ إرسال SMS.
+
+تحتاج QR إلى إعداد `WHATSAPP_GATEWAY_ENABLED=true`, `WHATSAPP_GATEWAY_URL` و`WHATSAPP_GATEWAY_SERVICE_TOKEN` بعد اعتماد خدمة Node دائمة خارج Vercel فقط. إبقاء هذه المتغيرات غير مهيأة/معطلة يجعل المسار يفشل مغلقاً بـ503.

@@ -21,6 +21,16 @@ import templateCenterHandler from './server/_lib/templateCenterApi.js';
 import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
 import rebindEntitlementDeviceHandler from './server/_lib/entitlementDeviceRebind.js';
 import inventorySnapshotHandler from './server/apiHandlers/inventory-snapshot.js';
+import metaExchangeHandler from './server/_lib/whatsapp/metaExchangeHandler.js';
+import {
+  whatsappQrGenerateHandler,
+  whatsappQrStatusHandler,
+  whatsappSessionStartHandler,
+  whatsappSessionStatusHandler,
+  whatsappSessionUnlinkHandler,
+} from './server/_lib/whatsapp/gatewaySessionApi.js';
+import unifiedMessageHandler from './server/_lib/whatsapp/unifiedMessageHandler.js';
+import metaWebhookHandler from './api/whatsapp/meta/webhook.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -58,6 +68,15 @@ async function startServer() {
   app.all('/api/inventory/snapshot', (req, res) => inventorySnapshotHandler(req, res));
   app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
   app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
+  app.all('/api/whatsapp/meta/exchange-token', (req, res) => metaExchangeHandler(req, res));
+  app.all('/api/whatsapp/meta/webhook', (req, res) => metaWebhookHandler(req, res));
+  app.all('/api/whatsapp/session', (req, res) => whatsappSessionStatusHandler(req, res));
+  app.all('/api/whatsapp/session/start', (req, res) => whatsappSessionStartHandler(req, res));
+  app.all('/api/whatsapp/session/unlink', (req, res) => whatsappSessionUnlinkHandler(req, res));
+  app.all('/api/whatsapp/qr/generate', (req, res) => whatsappQrGenerateHandler(req, res));
+  app.all('/api/whatsapp/qr/status', (req, res) => whatsappQrStatusHandler(req, res));
+  app.all('/api/whatsapp/deliver', (req, res) => unifiedMessageHandler(req, res));
+  app.all('/api/messages/send', (req, res) => unifiedMessageHandler(req, res));
   app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));
   app.all('/api/entitlements/device-rebind', (req, res) => rebindEntitlementDeviceHandler(req, res));
 

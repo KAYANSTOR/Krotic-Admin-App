@@ -12,6 +12,15 @@ import settlementHandler from '../server/apiHandlers/settlement.js';
 import whatsappNetworkConfigHandler from '../server/apiHandlers/whatsapp-network-config.js';
 import whatsappRetentionPurgeHandler from '../server/apiHandlers/whatsapp-retention-purge.js';
 import whatsappUnknownOutcomesHandler from '../server/apiHandlers/whatsapp-unknown-outcomes.js';
+import metaExchangeHandler from '../server/_lib/whatsapp/metaExchangeHandler.js';
+import {
+  whatsappQrGenerateHandler,
+  whatsappQrStatusHandler,
+  whatsappSessionStartHandler,
+  whatsappSessionStatusHandler,
+  whatsappSessionUnlinkHandler,
+} from '../server/_lib/whatsapp/gatewaySessionApi.js';
+import unifiedMessageHandler from '../server/_lib/whatsapp/unifiedMessageHandler.js';
 
 // Each delegated handler retains its original authentication, authorization,
 // validation, and idempotency rules. This module only consolidates Vercel
@@ -33,7 +42,25 @@ export const API_ROUTE_HANDLERS = Object.freeze({
   'whatsapp-unknown-outcomes': whatsappUnknownOutcomesHandler,
 });
 
+export const WHATSAPP_API_ROUTE_HANDLERS = Object.freeze({
+  'whatsapp-meta-exchange-token': metaExchangeHandler,
+  'whatsapp-session-status': whatsappSessionStatusHandler,
+  'whatsapp-session-start': whatsappSessionStartHandler,
+  'whatsapp-session-unlink': whatsappSessionUnlinkHandler,
+  'whatsapp-qr-generate': whatsappQrGenerateHandler,
+  'whatsapp-qr-status': whatsappQrStatusHandler,
+  'whatsapp-deliver': unifiedMessageHandler,
+  'whatsapp-messages-send': unifiedMessageHandler,
+});
+
 export default async function handler(req, res) {
+  const whatsappRouteValue = req.query?.__whatsappRoute;
+  const whatsappRoute = Array.isArray(whatsappRouteValue) ? whatsappRouteValue[0] : whatsappRouteValue;
+  const whatsappHandler = typeof whatsappRoute === 'string' && Object.hasOwn(WHATSAPP_API_ROUTE_HANDLERS, whatsappRoute)
+    ? WHATSAPP_API_ROUTE_HANDLERS[whatsappRoute]
+    : null;
+  if (whatsappHandler) return whatsappHandler(req, res);
+
   const routeValue = req.query?.__router;
   const route = Array.isArray(routeValue) ? routeValue[0] : routeValue;
   const routeHandler = typeof route === 'string' && Object.hasOwn(API_ROUTE_HANDLERS, route)

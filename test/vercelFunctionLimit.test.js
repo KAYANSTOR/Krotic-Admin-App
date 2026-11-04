@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API_ROUTE_HANDLERS } from '../api/router.js';
+import { API_ROUTE_HANDLERS, WHATSAPP_API_ROUTE_HANDLERS } from '../api/router.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiRoot = path.join(root, 'api');
@@ -25,7 +25,7 @@ async function readVercelConfig() {
 
 test('Vercel Hobby deployment has exactly four serverless entry points', async () => {
   const functions = (await listApiFunctions(apiRoot)).sort();
-  assert.equal(functions.length, 4, \`expected 4 functions, found: \${functions.join(', ')}\`);
+  assert.equal(functions.length, 4, `expected 4 functions, found: ${functions.join(', ')}`);
   assert.deepEqual(functions, [
     'dispatch-notifications.js',
     'router.js',
@@ -63,9 +63,17 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/request-otp', '/api/router?__router=manage-user-auth&__apiRoute=request-otp'],
     ['/api/verify-otp', '/api/router?__router=manage-user-auth&__apiRoute=verify-otp'],
     ['/api/account-notifications', '/api/router?__router=manage-user-auth&__apiRoute=account-notifications'],
+    ['/api/whatsapp/meta/exchange-token', '/api/router?__whatsappRoute=whatsapp-meta-exchange-token'],
+    ['/api/whatsapp/session', '/api/router?__whatsappRoute=whatsapp-session-status'],
+    ['/api/whatsapp/session/start', '/api/router?__whatsappRoute=whatsapp-session-start'],
+    ['/api/whatsapp/session/unlink', '/api/router?__whatsappRoute=whatsapp-session-unlink'],
+    ['/api/whatsapp/qr/generate', '/api/router?__whatsappRoute=whatsapp-qr-generate'],
+    ['/api/whatsapp/qr/status', '/api/router?__whatsappRoute=whatsapp-qr-status'],
+    ['/api/whatsapp/deliver', '/api/router?__whatsappRoute=whatsapp-deliver'],
+    ['/api/messages/send', '/api/router?__whatsappRoute=whatsapp-messages-send'],
   ]);
   for (const [source, destination] of expected) {
-    assert.equal(destinations.get(source), destination, \`\${source} must retain its public contract\`);
+    assert.equal(destinations.get(source), destination, `${source} must retain its public contract`);
   }
 });
 
@@ -87,7 +95,23 @@ test('router exposes only the approved original server handlers', () => {
     'whatsapp-unknown-outcomes',
   ]);
   for (const [route, handler] of Object.entries(API_ROUTE_HANDLERS)) {
-    assert.equal(typeof handler, 'function', \`\${route} must be callable\`);
+    assert.equal(typeof handler, 'function', `${route} must be callable`);
+  }
+});
+
+test('WhatsApp endpoint map is callable and remains behind the shared router', () => {
+  assert.deepEqual(Object.keys(WHATSAPP_API_ROUTE_HANDLERS).sort(), [
+    'whatsapp-deliver',
+    'whatsapp-messages-send',
+    'whatsapp-meta-exchange-token',
+    'whatsapp-qr-generate',
+    'whatsapp-qr-status',
+    'whatsapp-session-start',
+    'whatsapp-session-status',
+    'whatsapp-session-unlink',
+  ]);
+  for (const [route, handler] of Object.entries(WHATSAPP_API_ROUTE_HANDLERS)) {
+    assert.equal(typeof handler, 'function', `${route} must be callable`);
   }
 });
 

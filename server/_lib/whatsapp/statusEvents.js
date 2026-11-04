@@ -5,6 +5,11 @@
 import { WHATSAPP_PROVIDER_META } from './eventIdentity.js';
 import { canTransition, canMarkDeliveredLateAfterSms } from './deliveryState.js';
 import { transitionDeliveryStatus, DELIVERY_OPS_COLLECTION } from './deliveryOperations.js';
+import {
+  findOutboundMessageRequestByDeliveryId,
+  findOutboundMessageRequestByProviderId,
+  applyStatusToOutboundMessageRequest,
+} from './messageOperations.js';
 
 export const STATUS_EVENTS_COLLECTION = 'whatsapp_status_events';
 
@@ -63,6 +68,7 @@ export function extractMetaStatusUpdates(payload) {
           internalStatus: internal,
           phoneNumberId,
           recipientId: st.recipient_id || null,
+          clientReferenceId: typeof st.biz_opaque_callback_data === 'string' ? st.biz_opaque_callback_data : null,
           occurredAtMs: st.timestamp ? Number(st.timestamp) * 1000 : null,
           errorCode: st.errors?.[0]?.code ?? null,
         });
@@ -244,6 +250,25 @@ export async function processMetaStatusUpdate(db, update, {
 
   const delivery = await findDeliveryByProviderMessageId(db, networkId, update.providerMessageId);
   if (!delivery) {
+    const outboundRequest = update.clientReferenceId
+      ? await findOutboundMessageRequestByDeliveryId(db, networkId, update.clientReferenceId)
+      : await findOutboundMessageRequestByProviderId(db, networkId, update.providerMessageId);
+    if (outboundRequest) {
+      const recorded = await recordStatusEvent(db, {
+        networkId,
+        providerMessageId: update.providerMessageId,
+        internalStatus: update.internalStatus,
+        metaStatus: update.metaStatus,
+        occurredAtMs: update.occurredAtMs,
+        now,
+        deliveryOperationId: null,
+      });
+      if (recorded.duplicate) {
+        return { ok: true, skipped: true, reason: 'status_event_duplicate', messageRequestId: outboundRequest.id };
+      }
+      const applied = await applyStatusToOutboundMessageRequest(db, outboundRequest, update, now);
+      return { ok: true, messageRequestId: outboundRequest.id, applied };
+    }
     const recorded = await recordStatusEvent(db, {
       networkId,
       providerMessageId: update.providerMessageId,

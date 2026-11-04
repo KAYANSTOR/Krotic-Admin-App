@@ -7,22 +7,33 @@ import { sealNetworkAccessToken, openNetworkAccessToken } from './secrets.js';
 
 export const NETWORK_SECRETS_COLLECTION = 'whatsapp_network_secrets';
 
-/**
- * Save sealed access token for a network. Overwrites previous envelope.
- * Does not write plaintext anywhere.
- */
-export async function saveNetworkAccessToken(db, networkId, accessToken, { now = Date.now(), actorUid = null } = {}) {
+/** Save an encrypted business token plus non-secret lifecycle metadata. */
+export async function saveNetworkAccessToken(db, networkId, accessToken, {
+  now = Date.now(),
+  actorUid = null,
+  tokenExpiresAtMs = null,
+  tokenType = 'embedded_signup_access_token',
+  wabaId = null,
+  phoneNumberId = null,
+  batch = null,
+} = {}) {
   if (!networkId) return { ok: false, error: 'network_id_required' };
   const sealed = sealNetworkAccessToken(networkId, accessToken);
   if (!sealed.ok) return sealed;
 
   const ref = db.collection(NETWORK_SECRETS_COLLECTION).doc(networkId);
-  await ref.set({
+  const secretDocument = {
     networkId,
     whatsappAccessTokenEnc: sealed.envelope,
+    tokenExpiresAtMs: Number.isSafeInteger(tokenExpiresAtMs) ? tokenExpiresAtMs : null,
+    tokenType: String(tokenType).slice(0, 64),
+    wabaId: typeof wabaId === 'string' ? wabaId : null,
+    phoneNumberId: typeof phoneNumberId === 'string' ? phoneNumberId : null,
     updatedAtMs: now,
     updatedBy: actorUid,
-  }, { merge: false });
+  };
+  if (batch) batch.set(ref, secretDocument, { merge: false });
+  else await ref.set(secretDocument, { merge: false });
 
   return { ok: true, networkId };
 }

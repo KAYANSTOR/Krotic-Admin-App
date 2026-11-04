@@ -199,6 +199,9 @@ service cloud.firestore {
     match /whatsapp_status_events/{eventId} {
       allow read, write: if false;
     }
+    match /whatsapp_message_requests/{requestId} {
+      allow read, write: if false;
+    }
 
     // Non-secret gateway session status (option 1). Service writes via Admin SDK only.
     match /whatsapp_gateway_sessions/{networkId} {

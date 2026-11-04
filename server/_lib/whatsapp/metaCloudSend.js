@@ -7,12 +7,13 @@
  * LIVE HTTP is only performed when dependencies.fetch is provided OR
  * WHATSAPP_LIVE_SEND=1 is set. Default is dry-run safe for tests/admin.
  *
- * Meta Graph: POST /v21.0/{phone-number-id}/messages
+ * Meta Graph: POST /v26.0/{phone-number-id}/messages (version configurable in server env)
  * Auth: Authorization: Bearer {access-token}
  */
-import { loadNetworkAccessToken } from './networkTokenStore.js';
+import { loadNetworkAccessToken, NETWORK_SECRETS_COLLECTION } from './networkTokenStore.js';
+import { getMetaGraphVersion } from './secrets.js';
 
-export const META_GRAPH_VERSION = 'v21.0';
+export const META_GRAPH_VERSION = getMetaGraphVersion();
 export const META_GRAPH_BASE = 'https://graph.facebook.com';
 
 /** Classify Meta HTTP / error payload into retry policy. */
@@ -83,10 +84,15 @@ export async function resolveNetworkCloudCredentials(db, networkId) {
   }
   const tokenResult = await loadNetworkAccessToken(db, networkId);
   if (!tokenResult.ok) return tokenResult;
+  const secretSnap = await db.collection(NETWORK_SECRETS_COLLECTION).doc(networkId).get();
+  const tokenExpiresAtMs = secretSnap.exists ? secretSnap.data()?.tokenExpiresAtMs : null;
+  if (Number.isSafeInteger(tokenExpiresAtMs) && tokenExpiresAtMs <= Date.now()) {
+    return { ok: false, error: 'network_token_expired' };
+  }
   return {
     ok: true,
     phoneNumberId: String(phoneNumberId),
-    accessToken: tokenResult.value,
+    accessToken: tokenResult.plaintext,
   };
 }
 
@@ -124,7 +130,7 @@ export async function sendCloudTextMessage(db, {
     };
   }
 
-  const url = `${META_GRAPH_BASE}/${META_GRAPH_VERSION}/${encodeURIComponent(creds.phoneNumberId)}/messages`;
+  const url = `${META_GRAPH_BASE}/${getMetaGraphVersion()}/${encodeURIComponent(creds.phoneNumberId)}/messages`;
   const fetchFn = dependencies.fetch || globalThis.fetch;
   let response;
   let responseText;
@@ -136,6 +142,7 @@ export async function sendCloudTextMessage(db, {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload.body),
+      signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(12_000) : undefined,
     });
     responseText = await response.text();
   } catch (error) {

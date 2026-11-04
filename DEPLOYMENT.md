@@ -23,7 +23,7 @@
 
 ## 2. البنية الخادمية المعتمدة
 
-- **المجدول اليومي الوحيد:** Vercel Cron عبر `vercel.json` (`/api/dispatch-notifications`, مؤمَّن بـ `CRON_SECRET`). يشغّل فحص الاشتراكات المنتهية ويحوّل المستحقة إلى `LOCKED_EXPIRED` ثم يعالج الإشعارات المجدولة. لا تُضاف مهمة Cron ثانية، ولا تُنشر Cloud Functions للجدولة.
+- **المجدولات اليومية:** Vercel Cron عبر `vercel.json` لـ`/api/dispatch-notifications` و`/api/whatsapp/delivery/dispatch`. كلتاهما يوميتان؛ لا تحققان مهلة تأكيد WhatsApp لعشر ثوانٍ ولا تعدان بجدولة فورية. لا تُستخدمان كبديل لخدمة WhatsApp دائمة.
 - **الإشعار الفوري:** Cloud Function `dispatchNotificationRequest` (عند إنشاء طلب) — غير مجدولة.
 - **المصدر المالي الوحيد:** الرصيد التراكمي على مستند `networks/{networkId}`:
   `totalSalesAmount`, `totalCommissionDue`, `totalPaidAmount`, `outstandingBalance`.
@@ -82,7 +82,7 @@ cd functions && npm ci && npm test && node --check index.js
    - `KROTAK_HMAC_SECRET` = Master Secret عشوائي طويل (32 بايت على الأقل) لتشفير `networkSecret` لكل شبكة. لا يُضمّن في APK ولا يُرسل للعميل.
    - `CRON_SECRET` = سرّ عشوائي لحماية `/api/dispatch-notifications`.
 2. **مفتاح الشبكة:** `POST /api/networks` مع `action=provision` ينشئ مفتاحًا خاصًا بالشبكة ويحفظ envelope مشفرًا (`networkSecretEncrypted`) بـ AES-256-GCM. بعد مصادقة العميل، يستدعي التطبيق `POST /api/network-secret` لاسترداد المفتاح عبر Firebase ID Token. يخزنه التطبيق في Android Keystore ولا يسجله أو يكتبه في Firestore/الـ APK.
-3. **Cron:** `vercel.json` يعرّف مهمة يومية واحدة لـ `/api/dispatch-notifications`. مع `CRON_SECRET` صحيح، تنفّذ فحص الانتهاء ثم إرسال الإشعارات؛ استدعاء المدير اليدوي يرسل الإشعارات فقط.
+3. **Cron:** `vercel.json` يعرّف مجدول `/api/dispatch-notifications` اليومي ومجدول `/api/whatsapp/delivery/dispatch` للاسترداد اليومي. لا يوفر Cron مهلة استجابة WhatsApp لعشر ثوانٍ؛ مسار الإشعارات محمي بـ`CRON_SECRET`، وبوابة WhatsApp بسر الخدمة الخاص بها.
 4. **أعِد النشر (Redeploy)** بعد ضبط المتغيّرات، ثم تحقّق:
    - دخول اللوحة يعمل.
    - إرسال إشعار (اختبار) يعمل.
@@ -92,3 +92,12 @@ cd functions && npm ci && npm test && node --check index.js
 بعد ضبط الخادم، استدعِ `POST /api/migrate` برمز مدير موثّق:
 1. `{ "action": "classify-users", "limit": 100 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true`.
 2. `{ "action": "rebuild-all", "limit": 50 }` ثم أعد الاستدعاء بـ`nextCursor` حتى `done: true` (يعيد بناء أرصدة الشبكات و`admin_aggregates`).
+
+
+## 8. واجهات WhatsApp الخادمية (فرع المزايا)
+
+قبل تفعيل WhatsApp على Vercel، راجع [خطة تنفيذ واجهات WhatsApp](docs/WHATSAPP_API_IMPLEMENTATION_AR.md). أضف `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_GRAPH_API_VERSION`, و`WHATSAPP_SECRETS_KEK` كمتغيرات server-only في كل بيئة مطلوبة. لا تضعها في `VITE_*` أو ملف `.env` منشور. اربط Meta Webhook على `/api/whatsapp/meta/webhook`، ثم انشر `firestore.rules` التي تمنع وصول العميل إلى `whatsapp_message_requests`.
+
+الإرسال الحي لـ Cloud API يظل معطلاً حتى اعتماد اختبار Meta؛ لا تضبط `WHATSAPP_LIVE_SEND=1` قبل ذلك. QR معطل افتراضياً ويحتاج خدمة Node دائمة خارج Vercel، عنوان `WHATSAPP_GATEWAY_URL` ورمز `WHATSAPP_GATEWAY_SERVICE_TOKEN`، وPoC ناجح لإعادة التشغيل والعزل وإرسال رسالة. لا تضبط `WHATSAPP_GATEWAY_ENABLED=true` قبل نشر/اختبار الخدمة. المسارات على Vercel مجرد واجهة وسيطة وليست محرك جلسة.
+
+تحقق أولاً على Preview: تبادل رمز Meta تجريبي، تحقق Webhook، استجابة QR من الخدمة الدائمة، اختبار `deliveryId` المكرر، قواعد Firestore، ثم بناء الواجهة. هذه الإضافة لا تنشر المشروع ولا تغير أسرار/إعدادات Vercel تلقائياً.

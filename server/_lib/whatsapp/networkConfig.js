@@ -6,6 +6,8 @@
  * Session status (gateway): docs/contracts/whatsapp-gateway-session-status.md
  */
 
+import { gatewayReadiness } from './gatewayClient.js';
+
 export const WHATSAPP_PROVIDERS = Object.freeze(['cloud_api', 'local_gateway_qr']);
 
 /** @deprecated alias — prefer local_gateway_qr */
@@ -73,8 +75,8 @@ export function validateNetworkWhatsappInput(raw) {
       if (!normalized) {
         return { ok: false, error: 'provider_invalid' };
       }
-      if (normalized === 'local_gateway_qr') {
-        // Gateway service not production-ready — reject activation until PoC gate passes.
+      if (normalized === 'local_gateway_qr' && !gatewayReadiness().configured) {
+        // Explicitly fail closed until the persistent QR service has passed its PoC gate.
         return { ok: false, error: 'local_gateway_qr_not_enabled' };
       }
       value.whatsappPrimaryProvider = normalized;

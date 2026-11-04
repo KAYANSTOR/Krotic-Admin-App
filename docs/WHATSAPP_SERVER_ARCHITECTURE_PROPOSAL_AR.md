@@ -1,13 +1,13 @@
 # مقترح معماري نهائي — تكامل WhatsApp الخادمي (للإدارة)
 
-**الحالة:** تصميم معماري معتمد شرطياً بعد إغلاق التوضيحات الأربعة؛ **لا إذن تنفيذ كود** حتى موافقة مستقلة لاحقة.  
-**الفرع:** `تكامل-مزايا-المدفوعة`  
-**القرارات:** D1–D8 + إغلاق نقاط المراجعة (2026-10-30)  
-**عقد Android:** `Krotak-Pro/feature/paid-features` → `docs/contracts/whatsapp-delivery-and-recharge-policy.md`  
-**الاستضافة الحالية:** Vercel Serverless + Firebase Admin SDK + Firestore  
-**vercel.json الحالي:** يحتوي `crons` يومياً لـ `/api/dispatch-notifications` فقط — **غير كافٍ** لمهلة 10 ثوانٍ أو التعافي.
+**الحالة:** وثيقة قرار تاريخية؛ بدأ تنفيذ واجهات الخادم في هذا الفرع. المرجع التنفيذي الحالي هو [خطة تنفيذ واجهات WhatsApp](WHATSAPP_API_IMPLEMENTATION_AR.md).
+**الفرع:** `تكامل-مزايا-المدفوعة`
+**القرارات:** D1–D8 + إغلاق نقاط المراجعة (2026-10-30)
+**عقد Android:** `Krotak-Pro/feature/paid-features` → `docs/contracts/whatsapp-delivery-and-recharge-policy.md`
+**الاستضافة الحالية:** Vercel Serverless + Firebase Admin SDK + Firestore
+**vercel.json الحالي:** يحتوي مهام Cron يومية للإشعارات وWhatsApp — **غير كافٍ** لمهلة 10 ثوانٍ أو التعافي.
 
-> **لا تنفيذ كود تكامل** في هذا الالتزام. المرحلة 0 غير مكتملة.
+> بنود D1–D8 أدناه تحفظ سجل القرارات الأصلي. عند التعارض مع الوضع الفعلي، يُتبع ملف التنفيذ الحالي؛ ولا يعني وجود واجهات Vercel أن خدمة QR الدائمة منشورة أو أن إرسالاً فعلياً اختُبر.
 
 ---
 
@@ -15,26 +15,26 @@
 
 | ID | القرار |
 |---|---|
-| D1 | أسرار Meta في **Google Secret Manager** فقط؛ عزل لكل شبكة |
+| D1 | **قرار تاريخي:** Secret Manager. التنفيذ الحالي يستخدم أسرار Vercel server-only وAES-256-GCM لرموز الشبكات في Firestore؛ راجع ملف التنفيذ الحالي. |
 | D2 | المزود على **`networks/{networkId}`** فقط |
 | D3 | HMAC-SHA256 على الجسم الخام + `hub.verify_token` + منع تكرار |
 | D4 | Local Gateway **موقوف** حتى مواصفات كاملة |
 | D5 | تقليل البيانات + حذف فعلي بعد المدة |
 | D6 | إنشاء ذري + ضمان مرة واحدة على مستوى قاعدة البيانات |
 | D7 | مزود واحد؛ SMS بعد فشل أو 10 ثوانٍ؛ بلا كرت ثانٍ |
-| D8 | لا كود قبل اعتماد التوضيحات |
+| D8 | النشر الفعلي يظل محجوباً حتى تهيئة الأسرار واختبار الخدمة؛ واجهات الخادم أُضيفت في هذا الفرع بطلب المالك. |
 
-**موافق عليه صراحة:** مسارات Cloud الخمسة، Secret Manager، إيقاف Gateway، لا تبديل مزودين، SMS، لا كرت جديد عند SMS.
+**سجل تاريخي:** عزل المزود، عدم تسريب الأسرار، وإبقاء QR وراء بوابة PoC. عقد التطبيق الحالي يضع احتياطي SMS في التطبيق؛ واجهات الخادم لا ترسل SMS.
 
 ---
 
 ## 1. المبادئ الملزمة
 
 1. لا أسرار في APK / SQLite / SharedPreferences / Logs / لوحة الإدارة / المستودع.
-2. Secret Manager فقط؛ عزل لكل `networkId` حيث ينطبق.
+2. App Secret وKEK في Vercel server-only؛ رمز كل شبكة ciphertext في `whatsapp_network_secrets/{networkId}`. لا secrets في Android أو `VITE_*`.
 3. مزود يدوي لكل شبكة؛ لا failover تلقائي.
 4. هوية حدث فريدة عبر الشبكات + `create` ذري.
-5. SMS بعد فشل نهائي أو غياب تأكيد خلال 10 ثوانٍ؛ لا إرسال مزدوج.
+5. التطبيق الحالي يقرر SMS الاحتياطي؛ واجهات API هنا لا ترسل SMS ولا تضمن مهلة عشر ثوانٍ.
 6. فصل الاستقبال عن المعالجة عن إصدار الكرت.
 7. `account_features.whatsapp_card_delivery === true` فقط (Fail-Closed).
 8. نجاح Webhook ≠ نجاح تسليم الكرت.
@@ -42,17 +42,20 @@
 
 ---
 
-## 2. المسارات (Cloud — معتمدة معمارياً)
+## 2. المسارات (التنفيذ الحالي)
 
 | الغرض | المسار | المستدعي | المصادقة |
 |---|---|---|---|
-| Webhook Meta | `/api/whatsapp/meta/webhook` | Meta | توقيع HMAC / verify_token |
-| إعداد المزود | `/api/whatsapp/network-config` | لوحة الإدارة | Admin فقط |
-| ربط Cloud غير السري | `/api/whatsapp/cloud/link` | لوحة الإدارة | Admin فقط |
-| حالة الربط | `/api/whatsapp/cloud/status` | إدارة أو مالك | Admin أو مالك الشبكة |
-| منسق التسليم | `/api/whatsapp/delivery/dispatch` | **مجدول خادمي فقط** | سر خدمة داخلي — **ليس** توكن عميل |
+| Meta Embedded Signup exchange | `/api/whatsapp/meta/exchange-token` | التطبيق/الإدارة | Firebase ID Token + مالك أو Admin |
+| Webhook Meta | `/api/whatsapp/meta/webhook` | Meta | HMAC / `verify_token` |
+| حالة جلسة QR | `/api/whatsapp/session` | التطبيق | Firebase ID Token + مالك أو Admin |
+| بدء/فصل QR | `/api/whatsapp/session/start`, `/session/unlink` | التطبيق | Firebase ID Token + مالك أو Admin |
+| واجهات QR المطلوبة | `/api/whatsapp/qr/generate`, `/qr/status` | التطبيق | Firebase ID Token + مالك أو Admin |
+| إرسال متوافق مع التطبيق | `/api/whatsapp/deliver` | التطبيق | Firebase ID Token + استحقاق + `deliveryId` |
+| إرسال موحد | `/api/messages/send` | التطبيق/الخادم | Firebase ID Token + استحقاق + مزود نشط |
+| منسق التسليم القديم | `/api/whatsapp/delivery/dispatch` | مجدول خادمي فقط | سر خدمة داخلي؛ ليس توكن عميل |
 
-Local Gateway: مسارات موثّقة سابقاً **معلّقة (D4)**.
+واجهات QR في Vercel هي facade فقط؛ المحرك الدائم وعنوانه وسره غير مُهيّأين افتراضياً، لذلك لا توجد جلسة QR فعلية حتى نشر خدمة متوافقة مع عقد `whatsapp-gateway-api.md`.
 
 ---
 

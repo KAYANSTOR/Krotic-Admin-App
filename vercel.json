@@ -101,6 +101,38 @@
       "destination": "/api/router?__router=whatsapp-unknown-outcomes"
     },
     {
+      "source": "/api/whatsapp/meta/exchange-token",
+      "destination": "/api/router?__whatsappRoute=whatsapp-meta-exchange-token"
+    },
+    {
+      "source": "/api/whatsapp/session/start",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-start"
+    },
+    {
+      "source": "/api/whatsapp/session/unlink",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-unlink"
+    },
+    {
+      "source": "/api/whatsapp/session",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-status"
+    },
+    {
+      "source": "/api/whatsapp/qr/generate",
+      "destination": "/api/router?__whatsappRoute=whatsapp-qr-generate"
+    },
+    {
+      "source": "/api/whatsapp/qr/status",
+      "destination": "/api/router?__whatsappRoute=whatsapp-qr-status"
+    },
+    {
+      "source": "/api/whatsapp/deliver",
+      "destination": "/api/router?__whatsappRoute=whatsapp-deliver"
+    },
+    {
+      "source": "/api/messages/send",
+      "destination": "/api/router?__whatsappRoute=whatsapp-messages-send"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

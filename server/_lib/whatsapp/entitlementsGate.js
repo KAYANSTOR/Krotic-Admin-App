@@ -26,9 +26,9 @@ export async function assertWhatsappEntitlementForNetwork(db, networkId) {
     return { ok: false, status: 404, error: 'network_not_found' };
   }
   const network = networkSnap.data() || {};
-  const ownerUid = typeof network.owner_uid === 'string' && network.owner_uid
-    ? network.owner_uid
-    : (networkId === network.uid ? network.uid : null);
+  const ownerUid = [network.owner_uid, network.ownerUid, network.uid]
+    .find((candidate) => typeof candidate === 'string' && candidate.length > 0)
+    || (networkId === network.uid ? network.uid : null);
   // Legacy: networkId may equal owner uid
   const resolvedOwner = ownerUid || (typeof network.uid === 'string' ? network.uid : null) || networkId;
 
@@ -39,6 +39,9 @@ export async function assertWhatsappEntitlementForNetwork(db, networkId) {
   const user = userSnap.data() || {};
   if (!isWhatsappCardDeliveryEnabled(user.account_features)) {
     return { ok: false, status: 403, error: 'feature_locked' };
+  }
+  if (!['TRIAL', 'ACTIVE_PAID'].includes(user.accessStatus)) {
+    return { ok: false, status: 403, error: 'account_access_locked' };
   }
   return { ok: true, ownerUid: resolvedOwner, network };
 }
