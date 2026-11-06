@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeUserAccess } from '../src/lib/accessStatus.js';
+import { resolveLeaseAccessStatus } from '../server/_lib/accessStatus.js';
 
 test('modern suspension state overrides stale legacy active flags', () => {
   assert.deepEqual(normalizeUserAccess({
@@ -56,6 +57,14 @@ test('unknown explicit access status fails closed for administration UI', () => 
 test('legacy-only records preserve their existing status fields', () => {
   const legacy = { uid: 'user-5', is_active: true, is_trial: true };
   assert.equal(normalizeUserAccess(legacy), legacy);
+});
+
+test('lease state uses safe legacy fallback only when the modern status is absent', () => {
+  assert.equal(resolveLeaseAccessStatus({ is_active: true, is_trial: true }), 'TRIAL');
+  assert.equal(resolveLeaseAccessStatus({ is_active: true, is_trial: false }), 'ACTIVE_PAID');
+  assert.equal(resolveLeaseAccessStatus({ is_active: false, is_trial: false }), '');
+  assert.equal(resolveLeaseAccessStatus({ is_active: true, accessStatus: 'SUSPENDED_GRACE' }), 'SUSPENDED_GRACE');
+  assert.equal(resolveLeaseAccessStatus({ is_active: true, accessStatus: 'UNKNOWN' }), 'UNKNOWN');
 });
 
 

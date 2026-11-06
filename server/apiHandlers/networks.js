@@ -423,7 +423,7 @@ export async function repairLegacyAccess(db, { value, actorUid, now }) {
   };
 }
 
-async function renew(db, { value, actorUid, now }) {
+export async function renewSubscription(db, { value, actorUid, now }) {
   const userRef = db.collection('users').doc(value.uid);
   const result = await db.runTransaction(async (transaction) => {
     const userSnap = await transaction.get(userRef);
@@ -688,7 +688,7 @@ export default async function handler(req, res) {
     let result;
     if (parsed.value.action === 'provision') result = await provision(db, { ownerUid: parsed.value.ownerUid, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'update-access') result = await updateAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
-    else if (parsed.value.action === 'renew') result = await renew(db, { value: parsed.value, actorUid: caller.callerUid, now });
+    else if (parsed.value.action === 'renew') result = await renewSubscription(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'repair-access') result = await repairLegacyAccess(db, { value: parsed.value, actorUid: caller.callerUid, now });
     else if (parsed.value.action === 'delete') result = await deleteAccount(db, { uid: parsed.value.uid, actorUid: caller.callerUid, now });
     else result = await batchExpiry(db, { value: parsed.value, actorUid: caller.callerUid, now });

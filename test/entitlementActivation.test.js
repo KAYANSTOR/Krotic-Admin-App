@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import activateEntitlement from '../server/_lib/entitlementActivation.js';
 import rebindEntitlementDevice from '../server/_lib/entitlementDeviceRebind.js';
+import { renewSubscription } from '../server/apiHandlers/networks.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -29,7 +30,15 @@ function makeDb(user) {
   const ref = (collection, id) => ({ collection, id, key: `${collection}/${id}` });
   const db = {
     collection(name) {
-      return { doc(id) { return ref(name, id ?? `auto-${++autoId}`); } };
+      return {
+        doc(id) { return ref(name, id ?? `auto-${++autoId}`); },
+        async add(data) {
+          const documentRef = ref(name, `auto-${++autoId}`);
+          writes.push({ ref: documentRef, data, options: { merge: false } });
+          docs.set(documentRef.key, data);
+          return documentRef;
+        },
+      };
     },
     async runTransaction(callback) {
       const transaction = {
@@ -123,6 +132,8 @@ test('يرفض الحالات غير المؤهلة والتاريخ المنت�
     baseUser({ accessStatus: 'UNKNOWN' }),
     baseUser({ accessStatus: undefined }),
     baseUser({ subscriptionEndsAt: new Date(NOW - 1) }),
+    baseUser({ accessStatus: undefined, is_active: true, is_trial: false, subscriptionEndsAt: new Date(NOW - 1) }),
+    baseUser({ accessStatus: undefined, is_active: false, is_trial: false }),
     baseUser({ subscriptionEndsAt: null, subscription_end_date: null }),
   ]) {
     const { db } = makeDb(user);
@@ -135,6 +146,79 @@ test('يرفض الحالات غير المؤهلة والتاريخ المنت�
     assert.equal(res.statusCode, 403);
     assert.equal(res.body.error, 'account_not_eligible');
   }
+});
+
+test('يصدر عقداً جديداً للحساب legacy النشط ذي تاريخ صلاحية مستقبلي', async () => {
+  const endAt = new Date(NOW + 15 * 24 * 60 * 60 * 1000);
+  const legacyUser = {
+    uid: 'user-1',
+    is_active: true,
+    is_trial: false,
+    subscription_end_date: endAt,
+  };
+  const { db } = makeDb(legacyUser);
+  const res = makeResponse();
+
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.commercialUntil, endAt.toISOString());
+  assert.equal(res.body.payload.trialEndsAt, undefined);
+  assert.equal(verify(
+    null,
+    Buffer.from(JSON.stringify(res.body.payload), 'utf8'),
+    publicKey,
+    Buffer.from(res.body.signature, 'base64'),
+  ), true);
+});
+
+test('يجدد الخادم اشتراكاً منتهياً ثم يصدر lease جديداً بتوقيع صالح', async () => {
+  const expiredAt = new Date(NOW - 5 * 24 * 60 * 60 * 1000);
+  const { db, docs } = makeDb(baseUser({
+    accessStatus: 'LOCKED_EXPIRED',
+    networkId: 'NET-10001',
+    subscriptionEndsAt: expiredAt,
+    subscription_end_date: expiredAt,
+  }));
+  docs.set('networks/NET-10001', {
+    networkId: 'NET-10001',
+    owner_uid: 'user-1',
+    accessStatus: 'LOCKED_EXPIRED',
+    subscriptionEndsAt: expiredAt,
+    subscription_end_date: expiredAt,
+  });
+
+  const renewal = await renewSubscription(db, {
+    value: { uid: 'user-1', extensionDays: 30 },
+    actorUid: 'admin-1',
+    now: NOW,
+  });
+  const renewedEnd = NOW + 30 * 24 * 60 * 60 * 1000;
+  assert.equal(renewal.status, 'renewed');
+  assert.equal(renewal.subscriptionEndsAt, renewedEnd);
+  assert.equal(docs.get('users/user-1').accessStatus, 'ACTIVE_PAID');
+  assert.equal(docs.get('networks/NET-10001').accessStatus, 'ACTIVE_PAID');
+  assert.equal(docs.get('users/user-1').subscriptionEndsAt.toMillis(), renewedEnd);
+  assert.equal(docs.get('networks/NET-10001').subscriptionEndsAt.toMillis(), renewedEnd);
+
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.commercialUntil, new Date(renewedEnd).toISOString());
+  assert.equal(verify(
+    null,
+    Buffer.from(JSON.stringify(res.body.payload), 'utf8'),
+    publicKey,
+    Buffer.from(res.body.signature, 'base64'),
+  ), true);
 });
 
 test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوقيع Ed25519', async () => {
@@ -228,6 +312,68 @@ test('سياسة العمل دون اتصال لها سقف مستقل عن نه
   assert.ok(Date.parse(res.body.payload.maxOfflineUntil) < Date.parse(res.body.payload.commercialUntil));
 });
 
+test('إصدار متكرر يحسب العقد من الاشتراك الحالي ولا يعيد العقد السابق المنتهي', async () => {
+  const endAt = new Date(NOW + 40 * 24 * 60 * 60 * 1000);
+  const { db } = makeDb(baseUser({
+    accessStatus: 'ACTIVE_PAID',
+    subscriptionEndsAt: endAt,
+  }));
+  const previous = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    previous,
+    activationDependencies(db),
+  );
+  assert.equal(previous.statusCode, 200);
+
+  const previousLeaseExpiredAt = Date.parse(previous.body.payload.maxOfflineUntil);
+  const reissueNow = NOW + 31 * 24 * 60 * 60 * 1000;
+  assert.ok(previousLeaseExpiredAt < reissueNow);
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db, { now: reissueNow }),
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.issuedAt, new Date(reissueNow).toISOString());
+  assert.equal(res.body.payload.commercialUntil, endAt.toISOString());
+  assert.notEqual(res.body.payload.issuedAt, previous.body.payload.issuedAt);
+  assert.equal(verify(
+    null,
+    Buffer.from(JSON.stringify(res.body.payload), 'utf8'),
+    publicKey,
+    Buffer.from(res.body.signature, 'base64'),
+  ), true);
+});
+
+test('عند تعارض نسخة الشبكة تعتمد حالة المستخدم الصريحة الموثوقة وتاريخها الحالي', async () => {
+  const currentEnd = new Date(NOW + 25 * 24 * 60 * 60 * 1000);
+  const { db, docs } = makeDb(baseUser({
+    accessStatus: 'ACTIVE_PAID',
+    networkId: 'NET-10001',
+    subscriptionEndsAt: currentEnd,
+  }));
+  docs.set('networks/NET-10001', {
+    networkId: 'NET-10001',
+    owner_uid: 'user-1',
+    accessStatus: 'LOCKED_EXPIRED',
+    subscriptionEndsAt: new Date(NOW - 10 * 24 * 60 * 60 * 1000),
+  });
+
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.commercialUntil, currentEnd.toISOString());
+  assert.equal(res.body.payload.uid, 'user-1');
+});
+
 test('يرفض التثبيت المختلف بعد الربط ولا يغير الوثيقة', async () => {
   const { db, docs, writes } = makeDb(baseUser({ entitlementInstallationId: 'install-a' }));
   const res = makeResponse();
@@ -264,6 +410,19 @@ test('يرفض طلب التوقيع إذا لم يكن مفتاح البيئة 
     request({ userId: 'user-1', deviceId: 'install-a' }),
     res,
     activationDependencies(db, { privateKey: '' }),
+  );
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, 'entitlement_signing_not_configured');
+  assert.equal(writes.length, 0);
+});
+
+test('يرفض مفتاحاً غير صالح دون كتابة ربط الجهاز', async () => {
+  const { db, writes } = makeDb(baseUser());
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db, { privateKey: 'not-a-valid-private-key' }),
   );
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.error, 'entitlement_signing_not_configured');

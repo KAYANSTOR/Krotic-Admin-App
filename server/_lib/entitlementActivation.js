@@ -2,6 +2,7 @@ import { createPrivateKey, sign } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from './firebaseAdmin.js';
+import { resolveLeaseAccessStatus } from './accessStatus.js';
 
 export const ENTITLEMENT_KEY_ID = 'ed25519-krotak-2026-10-v1';
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -164,9 +165,7 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
         return { error: 'installation_bound_to_another_account', status: 409 };
       }
       const user = snapshot.data() || {};
-      const accessStatus = typeof user.accessStatus === 'string'
-        ? user.accessStatus.trim().toUpperCase()
-        : '';
+      const accessStatus = resolveLeaseAccessStatus(user);
       if (!ACTIVE_STATUSES.has(accessStatus)) {
         return { error: 'account_not_eligible', status: 403 };
       }
