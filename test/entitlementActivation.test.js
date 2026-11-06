@@ -137,6 +137,36 @@ test('يرفض الحالات غير المؤهلة والتاريخ المنت�
   }
 });
 
+test('يستخدم أحدث تجديد في سجل الشبكة ويصلح سجل المستخدم قبل إصدار الاستحقاق', async () => {
+  const { db, docs } = makeDb(baseUser({
+    accessStatus: 'SUSPENDED_GRACE',
+    updatedAtMs: NOW - 2_000,
+  }));
+  docs.set('networks/user-1', {
+    owner_uid: 'user-1',
+    accessStatus: 'ACTIVE_PAID',
+    is_active: true,
+    is_trial: false,
+    subscriptionEndsAt: new Date(NOW + 20 * 24 * 60 * 60 * 1000),
+    subscription_end_date: new Date(NOW + 20 * 24 * 60 * 60 * 1000),
+    updatedAtMs: NOW - 1_000,
+  });
+
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.commercialUntil,
+    new Date(NOW + 20 * 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(docs.get('users/user-1').accessStatus, 'ACTIVE_PAID');
+  assert.equal(docs.get('users/user-1').is_active, true);
+  assert.equal(docs.get('networks/user-1').accessStatus, 'ACTIVE_PAID');
+});
+
 test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوقيع Ed25519', async () => {
   const { db, docs, writes } = makeDb(baseUser());
   const res = makeResponse();
@@ -150,7 +180,7 @@ test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوق
   assert.equal(res.statusCode, 200);
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
   assert.equal(docs.get('device_bindings/install-a').uid, 'user-1');
-  assert.equal(writes.length, 2);
+  assert.equal(writes.length, 3);
   assert.equal(res.body.payload.uid, 'user-1');
   assert.equal(res.body.payload.installationId, 'install-a');
   assert.equal(res.body.payload.userId, 'user-1');

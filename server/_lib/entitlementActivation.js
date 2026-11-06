@@ -2,6 +2,7 @@ import { createPrivateKey, sign } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from './firebaseAdmin.js';
+import { chooseLatestAccessState, accessStateMatches } from './accessReconciliation.js';
 
 export const ENTITLEMENT_KEY_ID = 'ed25519-krotak-2026-10-v1';
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -164,14 +165,21 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
         return { error: 'installation_bound_to_another_account', status: 409 };
       }
       const user = snapshot.data() || {};
-      const accessStatus = typeof user.accessStatus === 'string'
-        ? user.accessStatus.trim().toUpperCase()
-        : '';
+      const networkId = typeof user.networkId === 'string' && user.networkId.trim()
+        ? user.networkId.trim()
+        : uid;
+      const networkRef = db.collection('networks').doc(networkId);
+      const networkSnapshot = await transaction.get(networkRef);
+      const network = networkSnapshot.exists ? networkSnapshot.data() || {} : null;
+      const networkBelongsToUser = Boolean(network)
+        && (network.owner_uid === uid || (!network.owner_uid && networkId === uid));
+      const accessState = chooseLatestAccessState(user, networkBelongsToUser ? network : null);
+      const accessStatus = accessState?.accessStatus || '';
       if (!ACTIVE_STATUSES.has(accessStatus)) {
         return { error: 'account_not_eligible', status: 403 };
       }
 
-      const endMillis = timestampMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+      const endMillis = timestampMillis(accessState?.subscriptionEndsAt ?? accessState?.subscription_end_date);
       if (!Number.isFinite(endMillis) || endMillis <= now) {
         return { error: 'account_not_eligible', status: 403 };
       }
@@ -181,6 +189,24 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
         : '';
       if (boundInstallationId && boundInstallationId !== installationId) {
         return { error: 'installation_mismatch', status: 409 };
+      }
+
+      // A previous deployment could update users and networks at different times.
+      // Reconcile the older record before issuing a lease so the client cannot
+      // receive "suspended" or an old expiry after an admin renewal.
+      if (accessState && !accessStateMatches(user, accessState)) {
+        transaction.set(userRef, {
+          ...accessState,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: now,
+        }, { merge: true });
+      }
+      if (accessState && networkBelongsToUser && !accessStateMatches(network, accessState)) {
+        transaction.set(networkRef, {
+          ...accessState,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: now,
+        }, { merge: true });
       }
       const leaseVersion = leaseVersionFor(user);
       if (!boundInstallationId) {
