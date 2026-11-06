@@ -32,7 +32,8 @@ const MAX_SALE_ID_LENGTH = 128;
 const MINOR_UNITS_PER_RIYAL = 100;
 const MAX_AMOUNT_RIYAL = 1_000_000_000_000;
 const MAX_AMOUNT_MINOR = MAX_AMOUNT_RIYAL * MINOR_UNITS_PER_RIYAL;
-const SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const SALE_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const LEGACY_SALE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 const SALE_CREATED_MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
@@ -90,6 +91,16 @@ export function canonicalSalePayload(input) {
 
 export function computePayloadHash(input) {
   return createHash('sha256').update(canonicalSalePayload(input)).digest('hex');
+}
+
+/**
+ * Firestore document IDs cannot contain `/`. Legacy sale IDs remain stored
+ * under their original document name to preserve existing idempotency; newer
+ * IDs that use characters outside the legacy set are mapped to a stable hash.
+ */
+function saleDocumentId(saleUuid) {
+  if (LEGACY_SALE_ID_PATTERN.test(saleUuid)) return saleUuid;
+  return createHash('sha256').update(`sale_uuid:${saleUuid}`).digest('hex');
 }
 
 /**
@@ -232,8 +243,9 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
   // الشبكات الجديدة تستخدم NET-xxxxx كمفتاح المستند، بينما الحسابات القديمة
   // تستخدم UID مباشرة؛ يمرر المستدعي المعرّف المحسوب من users/{uid}.networkId.
   const networkRef = db.collection('networks').doc(networkId);
-  const saleRef = networkRef.collection('sales').doc(payload.saleUuid);
-  const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${payload.saleUuid}`);
+  const saleDocId = saleDocumentId(payload.saleUuid);
+  const saleRef = networkRef.collection('sales').doc(saleDocId);
+  const registryRef = db.collection('sale_ingest_registry').doc(`${uid}_${saleDocId}`);
 
   return db.runTransaction(async (transaction) => {
     const existing = await transaction.get(saleRef);
