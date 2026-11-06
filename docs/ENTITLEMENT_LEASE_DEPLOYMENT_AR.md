@@ -18,7 +18,7 @@
 {"userId":"<Firebase UID>","deviceId":"<installation ID>"}
 ```
 
-الخادم يطابق UID مع الرمز الموثّق، ويصدر العقد فقط إذا كانت `accessStatus` تساوي `TRIAL` أو `ACTIVE_PAID` وكان `subscriptionEndsAt` أو `subscription_end_date` في المستقبل. أول تثبيت يُحجز ذرياً في `users/{uid}.entitlementInstallationId` وسجل `device_bindings/{installationId}`. أي تثبيت مختلف يُرفض بـ `409 installation_mismatch`، وأي تثبيت مرتبط بحساب آخر يُرفض بـ `409 installation_bound_to_another_account`.
+الخادم يطابق UID مع الرمز الموثّق، ويقارن أحدث حالة خادمية من وثيقة المستخدم ووثيقة الشبكة المملوكة له باستخدام `updatedAtMs`؛ وعند غياب الطابع الزمني تُقدّم وثيقة المستخدم. يصدر العقد للحالة `TRIAL` أو `ACTIVE_PAID` فقط، مع تاريخ اشتراك مستقبلي. للسجلات القديمة التي لا تحتوي `accessStatus`، يُقبل fallback فقط عندما يكون `is_active === true`، ويحدد `is_trial` نوع الاستحقاق؛ أما الحالة الصريحة المجهولة أو legacy غير النشط فتبقى مغلقة ما لم توجد حالة خادمية أحدث صالحة. أول تثبيت يُحجز ذرياً في `users/{uid}.entitlementInstallationId` وسجل `device_bindings/{installationId}`. أي تثبيت مختلف يُرفض بـ `409 installation_mismatch`، وأي تثبيت مرتبط بحساب آخر يُرفض بـ `409 installation_bound_to_another_account`.
 
 الرد `{payload, signature}`؛ التوقيع Ed25519 يغطي كامل JSON payload، ويحتوي العقد على `uid` و`installationId` و`issuedAt` و`notBefore` و`version` و`keyId` و`operations` و`commercialUntil` و`maxOfflineUntil` و`serverTime`. لا يصدر الخادم عقداً بعد انتهاء الاستحقاق أو لحالة غير معروفة.
 

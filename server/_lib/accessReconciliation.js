@@ -1,5 +1,3 @@
-import { ACCESS_STATUSES } from './accessStatus.js';
-
 const ACTIVE_STATUSES = new Set(['TRIAL', 'ACTIVE_PAID']);
 
 function timestampMillis(value) {
@@ -16,13 +14,16 @@ function timestampMillis(value) {
 
 export function accessStateOf(record) {
   if (!record || typeof record !== 'object') return null;
-  const status = typeof record.accessStatus === 'string'
+  const explicitStatus = typeof record.accessStatus === 'string'
     ? record.accessStatus.trim().toUpperCase()
     : '';
-  if (!ACCESS_STATUSES.includes(status)) return null;
+  const status = explicitStatus || (record.is_active === true
+    ? (record.is_trial === true ? 'TRIAL' : 'ACTIVE_PAID')
+    : record.is_active === false ? 'LEGACY_INACTIVE' : '');
+  // Preserve explicit unknown and legacy inactive states for timestamp
+  // comparison; the issuer's active-status allowlist will fail them closed.
+  if (!status) return null;
   const end = record.subscriptionEndsAt ?? record.subscription_end_date ?? null;
-  const endMs = timestampMillis(end);
-  if (!end || !endMs) return null;
   return {
     accessStatus: status,
     is_active: ACTIVE_STATUSES.has(status),
