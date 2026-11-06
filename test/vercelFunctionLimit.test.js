@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API_ROUTE_HANDLERS, WHATSAPP_API_ROUTE_HANDLERS } from '../api/router.js';
+import { API_ROUTE_HANDLERS } from '../api/router.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiRoot = path.join(root, 'api');
@@ -23,15 +23,9 @@ async function readVercelConfig() {
   return JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
 }
 
-test('Vercel Hobby deployment has exactly four serverless entry points', async () => {
+test('Vercel deployment has exactly two serverless entry points', async () => {
   const functions = (await listApiFunctions(apiRoot)).sort();
-  assert.equal(functions.length, 4, `expected 4 functions, found: ${functions.join(', ')}`);
-  assert.deepEqual(functions, [
-    'dispatch-notifications.js',
-    'router.js',
-    'whatsapp/delivery/dispatch.js',
-    'whatsapp/meta/webhook.js',
-  ]);
+  assert.deepEqual(functions, ['dispatch-notifications.js', 'router.js']);
 });
 
 test('all previous public API URLs are retained through the shared router', async () => {
@@ -50,10 +44,6 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/send-fcm', '/api/router?__router=send-fcm'],
     ['/api/settings', '/api/router?__router=settings'],
     ['/api/settlement', '/api/router?__router=settlement'],
-    ['/api/whatsapp/network-config', '/api/router?__router=whatsapp-network-config'],
-    ['/api/whatsapp/retention/purge', '/api/router?__router=whatsapp-retention-purge'],
-    ['/api/whatsapp/unknown-outcomes', '/api/router?__router=whatsapp-unknown-outcomes'],
-    ['/api/whatsapp/gateway/status', '/api/router?__whatsappRoute=whatsapp-gateway-status'],
     ['/api/template-center', '/api/router?__router=settings&__apiRoute=template-center'],
     ['/api/admin/account-features', '/api/router?__router=settings&__apiRoute=account-features'],
     ['/api/network-secret', '/api/router?__router=settings&__apiRoute=network-secret'],
@@ -61,17 +51,7 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/entitlements/activate', '/api/router?__router=settings&__apiRoute=entitlement-activate'],
     ['/api/entitlements/device-rebind', '/api/router?__router=settings&__apiRoute=entitlement-device-rebind'],
     ['/api/record-payment', '/api/router?__router=settlement&__apiRoute=record-payment'],
-    ['/api/request-otp', '/api/router?__router=manage-user-auth&__apiRoute=request-otp'],
-    ['/api/verify-otp', '/api/router?__router=manage-user-auth&__apiRoute=verify-otp'],
     ['/api/account-notifications', '/api/router?__router=manage-user-auth&__apiRoute=account-notifications'],
-    ['/api/whatsapp/meta/exchange-token', '/api/router?__whatsappRoute=whatsapp-meta-exchange-token'],
-    ['/api/whatsapp/session', '/api/router?__whatsappRoute=whatsapp-session-status'],
-    ['/api/whatsapp/session/start', '/api/router?__whatsappRoute=whatsapp-session-start'],
-    ['/api/whatsapp/session/unlink', '/api/router?__whatsappRoute=whatsapp-session-unlink'],
-    ['/api/whatsapp/qr/generate', '/api/router?__whatsappRoute=whatsapp-qr-generate'],
-    ['/api/whatsapp/qr/status', '/api/router?__whatsappRoute=whatsapp-qr-status'],
-    ['/api/whatsapp/deliver', '/api/router?__whatsappRoute=whatsapp-deliver'],
-    ['/api/messages/send', '/api/router?__whatsappRoute=whatsapp-messages-send'],
   ]);
   for (const [source, destination] of expected) {
     assert.equal(destinations.get(source), destination, `${source} must retain its public contract`);
@@ -91,47 +71,16 @@ test('router exposes only the approved original server handlers', () => {
     'send-fcm',
     'settings',
     'settlement',
-    'whatsapp-network-config',
-    'whatsapp-retention-purge',
-    'whatsapp-unknown-outcomes',
   ]);
   for (const [route, handler] of Object.entries(API_ROUTE_HANDLERS)) {
     assert.equal(typeof handler, 'function', `${route} must be callable`);
   }
 });
 
-test('WhatsApp endpoint map is callable and remains behind the shared router', () => {
-  assert.deepEqual(Object.keys(WHATSAPP_API_ROUTE_HANDLERS).sort(), [
-    'whatsapp-deliver',
-    'whatsapp-gateway-status',
-    'whatsapp-messages-send',
-    'whatsapp-meta-exchange-token',
-    'whatsapp-qr-generate',
-    'whatsapp-qr-status',
-    'whatsapp-session-start',
-    'whatsapp-session-status',
-    'whatsapp-session-unlink',
-  ]);
-  for (const [route, handler] of Object.entries(WHATSAPP_API_ROUTE_HANDLERS)) {
-    assert.equal(typeof handler, 'function', `${route} must be callable`);
-  }
-});
-
-test('Meta webhook, WhatsApp dispatch, and notification cron remain isolated', async () => {
+test('notification cron is the only scheduled job and both functions are configured', async () => {
   const config = await readVercelConfig();
-  const webhook = await readFile(path.join(apiRoot, 'whatsapp', 'meta', 'webhook.js'), 'utf8');
-  const whatsappDispatch = await readFile(path.join(apiRoot, 'whatsapp', 'delivery', 'dispatch.js'), 'utf8');
   const notificationDispatch = await readFile(path.join(apiRoot, 'dispatch-notifications.js'), 'utf8');
-
-  assert.match(webhook, /bodyParser:\s*false/);
-  assert.match(webhook, /rawBody/);
-  assert.match(whatsappDispatch, /whatsappDispatchHandler/);
   assert.match(notificationDispatch, /isCronSecret/);
-  assert.equal(config.crons.some((cron) => cron.path === '/api/dispatch-notifications'), true);
-  assert.deepEqual(Object.keys(config.functions).sort(), [
-    'api/dispatch-notifications.js',
-    'api/router.js',
-    'api/whatsapp/delivery/dispatch.js',
-    'api/whatsapp/meta/webhook.js',
-  ]);
+  assert.deepEqual(config.crons.map((cron) => cron.path), ['/api/dispatch-notifications']);
+  assert.deepEqual(Object.keys(config.functions).sort(), ['api/dispatch-notifications.js', 'api/router.js']);
 });

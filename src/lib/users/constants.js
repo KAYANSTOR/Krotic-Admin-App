@@ -6,8 +6,6 @@ export const DEFAULT_WARNING_DAYS = 5;
 export const FILTERS = [
   { value: 'all', label: 'الكل' },
   { value: 'active', label: 'نشط' },
-  { value: 'verified', label: 'موثّق بالهاتف' },
-  { value: 'unverified', label: 'غير موثّق' },
   { value: 'official', label: 'رسمي' },
   { value: 'trial', label: 'تجريبي' },
   { value: 'expiring', label: 'ينتهي قريباً' },

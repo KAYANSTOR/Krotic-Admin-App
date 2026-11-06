@@ -249,3 +249,30 @@ test('the local database exposes the rows offline without any server read', asyn
   assert.equal(users.length, 1);
   assert.equal(users[0].networkName, 'شبكة');
 });
+
+test('a server tombstone deletes the account it names, not its own document id', async () => {
+  const { mapTombstoneDoc } = await import('../src/lib/localDb/syncCore.js');
+  const localDb = createMemoryDb();
+  await applyRows(localDb, { key: 'users', table: 'users' }, [{ uid: 'user-1', updatedAtMs: 1 }]);
+  await applyRows(localDb, { key: 'networks', table: 'networks' }, [{ networkId: 'NET-10024', owner_uid: 'user-1', updatedAtMs: 1 }]);
+  const rows = [
+    mapTombstoneDoc('autoDocA', { collection: 'users', networkId: null, id: 'user-1', updatedAtMs: 5 }),
+    mapTombstoneDoc('autoDocB', { collection: 'networks', networkId: null, id: 'NET-10024', updatedAtMs: 5 }),
+  ];
+  assert.equal(rows[0].id, 'user-1');
+  assert.equal(rows[0].tombstoneId, 'autoDocA');
+  await applyRows(localDb, { key: 'tombstones', table: null }, rows);
+  assert.equal(await localDb.users.count(), 0);
+  assert.equal(await localDb.networks.count(), 0);
+});
+
+test('tombstones are replayed once from the beginning to repair earlier local databases', async () => {
+  const { replayTombstonesOnce } = await import('../src/lib/localDb/syncCore.js');
+  const localDb = createMemoryDb();
+  await localDb.sync_state.put({ key: 'tombstones', cursorMs: 1794006401325, syncedAt: 1 });
+  assert.equal(await replayTombstonesOnce(localDb), true);
+  assert.equal((await localDb.sync_state.get('tombstones')).cursorMs, 0);
+  await localDb.sync_state.put({ key: 'tombstones', cursorMs: 99, syncedAt: 2 });
+  assert.equal(await replayTombstonesOnce(localDb), false);
+  assert.equal((await localDb.sync_state.get('tombstones')).cursorMs, 99);
+});

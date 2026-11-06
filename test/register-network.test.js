@@ -76,10 +76,9 @@ test('the server atomically creates one network and a bounded 30-day trial', asy
   assert.equal(user.accessStatus, 'TRIAL');
   assert.equal(user.is_active, true);
   assert.equal(user.is_trial, true);
-  assert.equal(user.phone_verified, false);
-  assert.equal(user.phoneVerified, false);
-  assert.equal(user.phone_verification_required, false);
-  assert.equal(user.phone_verified_manual, false);
+  for (const removed of ['phone_verified', 'phoneVerified', 'phone_verification_required', 'phone_verified_manual']) {
+    assert.equal(Object.hasOwn(user, removed), false, removed);
+  }
   assert.equal(user.subscription_end_date.toMillis(), result.subscriptionEndsAtMs);
   assert.equal(user.subscriptionEndsAt.toMillis(), result.subscriptionEndsAtMs);
   assert.equal(user.createdAtMs, now);
@@ -105,7 +104,6 @@ test('retrying the same registration is idempotent and does not extend the trial
   assert.equal(second.networkId, first.networkId);
   assert.equal(second.trialStartedAtMs, first.trialStartedAtMs);
   assert.equal(second.subscriptionEndsAtMs, first.subscriptionEndsAtMs);
-  assert.equal(db.docs.get('users/client_2').phone_verification_required, false);
   assert.equal(db.docs.get('counters/networks').lastNetworkId, 'NET-10001');
 });
 
@@ -139,24 +137,6 @@ test('ambiguous owner networks stop registration instead of creating a third net
       && error.status === 409 && error.code === 'network_mapping_ambiguous',
   );
   assert.equal(db.docs.has('counters/networks'), false);
-});
-
-test('retrying a pending registration removes the temporary SMS gate without claiming verification', async () => {
-  const db = new FakeDb();
-  await provisionSelfRegistration(db, { uid: 'client_pending', profile: validInput });
-  db.docs.set('users/client_pending', {
-    ...db.docs.get('users/client_pending'),
-    phone_verification_required: true,
-    phone_verified: false,
-    phoneVerified: false,
-  });
-
-  await provisionSelfRegistration(db, { uid: 'client_pending', profile: validInput });
-
-  const user = db.docs.get('users/client_pending');
-  assert.equal(user.phone_verification_required, false);
-  assert.equal(user.phone_verified, false);
-  assert.equal(user.phoneVerified, false);
 });
 
 test('an existing owned network repairs missing user access fields from its server record', async () => {

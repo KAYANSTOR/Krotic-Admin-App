@@ -84,7 +84,6 @@ const SCHEMA_FILES = [
   'entitlement-lease.schema.json',
   'sales-ingest-request.schema.json',
   'device-heartbeat-request.schema.json',
-  'sms-device-task.schema.json',
 ];
 
 test('every contract schema is valid JSON and carries a schemaVersion', async () => {

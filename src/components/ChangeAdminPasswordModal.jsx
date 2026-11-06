@@ -73,7 +73,7 @@ export default function ChangeAdminPasswordModal({ isOpen, onClose }) {
 
       // توثيق في سجل العمليات
       await logAdminAction({
-        action: AUDIT_ACTIONS.ADMIN_PASSWORD_CHANGE || 'admin:password_change',
+        action: AUDIT_ACTIONS.ADMIN_PASSWORD_CHANGE,
         targetType: 'admin',
         targetId: auth.currentUser?.uid || currentUser?.uid || 'admin',
         targetLabel: adminData?.name || auth.currentUser?.email || currentUser?.email || 'المدير',

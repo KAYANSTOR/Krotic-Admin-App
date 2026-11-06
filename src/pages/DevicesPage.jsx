@@ -20,6 +20,7 @@ function errorText(code) {
   switch (code) {
     case 'not_admin': return 'هذا الحساب ليس حساب إدارة.';
     case 'firestore_quota_exceeded': return 'حصة Firestore غير كافية.';
+    case 'heartbeat_index_missing': return 'فهرس Firestore الخاص بنبضات الأجهزة غير منشور بعد. أنشئه من Firebase Console (device_heartbeats / serverReceivedAtMs تنازلي على مستوى مجموعة) ثم أعد التحميل.';
     case 'server_not_configured': return 'خدمة Firebase غير مهيأة.';
     case 'missing_token':
     case 'invalid_token': return 'انتهت الجلسة — سجّل الدخول مجدداً.';

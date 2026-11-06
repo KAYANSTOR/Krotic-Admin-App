@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { isExpired, toDate } from '../../lib/format';
-import { isUserPhoneVerified } from '../../lib/accessStatus';
 import { getAppUpdateStatus } from '../../lib/appVersion';
 
 /**
@@ -29,8 +28,6 @@ export function useUsersFilter(users, {
         user.uid.toLowerCase().includes(q);
 
       if (filterType === 'active') return matchesSearch && user.is_active !== false;
-      if (filterType === 'verified') return matchesSearch && isUserPhoneVerified(user);
-      if (filterType === 'unverified') return matchesSearch && !isUserPhoneVerified(user);
       if (filterType === 'trial') return matchesSearch && user.is_trial === true;
       if (filterType === 'official') return matchesSearch && user.is_trial === false;
       if (filterType === 'blocked') return matchesSearch && user.is_active === false;
@@ -77,7 +74,6 @@ export function useUsersFilter(users, {
 export function useUsersFilterCounts(users, globalConfig, warningWindowMs) {
   return useMemo(() => {
     let active = 0;
-    let verified = 0;
     let trial = 0;
     let official = 0;
     let blocked = 0;
@@ -90,7 +86,6 @@ export function useUsersFilterCounts(users, globalConfig, warningWindowMs) {
       if (user.is_active !== false) active += 1;
       else blocked += 1;
 
-      if (isUserPhoneVerified(user)) verified += 1;
       if (user.is_trial === true) trial += 1;
       if (user.is_trial === false) official += 1;
 
@@ -109,8 +104,6 @@ export function useUsersFilterCounts(users, globalConfig, warningWindowMs) {
     return {
       all: users.length,
       active,
-      verified,
-      unverified: users.length - verified,
       trial,
       official,
       expiring,

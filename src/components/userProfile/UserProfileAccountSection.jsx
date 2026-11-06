@@ -1,6 +1,6 @@
 import {
   DollarSign, CalendarPlus, Edit, KeyRound, Ban,
-  UserCheck, CheckCircle, ShieldCheck, ShieldAlert, Trash2, ChevronDown,
+  UserCheck, CheckCircle, Trash2, ChevronDown,
 } from 'lucide-react';
 import Section from '../ui/Section';
 import { Card } from '../ui/Card';
@@ -9,8 +9,8 @@ import { hasCustomCommission } from '../../lib/users/profileHelpers';
 import { formatDate } from '../../lib/format';
 
 export default function UserProfileAccountSection({
-  user, uid, status, expired, isVerifiedPhone,
-  onOpenBilling, onRenew, onEdit, onOpenAuth, onVerifyPhone,
+  user, uid, status, expired,
+  onOpenBilling, onRenew, onEdit, onOpenAuth,
   onMakeOfficial, onToggleAccess, onDelete,
 }) {
   return (
@@ -42,22 +42,6 @@ export default function UserProfileAccountSection({
                   <dt>رقم الهاتف</dt>
                   <dd dir="ltr" className="font-mono font-bold text-brand">{user.phoneNumber || user.phone || '—'}</dd>
                 </div>
-                <div className="user-card__meta-item">
-                  <dt>حالة التحقق بالهاتف</dt>
-                  <dd>
-                    {isVerifiedPhone ? (
-                      <span className="inline-flex items-center gap-1 font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 text-xs">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-                        <span>موثّق برقم الهاتف</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 text-xs">
-                        <ShieldAlert className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
-                        <span>غير موثّق</span>
-                      </span>
-                    )}
-                  </dd>
-                </div>
               </dl>
     
               <div className="user-card__actions mt-4">
@@ -85,16 +69,6 @@ export default function UserProfileAccountSection({
                   <ChevronDown className="w-4 h-4 text-muted" aria-hidden="true" />
                 </summary>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
-                  <button
-                    type="button"
-                    onClick={onVerifyPhone}
-                    className={`row-action min-h-[44px] ${isVerifiedPhone ? 'row-action--success' : 'row-action--brand-soft'}`}
-                    title={isVerifiedPhone ? 'إلغاء توثيق الهاتف' : 'توثيق الهاتف يدوياً للدعم الفني'}
-                  >
-                    {isVerifiedPhone ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
-                    <span>{isVerifiedPhone ? 'إلغاء التوثيق' : 'توثيق الهاتف'}</span>
-                  </button>
-    
                   {user.is_trial && (
                     <button type="button" onClick={onMakeOfficial} className="row-action row-action--brand-soft min-h-[44px]">
                       <CheckCircle className="w-4 h-4 text-brand" aria-hidden="true" />

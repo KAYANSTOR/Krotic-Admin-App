@@ -15,7 +15,7 @@ import useInfiniteScroll from '../hooks/useInfiniteScroll';
 
 import { formatDate } from '../lib/format';
 import { downloadCsv, csvStamp } from '../lib/csv';
-import { AUDIT_ACTIONS, auditActionLabel, auditActionTone } from '../lib/auditLog';
+import { AUDIT_ACTION_META, auditActionLabel, auditActionTone, normalizeAuditAction } from '../lib/auditLog';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { loadLocalAuditLogs } from '../lib/localDb/localData';
@@ -99,7 +99,10 @@ export default function AuditPage() {
   const { runSync, syncing, lastSyncAt } = useLocalDb();
 
   const logsQuery = useLocalQuery((localDb) => loadLocalAuditLogs(localDb, AUDIT_LOCAL_LIMIT), []);
-  const allLogs = useMemo(() => logsQuery.data || [], [logsQuery.data]);
+  const allLogs = useMemo(
+    () => (logsQuery.data || []).map((log) => ({ ...log, action: normalizeAuditAction(log.action) })),
+    [logsQuery.data],
+  );
   const logs = useMemo(() => allLogs.slice(0, visibleCount), [allLogs, visibleCount]);
   const loading = logsQuery.loading;
   const error = logsQuery.error ? 'تعذر قراءة سجل العمليات.' : null;
@@ -314,7 +317,7 @@ export default function AuditPage() {
             className="w-full min-h-[48px] px-4 rounded-xl border border-line bg-[var(--ui-surface)] text-sm"
           >
             <option value="all">كل الإجراءات</option>
-            {Object.entries(AUDIT_ACTIONS).map(([key, meta]) => (
+            {Object.entries(AUDIT_ACTION_META).map(([key, meta]) => (
               <option key={key} value={key}>{meta.label}</option>
             ))}
           </select>

@@ -115,3 +115,11 @@ test('clamps small limits and maps Firestore quota errors to a safe response', a
   assert.equal(res.body.error, 'firestore_quota_exceeded');
   assert.equal('message' in res.body, false);
 });
+
+test('a missing collection-group index is reported precisely, not as a generic failure', async () => {
+  const { db } = queryDb({ error: Object.assign(new Error('9 FAILED_PRECONDITION: The query requires a COLLECTION_GROUP_DESC index'), { code: 9 }) });
+  const res = responseMock();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer valid-token' }, url: '/api/device-heartbeats' }, res, dependencies(db));
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, 'heartbeat_index_missing');
+});

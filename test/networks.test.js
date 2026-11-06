@@ -31,8 +31,8 @@ test('update-access validates each server-owned field', () => {
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', accessStatus: 'ACTIVE_PAID' }).ok, true);
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', accessStatus: 'NOPE' }).error, 'access_status_invalid');
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', commission_rate: 150 }).error, 'commission_rate_invalid');
-  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', phone_verified: true }).ok, true);
-  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', phone_verified: 'yes' }).error, 'phone_verified_invalid');
+  // توثيق الهاتف أُزيل نهائيًا: الحقل لم يعد مقبولًا ولا يُحسب ضمن الحقول.
+  assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1', phone_verified: true }).error, 'no_fields');
   assert.equal(validateNetworkInput({ action: 'update-access', uid: 'user_1' }).error, 'no_fields');
 });
 
@@ -162,25 +162,7 @@ test('updateAccess atomically synchronizes suspension and reactivation fields', 
     assert.equal(document.subscription_end_date.toMillis(), endMs);
   }
 
-  await updateAccess(db, {
-    value: { uid: 'user_1', phone_verified: true },
-    actorUid: 'admin_2',
-    now: 1_800_000_000_003,
-  });
-  assert.equal(documents.get('users/user_1').phone_verified, true);
-  assert.equal(documents.get('users/user_1').phoneVerified, true);
-  assert.equal(documents.get('users/user_1').phone_verified_manual, true);
-  assert.equal(documents.get('users/user_1').verified_by_admin_uid, 'admin_2');
-
-  await updateAccess(db, {
-    value: { uid: 'user_1', phone_verified: false },
-    actorUid: 'admin_2',
-    now: 1_800_000_000_004,
-  });
-  assert.equal(documents.get('users/user_1').phone_verified, false);
-  assert.equal(documents.get('users/user_1').phoneVerified, false);
-  assert.equal(documents.get('users/user_1').phone_verified_manual, false);
-  assert.equal(auditEntries.length, 5);
+  assert.equal(auditEntries.length, 3);
 });
 
 

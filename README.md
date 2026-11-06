@@ -19,7 +19,6 @@ npm test                     # اختبارات الوحدة والعقود
 npm run build
 npm run test:rules:static
 npm run test:rules           # يتطلب Java (محاكي Firestore)
-npm run test:whatsapp-emulator
 ```
 
 ## النشر

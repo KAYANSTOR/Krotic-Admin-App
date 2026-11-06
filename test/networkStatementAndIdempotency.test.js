@@ -121,10 +121,9 @@ test('reusing an existing saleUuid with a modified payload triggers a conflict r
 });
 
 test('audit log declarations contain actions for legacy reconciliation and audit', async () => {
-  const auditContent = await read('src/lib/auditLog.js');
-  assert.match(auditContent, /LEGACY_SALES_RECONCILE:\s*\{\s*label:\s*'تسوية ومطابقة مبيعات قديمة يدوياً'/);
-  assert.match(auditContent, /SETTLEMENT_RECORD:\s*\{\s*label:\s*'تسوية مبيعات واعتماد عمولة'/);
-  assert.match(auditContent, /SALE_CONFLICT_DETECTED:\s*\{\s*label:\s*'تعارض في معرّف أو محتوى بيع'/);
-  assert.match(auditContent, /COMMISSION_AUDIT_VERIFIED:\s*\{\s*label:\s*'تدقيق واعتماد كشف حساب الشبكة'/);
+  const { auditActionLabel } = await import('../src/lib/auditActions.js');
+  assert.equal(auditActionLabel('LEGACY_SALES_RECONCILE'), 'تسوية ومطابقة مبيعات قديمة يدوياً');
+  assert.equal(auditActionLabel('SETTLEMENT_RECORD'), 'تسوية مبيعات واعتماد عمولة');
+  assert.equal(auditActionLabel('SALE_CONFLICT_DETECTED'), 'تعارض في معرّف أو محتوى بيع');
+  assert.equal(auditActionLabel('COMMISSION_AUDIT_VERIFIED'), 'تدقيق واعتماد كشف حساب الشبكة');
 });
-

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
 import {
   Users, Phone, Calendar, DollarSign, Download,
-  CalendarPlus, Edit, KeyRound, ShieldCheck, ShieldAlert,
+  CalendarPlus, Edit, KeyRound,
   UserCheck, Ban, Trash2, Inbox, AlertCircle, RefreshCw, MoreVertical,
   CheckCircle2, Clock,
 } from 'lucide-react';
@@ -31,7 +31,6 @@ import { formatNumber, formatDate, isExpired } from '../lib/format';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { downloadCsv, csvStamp } from '../lib/csv';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
-import { isUserPhoneVerified } from '../lib/accessStatus';
 import useAppRefresh from '../lib/useAppRefresh';
 import { hasExpiryCompatibilityGap } from '../lib/users/accessHelpers';
 import {
@@ -147,11 +146,6 @@ export default function UsersPage() {
         : updates.accessStatus === 'TRIAL' || updates.accessStatus === 'ACTIVE_PAID'
           ? true : u.is_active,
       is_trial: updates.accessStatus === 'TRIAL' ? true : updates.accessStatus ? false : u.is_trial,
-      ...(updates.phone_verified !== undefined ? {
-        phone_verified: Boolean(updates.phone_verified),
-        phoneVerified: Boolean(updates.phone_verified),
-        ...(updates.phone_verified ? { phone_verified_manual: true } : {}),
-      } : {}),
       ...(updates.subscriptionEndsAt != null ? {
         subscriptionEndsAt: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
         subscription_end_date: Timestamp.fromMillis(Number(updates.subscriptionEndsAt)),
@@ -160,35 +154,6 @@ export default function UsersPage() {
     } : u)));
     setEditingUser(null);
     toast.success('تم حفظ التعديلات');
-  };
-
-  const handleManualPhoneVerify = (user) => {
-    const isVerified = isUserPhoneVerified(user);
-    const targetName = user.networkName || user.phoneNumber || user.uid;
-    const phoneDisplay = user.phoneNumber || user.phone || 'غير مسجّل';
-
-    setConfirmAction({
-      title: isVerified ? 'إلغاء توثيق الهاتف' : 'توثيق الهاتف يدوياً',
-      message: isVerified
-        ? `حساب «${targetName}» (${phoneDisplay}) موثّق حالياً. هل تريد إلغاء التوثيق؟`
-        : `هل تريد اعتماد «${targetName}» (${phoneDisplay}) كموثّق برقم الهاتف؟`,
-      variant: isVerified ? 'danger' : 'success',
-      action: async () => {
-        const result = await updateNetworkAccess({ uid: user.uid, phone_verified: !isVerified });
-        if (!result.ok) { toast.error(adminApiError(result.error, 'تعذر التحديث')); return false; }
-        setUsers((prev) => prev.map((u) => (u.uid === user.uid ? {
-          ...u,
-          phone_verified: !isVerified, phoneVerified: !isVerified,
-          ...(!isVerified ? { phone_verified_at: new Date(), verified_by_admin: true, phone_verified_manual: true } : { phone_verified_manual: false }),
-        } : u)));
-        logAdminAction({
-          action: isVerified ? AUDIT_ACTIONS.USER_PHONE_UNVERIFY : AUDIT_ACTIONS.USER_PHONE_VERIFY_MANUAL,
-          targetType: 'user', targetId: user.uid, targetLabel: targetName,
-          details: { phone: phoneDisplay },
-        }).catch(() => {});
-        toast.success(isVerified ? 'تم إلغاء التوثيق' : 'تم التوثيق');
-      },
-    });
   };
 
   const handleDeleteUser = (user) => {
@@ -251,8 +216,6 @@ export default function UsersPage() {
     active: filterCounts.active,
     blocked: filterCounts.blocked,
     expired: filterCounts.expired,
-    verified: filterCounts.verified,
-    unverified: filterCounts.unverified,
   }), [users, filterCounts]);
 
   const defaultCommission = useMemo(() => {
@@ -278,7 +241,6 @@ export default function UsersPage() {
     downloadCsv(`users-${csvStamp()}`, filteredUsers, [
       { label: 'اسم الشبكة', value: (u) => u.networkName || '' },
       { label: 'رقم الهاتف', value: (u) => u.phoneNumber || '' },
-      { label: 'التحقق', value: (u) => (isUserPhoneVerified(u) ? 'مفعّل' : 'غير مفعّل') },
       { label: 'النوع', value: (u) => (u.is_trial ? 'تجريبي' : 'رسمي') },
       { label: 'الحالة', value: (u) => (u.is_active === false ? 'محظور' : 'مفعّل') },
       { label: 'تاريخ التصفية', value: (u) => formatDate(u.subscription_end_date) },
@@ -339,10 +301,9 @@ export default function UsersPage() {
             { key: 'active', icon: CheckCircle2, label: 'نشط', value: formatNumber(stats.active), tone: 'success' },
             { key: 'trial', icon: Clock, label: 'تجريبي', value: formatNumber(stats.trial), tone: 'warning' },
             { key: 'blocked', icon: Ban, label: 'محظور', value: formatNumber(stats.blocked), tone: 'danger' },
-            { key: 'verified', icon: ShieldCheck, label: 'موثّق', value: formatNumber(stats.verified), tone: 'brand' },
-            { key: 'unverified', icon: ShieldAlert, label: 'غير موثّق', value: formatNumber(stats.unverified), tone: 'neutral' },
+            { key: 'expired', icon: Clock, label: 'منتهي', value: formatNumber(stats.expired), tone: 'neutral' },
           ]}
-          onItemClick={(item) => setFilterType(item.key === 'verified' ? 'verified' : item.key === 'unverified' ? 'unverified' : item.key === 'active' ? 'active' : item.key === 'trial' ? 'trial' : item.key === 'blocked' ? 'blocked' : 'all')}
+          onItemClick={(item) => setFilterType(['active', 'trial', 'blocked', 'expired'].includes(item.key) ? item.key : 'all')}
         />
       </div>
 
@@ -363,7 +324,6 @@ export default function UsersPage() {
               const expired = isExpired(user.subscription_end_date);
               const networkTitle = user.networkName || user.network_name || user.name || `شبكة ${user.uid.slice(0, 8)}`;
               const phone = user.phoneNumber || user.phone || '';
-              const isVerified = isUserPhoneVerified(user);
 
               return (
                 <DataCard
@@ -377,7 +337,6 @@ export default function UsersPage() {
                   badges={[
                     { label: user.is_trial ? 'تجريبي' : 'رسمي', tone: user.is_trial ? 'warning' : 'success' },
                     ...(user.is_active === false ? [{ label: 'محظور', tone: 'danger' }] : []),
-                    ...(isVerified ? [{ label: 'موثّق', tone: 'success' }] : []),
                   ]}
                   facts={[
                     { icon: Calendar, label: 'الانتهاء', value: expired ? `⚠️ ${formatDate(user.subscription_end_date)}` : formatDate(user.subscription_end_date) },
@@ -446,7 +405,7 @@ export default function UsersPage() {
         <div>
           <label className="text-xs font-black text-[var(--ui-ink)] block mb-2">نوع الحساب</label>
           <div className="grid grid-cols-2 gap-2">
-            {FILTERS.filter((f) => ['all', 'active', 'verified', 'unverified', 'official', 'trial', 'blocked'].includes(f.value)).map((f) => (
+            {FILTERS.filter((f) => ['all', 'active', 'official', 'trial', 'blocked', 'expired'].includes(f.value)).map((f) => (
               <button
                 key={f.value}
                 type="button"
@@ -488,13 +447,6 @@ export default function UsersPage() {
           { key: 'renew', icon: CalendarPlus, label: 'تجديد 30 يوماً', tone: 'success', onClick: () => handleQuickRenew(menuUser) },
           { key: 'edit', icon: Edit, label: 'تعديل الإعدادات', tone: 'neutral', onClick: () => setEditingUser(menuUser) },
           { key: 'auth', icon: KeyRound, label: 'بيانات الدخول', tone: 'neutral', onClick: () => setAuthUser(menuUser) },
-          {
-            key: 'verify',
-            icon: isUserPhoneVerified(menuUser) ? ShieldCheck : ShieldAlert,
-            label: isUserPhoneVerified(menuUser) ? 'إلغاء توثيق الهاتف' : 'توثيق الهاتف يدوياً',
-            tone: isUserPhoneVerified(menuUser) ? 'warning' : 'success',
-            onClick: () => handleManualPhoneVerify(menuUser),
-          },
           {
             key: 'toggle',
             icon: menuUser.is_active === false ? UserCheck : Ban,

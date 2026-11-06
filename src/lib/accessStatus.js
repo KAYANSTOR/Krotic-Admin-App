@@ -29,16 +29,6 @@ function sameTimestamp(left, right) {
   return leftMillis !== null && rightMillis !== null && leftMillis === rightMillis;
 }
 
-export function isUserPhoneVerified(user) {
-  if (!user) return false;
-  return Boolean(
-    user.phone_verified === true ||
-    user.phoneVerified === true ||
-    user.is_phone_verified === true ||
-    user.phone_verified_manual === true
-  );
-}
-
 export function normalizeUserAccess(user) {
   if (!user) return user;
   const raw = user?.accessStatus;

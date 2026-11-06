@@ -4,14 +4,12 @@ import Button from './ui/Button';
 import Switch from './ui/Switch';
 import { Field, Input, Textarea } from './ui/Field';
 import { formatDateInput } from '../lib/format';
-import { isUserPhoneVerified } from '../lib/accessStatus';
 
 export default function UserEditModal({ isOpen, onClose, user, onSave, onDelete }) {
   const [hasCustomWarning, setHasCustomWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
   const [commissionRate, setCommissionRate] = useState('');
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
-  const [phoneVerified, setPhoneVerified] = useState(false);
 
   useEffect(() => {
     if (user && isOpen) {
@@ -19,7 +17,6 @@ export default function UserEditModal({ isOpen, onClose, user, onSave, onDelete 
       setWarningMessage(user.warning_message || '');
       setCommissionRate(user.commission_rate != null ? user.commission_rate : '');
       setSubscriptionEnd(formatDateInput(user.subscription_end_date));
-      setPhoneVerified(isUserPhoneVerified(user));
     }
   }, [user, isOpen]);
 
@@ -37,7 +34,6 @@ export default function UserEditModal({ isOpen, onClose, user, onSave, onDelete 
     }
     updates.has_custom_warning = hasCustomWarning;
     updates.warning_message = hasCustomWarning ? warningMessage : '';
-    updates.phone_verified = Boolean(phoneVerified);
     onSave(user.uid, updates);
   };
 
@@ -81,19 +77,6 @@ export default function UserEditModal({ isOpen, onClose, user, onSave, onDelete 
             placeholder="اتركه فارغاً لاستخدام العمولة العامة"
           />
         </Field>
-
-        <div className="border-t pt-4">
-          <Switch
-            checked={phoneVerified}
-            onChange={setPhoneVerified}
-            label="تفعيل الحساب برقم الهاتف (phone_verified)"
-          />
-          <p className="text-xs text-ink-secondary mt-1.5">
-            {phoneVerified
-              ? 'الحساب مفعل وموثّق برقم الهاتف. يمكن للعميل الدخول واستخدام ميزات الشبكة.'
-              : 'الحساب غير مفعّل بالهاتف (بانتظار كود التحقق). يمكنك تفعيله يدوياً للدعم الفني في حال تعذر وصول كود SMS.'}
-          </p>
-        </div>
 
         <div className="border-t pt-4">
           <Switch checked={hasCustomWarning} onChange={setHasCustomWarning} label="تخصيص رسالة تحذير لهذا المستخدم" />

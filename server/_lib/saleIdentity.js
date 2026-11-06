@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 /**
  * Sale identity contract shared by every server path that receives a sale id
- * from the Android app (sales ingest, WhatsApp delivery operations).
+ * from the Android app (sales ingest).
  *
  * The app may use dotted ids (e.g. wallet references like `7850.73`), so the
  * accepted alphabet is `[A-Za-z0-9._-]`, 1..128 chars. One rule, one module:

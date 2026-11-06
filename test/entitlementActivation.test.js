@@ -365,7 +365,7 @@ test('سياسة العمل دون اتصال لها سقف مستقل عن نه
   assert.equal(res.body.payload.commercialUntil,
     new Date(NOW + 120 * 24 * 60 * 60 * 1000).toISOString());
   assert.equal(res.body.payload.maxOfflineUntil,
-    new Date(NOW + 30 * 24 * 60 * 60 * 1000).toISOString());
+    new Date(NOW + 29 * 24 * 60 * 60 * 1000).toISOString(), 'offline window is exactly 29 days');
   assert.ok(Date.parse(res.body.payload.maxOfflineUntil) < Date.parse(res.body.payload.commercialUntil));
 });
 

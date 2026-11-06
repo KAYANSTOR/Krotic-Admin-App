@@ -21,7 +21,6 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-import { handleRequestOtp, handleVerifyOtp } from '../_lib/phoneOtp.js';
 import { listGlobalNotifications } from '../_lib/accountNotifications.js';
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -148,20 +147,11 @@ function publicAuthInfo(record) {
   };
 }
 
-export async function dispatchPublicOtpRoute(req, res, handlers = {
-  requestOtp: handleRequestOtp,
-  verifyOtp: handleVerifyOtp,
+/** Public (non-admin) routes served by this function; checked before admin auth. */
+export async function dispatchPublicRoute(req, res, handlers = {
   accountNotifications: handleAccountNotifications,
 }) {
   const route = req?.query?.__apiRoute;
-  if (route === 'request-otp') {
-    await handlers.requestOtp(req, res);
-    return true;
-  }
-  if (route === 'verify-otp') {
-    await handlers.verifyOtp(req, res);
-    return true;
-  }
   if (route === 'account-notifications') {
     await handlers.accountNotifications(req, res);
     return true;
@@ -202,7 +192,7 @@ async function handleAccountNotifications(req, res) {
 }
 
 export default async function handler(req, res) {
-  if (await dispatchPublicOtpRoute(req, res)) return;
+  if (await dispatchPublicRoute(req, res)) return;
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');

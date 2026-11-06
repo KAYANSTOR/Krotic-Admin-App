@@ -351,7 +351,7 @@ if (!emulatorAddress) {
     await assertFails(setDoc(phoneIndex, { uid: 'user-1' }));
   });
 
-  test('WhatsApp access-token and message-idempotency records are server-only', async () => {
+  test('retired WhatsApp server collections stay closed by default deny', async () => {
     const clients = [
       testEnv.authenticatedContext('admin-1').firestore(),
       testEnv.authenticatedContext('user-1').firestore(),
@@ -406,6 +406,10 @@ if (!emulatorAddress) {
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { entitlementReboundBy: 'admin-1' }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { networkId: 'NET-99999' }));
     await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { network_id: 'NET-99999' }));
+    for (const field of ['entitlementPendingTransfer', 'entitlementInstallationHistory', 'entitlementAutoTransfersMs',
+      'entitlementLastTransferAtMs', 'entitlementLastTransferBy', 'accessUpdatedAtMs']) {
+      await assertFails(updateDoc(doc(adminDb, 'users/user-1'), { [field]: null }), field);
+    }
     await assertSucceeds(updateDoc(doc(adminDb, 'users/user-1'), { network_name: 'Renamed' }));
 
     const ownerDb = testEnv.authenticatedContext('user-1').firestore();

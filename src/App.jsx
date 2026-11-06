@@ -24,8 +24,6 @@ const AdminsPage = lazy(() => loadRoute('/admins'));
 const AuditPage = lazy(() => loadRoute('/audit'));
 const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
 const PaidFeaturesPage = lazy(() => loadRoute('/paid-features'));
-const WhatsAppNetworkSettingsPage = lazy(() => loadRoute('/whatsapp-settings'));
-const WhatsAppUnknownOutcomesPage = lazy(() => loadRoute('/whatsapp-unknown-outcomes'));
 const DevicesPage = lazy(() => loadRoute('/devices'));
 
 function AdminShell() {
@@ -74,8 +72,6 @@ function AppRoutes() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/template-center/*" element={<TemplateCenterPage />} />
           <Route path="/paid-features" element={<PaidFeaturesPage />} />
-          <Route path="/whatsapp-settings" element={<WhatsAppNetworkSettingsPage />} />
-          <Route path="/whatsapp-unknown-outcomes" element={<WhatsAppUnknownOutcomesPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/users/:uid" element={<UserProfilePage />} />
         </Route>

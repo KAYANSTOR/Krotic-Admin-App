@@ -3,7 +3,7 @@
   "$id": "https://krotak-pro.vercel.app/contracts/entitlement-lease.schema.json",
   "title": "POST /api/entitlements/activate — 200 response (signed lease)",
   "schemaVersion": 1,
-  "description": "signature = base64 Ed25519 over the UTF-8 bytes of JSON.stringify(payload) exactly as sent (key order is part of the contract). commercialUntil = last moment for sell/settle. maxOfflineUntil = min(commercialUntil + 7d, issuedAt + 30d): after it the device must reach the server. expiry/userId/deviceId are legacy aliases of commercialUntil/uid/installationId.",
+  "description": "signature = base64 Ed25519 over the UTF-8 bytes of JSON.stringify(payload) exactly as sent (key order is part of the contract). commercialUntil = last moment for sell/settle. maxOfflineUntil = min(commercialUntil + 7d, issuedAt + 29d): after it the device must reach the server. expiry/userId/deviceId are legacy aliases of commercialUntil/uid/installationId.",
   "type": "object",
   "additionalProperties": false,
   "required": [

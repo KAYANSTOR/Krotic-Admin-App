@@ -86,7 +86,15 @@ export default async function handler(req, res, dependencies = {}) {
     const quotaExceeded = error?.code === 8
       || error?.code === 'RESOURCE_EXHAUSTED'
       || String(error?.message || '').includes('RESOURCE_EXHAUSTED');
+    // FAILED_PRECONDITION: فهرس COLLECTION_GROUP على serverReceivedAtMs غير منشور
+    // (معرّف في firestore.indexes.json). خطأ تشغيل لا بيانات؛ نسمّيه بدقة.
+    const indexMissing = error?.code === 9
+      || error?.code === 'FAILED_PRECONDITION'
+      || String(error?.message || '').includes('requires a COLLECTION_GROUP');
     console.error('device-heartbeats: read failed', { uid, code: error?.code });
+    if (indexMissing) {
+      return res.status(503).json({ success: false, error: 'heartbeat_index_missing' });
+    }
     return res.status(quotaExceeded ? 503 : 500).json({
       success: false,
       error: quotaExceeded ? 'firestore_quota_exceeded' : 'heartbeat_query_failed',

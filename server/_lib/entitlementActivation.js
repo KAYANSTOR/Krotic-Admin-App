@@ -18,7 +18,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 //   وتمنح مهلة قصيرة بعد الانتهاء التجاري كي يستطيع الجهاز مزامنة ما تبقّى
 //   وطلب الدعم والقراءة، مع سقف أقصى يجبر الجهاز على العودة للخادم.
 export const ENTITLEMENT_OFFLINE_GRACE_MS = 7 * DAY_MS;
-export const ENTITLEMENT_MAX_OFFLINE_MS = 30 * DAY_MS;
+// قرار المالك: العمل دون إنترنت حتى 29 يومًا من آخر عقد صادر من الخادم.
+export const ENTITLEMENT_MAX_OFFLINE_MS = 29 * DAY_MS;
 
 function policyMs(name, fallback) {
   const raw = Number(process.env[name]);

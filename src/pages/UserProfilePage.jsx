@@ -26,7 +26,6 @@ import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { purgeDeletedAccountLocally } from '../lib/localDb/localData';
 import { renewNetwork, updateNetworkAccess, deleteNetworkAccount, adminApiError } from '../lib/adminApi';
 import { logAdminAction, AUDIT_ACTIONS } from '../lib/auditLog';
-import { isUserPhoneVerified } from '../lib/accessStatus';
 import { getAppUpdateStatus } from '../lib/appVersion';
 import useAppRefresh from '../lib/useAppRefresh';
 
@@ -276,61 +275,6 @@ export default function UserProfilePage() {
     });
   }, [runConfirmed, user, uid, navigate]);
 
-  const handleManualPhoneVerify = useCallback(() => {
-    if (!user) return;
-    const isVerified = isUserPhoneVerified(user);
-    const targetName = getUserDisplayName(user, uid);
-    const phoneDisplay = user.phoneNumber || user.phone || 'غير مسجّل';
-
-    if (!isVerified) {
-      runConfirmed({
-        title: 'توثيق الهاتف يدوياً',
-        message: `هل تريد توثيق رقم هاتف «${targetName}» (${phoneDisplay}) يدوياً؟ يُستخدم هذا الإجراء للدعم الفني فقط عند تعذر وصول رمز التحقق.`,
-        variant: 'success',
-        action: async () => {
-          const result = await updateNetworkAccess({ uid, phone_verified: true });
-          if (!result.ok) {
-            toast.error(adminApiError(result.error, 'تعذر توثيق الهاتف'));
-            return false;
-          }
-          await logAdminAction({
-            action: AUDIT_ACTIONS.USER_PHONE_VERIFY_MANUAL,
-            targetType: 'user',
-            targetId: uid,
-            targetLabel: targetName,
-            details: { phone: phoneDisplay, manual: true, reason: 'دعم فني - تفعيل يدوي' },
-          }).catch(() => {});
-          toast.success(`تم توثيق رقم هاتف «${targetName}»`);
-          await refresh();
-          return true;
-        },
-      });
-    } else {
-      runConfirmed({
-        title: 'إلغاء توثيق الهاتف',
-        message: `رقم هاتف «${targetName}» (${phoneDisplay}) موثّق حالياً. هل تريد إلغاء التوثيق؟`,
-        variant: 'danger',
-        action: async () => {
-          const result = await updateNetworkAccess({ uid, phone_verified: false });
-          if (!result.ok) {
-            toast.error(adminApiError(result.error, 'تعذر إلغاء توثيق الهاتف'));
-            return false;
-          }
-          await logAdminAction({
-            action: AUDIT_ACTIONS.USER_PHONE_UNVERIFY,
-            targetType: 'user',
-            targetId: uid,
-            targetLabel: targetName,
-            details: { phone: phoneDisplay },
-          }).catch(() => {});
-          toast.success('تم إلغاء توثيق الهاتف');
-          await refresh();
-          return true;
-        },
-      });
-    }
-  }, [user, uid, runConfirmed, refresh]);
-
   const handleSaveEdit = useCallback(async (targetUid, updates) => {
     const result = await updateNetworkAccess({ uid: targetUid, ...updates });
     if (!result.ok) {
@@ -357,7 +301,6 @@ export default function UserProfilePage() {
     : updateStatus === 'outdated'
       ? 'إصدار قديم'
       : 'لم يرسل بيانات الإصدار';
-  const isVerifiedPhone = isUserPhoneVerified(user || {});
   const targetName = getUserDisplayName(user, uid);
   const errorMessage = error?.message || 'تعذر تحميل بيانات هذا الحساب من القاعدة المحلية.';
 
@@ -432,12 +375,10 @@ export default function UserProfilePage() {
         uid={uid}
         status={status}
         expired={expired}
-        isVerifiedPhone={isVerifiedPhone}
         onOpenBilling={handleOpenCurrentBilling}
         onRenew={handleRenew}
         onEdit={() => setEditing(true)}
         onOpenAuth={() => setAuthModal(true)}
-        onVerifyPhone={handleManualPhoneVerify}
         onMakeOfficial={handleMakeOfficial}
         onToggleAccess={handleToggleAccess}
         onDelete={handleDelete}

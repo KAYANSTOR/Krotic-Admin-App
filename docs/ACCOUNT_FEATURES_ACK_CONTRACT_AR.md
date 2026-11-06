@@ -12,7 +12,7 @@
 |---|---|---|
 | `hotspot_template_editor` | محرر صفحات الهوتسبوت | `false` |
 | `mikrotik_card_generator` | توليد وطباعة الكروت | `false` |
-| `whatsapp_card_delivery` | إرسال الكروت عبر WhatsApp Business | `false` |
+| `whatsapp_card_delivery` | إرسال الكروت عبر WhatsApp | `false` |
 | `smart_delivery_routing` | التوجيه الذكي ومسارات الإرسال | `false` |
 | `hotspot_phone_recharge` | الشحن المباشر برقم الهاتف | `false` |
 

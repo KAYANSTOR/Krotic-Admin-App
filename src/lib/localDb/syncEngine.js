@@ -11,6 +11,8 @@ import {
   createSyncController,
   resetLegacyDataCursorsOnce,
   importUnindexedRowsWhenCountChanges,
+  mapTombstoneDoc,
+  replayTombstonesOnce,
 } from './syncCore';
 
 const PAGE_SIZE = 300;
@@ -79,7 +81,7 @@ export const SOURCES = [
     key: 'tombstones',
     table: null, // خاص: يطبّق الحذف بدل الكتابة
     ref: () => collection(firestore, 'sync_tombstones'),
-    map: (d) => ({ ...plain(d.data()), id: d.id }),
+    map: (d) => mapTombstoneDoc(d.id, plain(d.data())),
   },
 ];
 
@@ -142,6 +144,7 @@ controller.configure({ latestMs, pullSince });
 /** مزامنة واحدة في كل وقت. التلقائي محدود بفاصل دقيقة، واليدوي دائماً ينفذ. */
 export function syncAll(localDb, { reason = 'auto' } = {}) {
   return (async () => {
+    await replayTombstonesOnce(localDb);
     if (reason === 'manual') await resetLegacyDataCursorsOnce(localDb);
     const results = await controller.run(localDb, SOURCES, { reason });
     if (!Array.isArray(results)) return results;

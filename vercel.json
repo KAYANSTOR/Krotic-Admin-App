@@ -33,14 +33,6 @@
       "destination": "/api/router?__router=device-heartbeat&__apiRoute=list"
     },
     {
-      "source": "/api/request-otp",
-      "destination": "/api/router?__router=manage-user-auth&__apiRoute=request-otp"
-    },
-    {
-      "source": "/api/verify-otp",
-      "destination": "/api/router?__router=manage-user-auth&__apiRoute=verify-otp"
-    },
-    {
       "source": "/api/account-notifications",
       "destination": "/api/router?__router=manage-user-auth&__apiRoute=account-notifications"
     },
@@ -89,67 +81,14 @@
       "destination": "/api/router?__router=settlement"
     },
     {
-      "source": "/api/whatsapp/network-config",
-      "destination": "/api/router?__router=whatsapp-network-config"
-    },
-    {
-      "source": "/api/whatsapp/retention/purge",
-      "destination": "/api/router?__router=whatsapp-retention-purge"
-    },
-    {
-      "source": "/api/whatsapp/unknown-outcomes",
-      "destination": "/api/router?__router=whatsapp-unknown-outcomes"
-    },
-    {
-      "source": "/api/whatsapp/gateway/status",
-      "destination": "/api/router?__whatsappRoute=whatsapp-gateway-status"
-    },
-    {
-      "source": "/api/whatsapp/meta/exchange-token",
-      "destination": "/api/router?__whatsappRoute=whatsapp-meta-exchange-token"
-    },
-    {
-      "source": "/api/whatsapp/session/start",
-      "destination": "/api/router?__whatsappRoute=whatsapp-session-start"
-    },
-    {
-      "source": "/api/whatsapp/session/unlink",
-      "destination": "/api/router?__whatsappRoute=whatsapp-session-unlink"
-    },
-    {
-      "source": "/api/whatsapp/session",
-      "destination": "/api/router?__whatsappRoute=whatsapp-session-status"
-    },
-    {
-      "source": "/api/whatsapp/qr/generate",
-      "destination": "/api/router?__whatsappRoute=whatsapp-qr-generate"
-    },
-    {
-      "source": "/api/whatsapp/qr/status",
-      "destination": "/api/router?__whatsappRoute=whatsapp-qr-status"
-    },
-    {
-      "source": "/api/whatsapp/deliver",
-      "destination": "/api/router?__whatsappRoute=whatsapp-deliver"
-    },
-    {
-      "source": "/api/messages/send",
-      "destination": "/api/router?__whatsappRoute=whatsapp-messages-send"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
-  "ignoreCommand": "git show -s --format=%B HEAD | grep -Fq '[otp-no-deploy]'",
   "crons": [
     {
       "path": "/api/dispatch-notifications",
       "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/whatsapp/delivery/dispatch",
-      "schedule": "30 6 * * *"
     }
   ],
   "functions": {
@@ -160,14 +99,6 @@
     "api/dispatch-notifications.js": {
       "maxDuration": 60,
       "memory": 512
-    },
-    "api/whatsapp/meta/webhook.js": {
-      "maxDuration": 15,
-      "memory": 256
-    },
-    "api/whatsapp/delivery/dispatch.js": {
-      "maxDuration": 30,
-      "memory": 256
     }
   }
 }

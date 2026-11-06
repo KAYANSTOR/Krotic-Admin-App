@@ -6,6 +6,31 @@ import { emitSyncEvent } from './syncEvents.js';
  * ببدائل في الذاكرة. محركFirebase (syncEngine.js) هو من يمرّر الدوال الفعلية.
  */
 
+/**
+ * يحوّل وثيقة `sync_tombstones` إلى صف حذف. الحقل `id` في البيانات هو معرّف
+ * الوثيقة المحذوفة (uid أو NET-xxxxx أو معرّف البيع)، ولا يجوز أن يطغى عليه
+ * معرّف وثيقة الشاهد نفسها؛ ذلك يجعل كل حذف يستهدف معرّفًا غير موجود.
+ */
+export function mapTombstoneDoc(documentId, data) {
+  return { ...data, tombstoneId: documentId };
+}
+
+const TOMBSTONE_REPLAY_KEY = 'tombstone-target-id-replay-v1';
+
+/**
+ * إصدارات سابقة طبّقت الشواهد على معرّف خاطئ ثم حرّكت المؤشر، فبقيت الحسابات
+ * المحذوفة ظاهرة. يعاد تشغيل كل الشواهد مرة واحدة لكل قاعدة محلية.
+ */
+export async function replayTombstonesOnce(localDb) {
+  if (!localDb) return false;
+  const marker = await localDb.meta.get(TOMBSTONE_REPLAY_KEY);
+  if (marker?.value === 1) return false;
+  const state = await localDb.sync_state.get('tombstones');
+  if (state) await localDb.sync_state.put({ ...state, cursorMs: 0 });
+  await localDb.meta.put({ key: TOMBSTONE_REPLAY_KEY, value: 1, resetAt: Date.now() });
+  return true;
+}
+
 /** يطبّق شواهد الحذف على القاعدة المحلية (حذف بدل كتابة). */
 export async function applyTombstones(localDb, rows) {
   for (const t of rows) {

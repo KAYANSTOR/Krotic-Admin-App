@@ -1,8 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Settings, Users, DollarSign, Bell, ShieldCheck, ScrollText, X, Layers3,
-  ArrowDownToLine, Send, MessageSquare, Archive, ListChecks, Sparkles, Smartphone, MessageCircle,
-  AlertTriangle,
+  ArrowDownToLine, Send, MessageSquare, Archive, ListChecks, Sparkles, Smartphone,
 } from 'lucide-react';
 import { preloadRoute as requestRoutePreload } from '../lib/routeLoaders';
 import { TEMPLATE_CENTER_NAV, TEMPLATE_CENTER_ROOT } from '../lib/templateCenterRoutes';
@@ -33,8 +32,6 @@ const navGroups = [
     items: [
       ...TEMPLATE_CENTER_NAV.map((item) => ({ ...item, icon: TEMPLATE_CENTER_ICONS[item.path] || Layers3 })),
       { path: '/paid-features', label: 'مزايا الحساب', icon: Sparkles },
-      { path: '/whatsapp-settings', label: 'إعدادات WhatsApp', icon: MessageCircle },
-      { path: '/whatsapp-unknown-outcomes', label: 'مراجعة SMS معلّق', icon: AlertTriangle },
     ],
   },
   {

@@ -29,11 +29,10 @@ service cloud.firestore {
               'networkId', 'network_id', 'entitlementInstallationId', 'entitlementInstallationBoundAt',
               'entitlementVersion', 'entitlementPreviousInstallationId',
               'entitlementReboundAt', 'entitlementReboundAtMs', 'entitlementReboundBy',
-              'entitlementLeaseRevokedAtMs',
-              'phone_verified', 'phoneVerified', 'phone_verification_required',
-              'phone_verified_at', 'phone_verified_sms', 'phone_verified_manual',
-              'verified_by_admin', 'verified_by_admin_uid',
-              'phone_unverified_at', 'phone_unverified_by'];
+              'entitlementLeaseRevokedAtMs', 'entitlementInstallationHistory',
+              'entitlementAutoTransfersMs', 'entitlementLastTransferAtMs',
+              'entitlementLastTransferBy', 'entitlementPendingTransfer',
+              'accessUpdatedAtMs'];
     }
     function touchesAccessFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(accessFields());
@@ -153,51 +152,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // WhatsApp server-only collections (Admin SDK).
-    match /whatsapp_inbound_events/{eventId} {
-      allow read, write: if false;
-    }
-    match /whatsapp_delivery_operations/{operationId} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-    match /whatsapp_delivery_queue/{jobId} {
-      allow read, write: if false;
-    }
-    match /whatsapp_network_secrets/{networkId} {
-      allow read, write: if false;
-    }
-    match /whatsapp_status_events/{eventId} {
-      allow read, write: if false;
-    }
-    match /whatsapp_message_requests/{requestId} {
-      allow read, write: if false;
-    }
-
-    // Non-secret gateway session status (option 1). Service writes via Admin SDK only.
-    match /whatsapp_gateway_sessions/{networkId} {
-      allow read: if isAdmin() || isNetworkOwner(networkId);
-      allow write: if false;
-    }
-
-    // SMS device tasks: owner reads; device may update claim/result fields only.
-    match /whatsapp_sms_device_tasks/{taskId} {
-      allow read: if isAdmin()
-        || (signedIn() && resource.data.ownerUid == request.auth.uid);
-      allow update: if signedIn()
-        && resource.data.ownerUid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'claimOwnerDeviceId', 'claimUntilMs',
-                       'deviceSentAtMs', 'deviceError', 'updatedAtMs'])
-        && request.resource.data.status in ['claimed', 'sent', 'failed']
-        && request.resource.data.taskId == resource.data.taskId
-        && request.resource.data.deliveryOperationId == resource.data.deliveryOperationId
-        && request.resource.data.networkId == resource.data.networkId
-        && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.toLocalPhone == resource.data.toLocalPhone
-        && request.resource.data.body == resource.data.body;
-      allow create, delete: if false;
-    }
 
     match /users/{userId} {
       allow read: if isAdmin() || isSelf(userId);
