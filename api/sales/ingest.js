@@ -375,6 +375,30 @@ export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now()) {
   return { ok: true };
 }
 
+/**
+ * تشخيص فقط: يسجّل سبب رفض البيع وشكل الحقول دون تغيير السلوك أو الرد.
+ * لا يُسجَّل السرّ ولا التوقيع ولا التوكن؛ المعرّفات تُقصّ.
+ */
+function describeField(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return `string(${value.length}):${value.slice(0, 60)}`;
+  if (typeof value === 'number') return `number:${value}`;
+  return typeof value;
+}
+
+function logIngestRejection(uid, error, body) {
+  try {
+    const input = normalizeBody(body);
+    const fields = {};
+    for (const key of Object.keys(input).slice(0, 20)) {
+      fields[key.slice(0, 40)] = describeField(input[key]);
+    }
+    console.warn('sales/ingest: rejected', JSON.stringify({ uid, error, fields }));
+  } catch {
+    // التشخيص لا يجوز أن يغيّر مسار الطلب.
+  }
+}
+
 export default async function handler(req, res, dependencies = {}) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -389,13 +413,17 @@ export default async function handler(req, res, dependencies = {}) {
   const uid = caller.uid;
 
   const parsed = validateIngestInput(req.body);
-  if (!parsed.ok) return res.status(400).json({ success: false, error: parsed.error });
+  if (!parsed.ok) {
+    logIngestRejection(uid, parsed.error, req.body);
+    return res.status(400).json({ success: false, error: parsed.error });
+  }
 
   const payload = { ...parsed.value, uid };
   const payloadHash = computePayloadHash(payload);
 
   const claimedHash = normalizeBody(req.body).payloadHash;
   if (typeof claimedHash === 'string' && claimedHash.trim() && claimedHash.trim() !== payloadHash) {
+    logIngestRejection(uid, 'payload_hash_mismatch', req.body);
     return res.status(400).json({ success: false, error: 'payload_hash_mismatch', expected: payloadHash });
   }
 
@@ -403,6 +431,7 @@ export default async function handler(req, res, dependencies = {}) {
   const db = (dependencies.getFirestore || getFirestore)();
   const serverNow = dependencies.now ?? Date.now();
   if (payload.createdMs > serverNow + SALE_CREATED_MAX_FUTURE_MS) {
+    logIngestRejection(uid, 'created_at_in_future', req.body);
     return res.status(400).json({
       success: false,
       error: 'created_at_in_future',
