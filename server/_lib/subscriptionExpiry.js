@@ -1,5 +1,6 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { legacyAccessFields } from './accessStatus.js';
+import { accessStamp, legacyAccessFields } from './accessStatus.js';
+import { chooseLatestAccessState } from './accessReconciliation.js';
 
 const BATCH_SIZE = 200;
 const ELIGIBLE_STATUSES = new Set(['TRIAL', 'ACTIVE_PAID']);
@@ -74,10 +75,21 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
 
       for (const entry of group) {
         const userSnapshot = byPath.get(entry.userRef.path);
-        if (!userSnapshot?.exists || !shouldLockExpiredAccount(userSnapshot.data(), now)) continue;
+        if (!userSnapshot?.exists) continue;
+        const user = userSnapshot.data() || {};
+        const networkSnapshot = entry.networkRef ? byPath.get(entry.networkRef.path) : null;
+        const network = networkSnapshot?.exists ? networkSnapshot.data() || {} : null;
+        const ownershipMatches = Boolean(network) && (network.owner_uid === entry.uid
+          || (!network.owner_uid && entry.networkId === entry.uid));
+        // Decide on the newest access write between user and network, exactly
+        // like the license endpoint. A renewal recorded only on the network
+        // must never be overwritten by a stale end date on the user record.
+        const effective = chooseLatestAccessState(user, ownershipMatches ? network : null) || user;
+        if (!shouldLockExpiredAccount(effective, now)) continue;
         const patch = {
           accessStatus: 'LOCKED_EXPIRED',
           ...legacyAccessFields('LOCKED_EXPIRED'),
+          ...accessStamp(now),
           lockedAt: Timestamp.fromMillis(now),
           updatedAt: FieldValue.serverTimestamp(),
           updatedAtMs: now,
@@ -85,12 +97,6 @@ export async function expireOverdueSubscriptions(db, now = Date.now()) {
         transaction.set(entry.userRef, patch, { merge: true });
         currentLocked += 1;
 
-        if (!entry.networkRef) continue;
-        const networkSnapshot = byPath.get(entry.networkRef.path);
-        if (!networkSnapshot?.exists) continue;
-        const network = networkSnapshot.data() || {};
-        const ownershipMatches = network.owner_uid === entry.uid
-          || (!network.owner_uid && entry.networkId === entry.uid);
         if (!ownershipMatches) continue;
         transaction.set(entry.networkRef, patch, { merge: true });
         currentNetworksUpdated += 1;

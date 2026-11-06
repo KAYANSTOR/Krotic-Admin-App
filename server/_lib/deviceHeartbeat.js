@@ -1,6 +1,7 @@
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from './firebaseAdmin.js';
+import { ACCESS_REASONS, resolveAccountAccess } from './accountAccess.js';
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const MAX_SIGNALS = 32;
@@ -129,16 +130,12 @@ export default async function handler(req, res, dependencies = {}) {
     const userSnap = await db.collection('users').doc(uid).get();
     if (!userSnap.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
     const user = userSnap.data() || {};
-    const accessStatus = typeof user.accessStatus === 'string'
-      ? user.accessStatus.trim().toUpperCase()
-      : '';
-    if (accessStatus === 'SUSPENDED_GRACE' || accessStatus === 'SUSPENDED_MANUAL' || accessStatus === 'SUSPENDED') {
-      return res.status(403).json({ success: false, error: 'account_suspended' });
-    }
     const boundInstallationId = typeof user.entitlementInstallationId === 'string'
       ? user.entitlementInstallationId.trim()
       : '';
     if (boundInstallationId && boundInstallationId !== validated.value.installationId) {
+      // Heartbeat never proves ownership; only the server-bound installation
+      // may report telemetry for this account.
       return res.status(403).json({ success: false, error: 'installation_mismatch' });
     }
     const networkId = typeof user.networkId === 'string' && user.networkId.trim()
@@ -158,6 +155,12 @@ export default async function handler(req, res, dependencies = {}) {
     }
 
     const now = dependencies.now ?? Date.now();
+    // Same access rules as the license endpoint: the newest access write
+    // between users/{uid} and the owned network decides suspension.
+    const access = resolveAccountAccess({ user, network, nowMs: now });
+    if (access.reason === ACCESS_REASONS.ACCOUNT_SUSPENDED) {
+      return res.status(403).json({ success: false, error: 'account_suspended' });
+    }
     const heartbeat = {
       ...validated.value,
       accountId: uid,

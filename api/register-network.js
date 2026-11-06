@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from '../server/_lib/firebaseAdmin.js';
-import { ACCESS_STATUSES, legacyAccessFields } from '../server/_lib/accessStatus.js';
+import { ACCESS_STATUSES, accessStamp, legacyAccessFields } from '../server/_lib/accessStatus.js';
 import { formatNetworkId, nextNetworkSequence } from '../server/_lib/networkId.js';
 import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 
@@ -144,6 +144,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
         Object.assign(profilePatch, {
           accessStatus: networkAccessStatus,
           ...legacyAccessFields(networkAccessStatus, networkExpiry),
+          accessUpdatedAtMs: Number(network.accessUpdatedAtMs) || 0,
           ...(network.trialStartedAt != null ? { trialStartedAt: network.trialStartedAt } : {}),
           ...(network.subscriptionEndsAt != null ? { subscriptionEndsAt: network.subscriptionEndsAt } : {}),
         });
@@ -195,6 +196,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       trialStartedAt: startedAt,
       subscriptionEndsAt: endsAt,
       ...legacyAccessFields('TRIAL', endsAt),
+      ...accessStamp(startedAtMs),
     };
     const network = {
       networkId,
@@ -203,6 +205,7 @@ export async function provisionSelfRegistration(db, { uid, profile, now = Date.n
       trialStartedAt: startedAt,
       subscriptionEndsAt: endsAt,
       ...legacyAccessFields('TRIAL', endsAt),
+      ...accessStamp(startedAtMs),
       networkSecretEncrypted: candidateNetworkSecret,
       networkSecretVersion: 1,
       networkSecretUpdatedAt: FieldValue.serverTimestamp(),

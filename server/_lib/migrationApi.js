@@ -15,7 +15,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, authenticateAdmin } from './firebaseAdmin.js';
 import { planUserMigration, computeNetworkTotals, computeAggregate } from './migration.js';
 import { parseNetworkId } from './networkId.js';
-import { legacyAccessFields } from './accessStatus.js';
+import { accessStamp, legacyAccessFields } from './accessStatus.js';
 
 export const MIGRATE_ACTIONS = ['classify-users', 'rebuild-network', 'rebuild-all', 'migrate-legacy-sales'];
 const DEFAULT_LIMIT = 100;
@@ -147,6 +147,7 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
     const accessPatch = {
       accessStatus: plan.accessStatus,
       ...legacyAccessFields(plan.accessStatus, endAt),
+      ...accessStamp(now),
       trialStartedAt: Timestamp.fromMillis(plan.trialStartedAt),
       subscriptionEndsAt: endAt,
       networkId,
@@ -166,6 +167,7 @@ async function classifyUsers(db, { cursor, limit, now, actorUid }) {
     batch.set(networkRef, {
       accessStatus: plan.accessStatus,
       ...legacyAccessFields(plan.accessStatus, endAt),
+      ...accessStamp(now),
       trialStartedAt: Timestamp.fromMillis(plan.trialStartedAt),
       subscriptionEndsAt: endAt,
       networkId,

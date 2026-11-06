@@ -32,18 +32,28 @@ export function accessStateOf(record) {
     subscription_end_date: record.subscription_end_date ?? end,
     ...(record.trialStartedAt != null ? { trialStartedAt: record.trialStartedAt } : {}),
     updatedAtMs: timestampMillis(record.updatedAtMs) || timestampMillis(record.updatedAt),
+    accessUpdatedAtMs: timestampMillis(record.accessUpdatedAtMs),
   };
 }
 
 /**
- * Pick the server-owned access snapshot written most recently. If timestamps
- * are unavailable, keep the user record as the conservative source of truth.
+ * Pick the access snapshot whose *access fields* were written most recently.
+ *
+ * `accessUpdatedAtMs` is stamped only by access writers (provision, renew,
+ * suspend, expiry, settlement). A record carrying it is always newer than a
+ * legacy record without it. The generic `updatedAtMs` is a legacy fallback
+ * only, because sales totals and settings bump it on the network document and
+ * would otherwise let a stale network status override a fresh user status.
+ * With no usable timestamps the user record stays the source of truth.
  */
 export function chooseLatestAccessState(user, network) {
   const userState = accessStateOf(user);
   const networkState = accessStateOf(network);
   if (!userState) return networkState;
   if (!networkState) return userState;
+  if (userState.accessUpdatedAtMs || networkState.accessUpdatedAtMs) {
+    return networkState.accessUpdatedAtMs > userState.accessUpdatedAtMs ? networkState : userState;
+  }
   return networkState.updatedAtMs > userState.updatedAtMs ? networkState : userState;
 }
 

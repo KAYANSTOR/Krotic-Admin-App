@@ -1,6 +1,7 @@
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { authenticateAdmin, ensureFirebaseAdmin } from './firebaseAdmin.js';
+import { appendHistory } from './deviceTransferPolicy.js';
 
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -79,7 +80,10 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
       const binding = bindingSnapshot.exists ? (bindingSnapshot.data() || {}) : {};
       const bindingUid = typeof binding.uid === 'string' ? binding.uid.trim() : '';
       if (bindingUid && bindingUid !== uid) {
-        return { error: 'installation_bound_to_another_account', status: 409 };
+        const ownerSnapshot = await transaction.get(db.collection('users').doc(bindingUid));
+        if (ownerSnapshot.exists) {
+          return { error: 'installation_bound_to_another_account', status: 409 };
+        }
       }
       const user = snapshot.data() || {};
       const previousInstallationId = typeof user.entitlementInstallationId === 'string'
@@ -103,6 +107,12 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
         entitlementReboundAtMs: now,
         entitlementReboundBy: caller.callerUid,
         entitlementLeaseRevokedAtMs: now,
+        entitlementInstallationHistory: appendHistory(
+          previousInstallationId
+            ? appendHistory(user.entitlementInstallationHistory, previousInstallationId)
+            : user.entitlementInstallationHistory,
+          installationId,
+        ),
       }, { merge: true });
       transaction.set(bindingRef, {
         uid,
@@ -110,7 +120,7 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
         boundAt: serverTimestamp(),
         updatedAtMs: now,
         reboundBy: caller.callerUid,
-      }, { merge: true });
+      }, { merge: false });
       transaction.set(auditRef, {
         action: 'ENTITLEMENT_DEVICE_REBIND',
         actorUid: caller.callerUid,

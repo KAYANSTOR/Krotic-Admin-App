@@ -290,7 +290,8 @@ test('يربط أول تثبيت ويصدر حمولة Lease صالحة بتوق
   assert.equal(res.statusCode, 200);
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
   assert.equal(docs.get('device_bindings/install-a').uid, 'user-1');
-  assert.equal(writes.length, 3);
+  // One merged user write (binding + reconciled access) and one binding write.
+  assert.equal(writes.length, 2);
   assert.equal(res.body.payload.uid, 'user-1');
   assert.equal(res.body.payload.installationId, 'install-a');
   assert.equal(res.body.payload.userId, 'user-1');
@@ -402,22 +403,97 @@ test('يعيد إصدار عقد بعد انتهاء lease السابق إذا �
   ), true);
 });
 
-test('يرفض التثبيت المختلف بعد الربط ولا يغير الوثيقة', async () => {
-  const { db, docs, writes } = makeDb(baseUser({ entitlementInstallationId: 'install-a' }));
+test('ينقل الترخيص ذاتياً إلى تثبيت جديد بعد إعادة التثبيت ويرفع الإصدار', async () => {
+  const { db, docs } = makeDb(baseUser({ entitlementInstallationId: 'install-a', entitlementVersion: 2 }));
+  docs.set('device_bindings/install-a', { uid: 'user-1', installationId: 'install-a' });
   const res = makeResponse();
   await activateEntitlement(
     request({ userId: 'user-1', deviceId: 'install-b' }),
     res,
     activationDependencies(db),
   );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.installationId, 'install-b');
+  assert.equal(res.body.payload.version, 3);
+  const user = docs.get('users/user-1');
+  assert.equal(user.entitlementInstallationId, 'install-b');
+  assert.equal(user.entitlementPreviousInstallationId, 'install-a');
+  assert.deepEqual(user.entitlementInstallationHistory, ['install-a', 'install-b']);
+  assert.deepEqual(user.entitlementAutoTransfersMs, [NOW]);
+  assert.equal(docs.get('device_bindings/install-b').uid, 'user-1');
+  const audit = [...docs.entries()].find(([key, value]) => key.startsWith('admin_audit_logs/')
+    && value.action === 'ENTITLEMENT_DEVICE_SELF_TRANSFER');
+  assert.ok(audit, 'self transfer must be audited');
+});
+
+test('لا يعيد الترخيص إلى تثبيت سبق استبداله (منع تبادل جهازين لحساب واحد)', async () => {
+  const { db, docs, writes } = makeDb(baseUser({
+    entitlementInstallationId: 'install-b',
+    entitlementPreviousInstallationId: 'install-a',
+    entitlementInstallationHistory: ['install-a', 'install-b'],
+  }));
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.error, 'installation_mismatch');
-  assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-a');
+  assert.equal(res.body.reason, 'installation_replaced');
+  assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-b');
   assert.equal(writes.length, 0);
+});
+
+test('يوقف النقل الذاتي بعد بلوغ الحد ويطلب الدعم', async () => {
+  const { db, docs, writes } = makeDb(baseUser({
+    entitlementInstallationId: 'install-c',
+    entitlementInstallationHistory: ['install-a', 'install-b', 'install-c'],
+    entitlementAutoTransfersMs: [NOW - 3_000, NOW - 2_000, NOW - 1_000],
+  }));
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-d' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, 'installation_mismatch');
+  assert.equal(res.body.reason, 'device_transfer_limit_reached');
+  assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-c');
+  assert.equal(writes.length, 0);
+});
+
+test('لا ينقل ترخيص حساب غير مؤهل ويعيد سبب الرفض', async () => {
+  const { db, writes } = makeDb(baseUser({ entitlementInstallationId: 'install-a', accessStatus: 'SUSPENDED_GRACE' }));
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-b' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.error, 'account_not_eligible');
+  assert.equal(res.body.reason, 'account_suspended');
+  assert.equal(writes.length, 0);
+});
+
+test('يحرر ربط جهاز تركه حساب محذوف بدل حبس الهاتف للأبد', async () => {
+  const { db, docs } = makeDb(baseUser());
+  docs.set('device_bindings/install-a', { uid: 'deleted-user', installationId: 'install-a' });
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ installationId: 'install-a' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(docs.get('device_bindings/install-a').uid, 'user-1');
 });
 
 test('يرفض تثبيتاً مرتبطاً بحساب آخر قبل كتابة أي شيء', async () => {
   const { db, docs, writes } = makeDb(baseUser());
+  docs.set('users/other-user', baseUser({ uid: 'other-user' }));
   docs.set('device_bindings/install-a', { uid: 'other-user', installationId: 'install-a' });
   const res = makeResponse();
   await activateEntitlement(
@@ -502,6 +578,7 @@ test('إعادة ربط التثبيت تتطلب مديراً وتُسجّل ا
 
 test('إعادة الربط لا تسرق جهازاً مرتبطاً بحساب آخر', async () => {
   const { db, docs, writes } = makeDb(baseUser({ entitlementInstallationId: 'install-a' }));
+  docs.set('users/other-user', baseUser({ uid: 'other-user' }));
   docs.set('device_bindings/install-b', { uid: 'other-user', installationId: 'install-b' });
   const res = makeResponse();
   await rebindEntitlementDevice(

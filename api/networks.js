@@ -22,9 +22,10 @@ import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseA
 import { nextNetworkSequence, formatNetworkId, parseNetworkId } from '../server/_lib/networkId.js';
 import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 import { ensureNetworkSecret } from '../server/_lib/networkSecretStore.js';
-import { ACCESS_STATUSES, legacyAccessFields } from '../server/_lib/accessStatus.js';
+import { ACCESS_STATUSES, accessStamp, legacyAccessFields } from '../server/_lib/accessStatus.js';
 import deviceHeartbeatHandler from '../server/_lib/deviceHeartbeat.js';
 import deviceHeartbeatsHandler from '../server/_lib/deviceHeartbeats.js';
+import { chooseLatestAccessState } from '../server/_lib/accessReconciliation.js';
 
 export { ACCESS_STATUSES, legacyAccessFields };
 export const TRIAL_DAYS = 30;
@@ -201,7 +202,7 @@ async function provision(db, { ownerUid, actorUid, now }) {
   const trialStartedAt = now;
   const subscriptionEndsAt = now + TRIAL_DAYS * DAY_MS;
   const subscriptionEndsAtTimestamp = Timestamp.fromMillis(subscriptionEndsAt);
-  const accessFields = legacyAccessFields('TRIAL', subscriptionEndsAtTimestamp);
+  const accessFields = { ...legacyAccessFields('TRIAL', subscriptionEndsAtTimestamp), ...accessStamp(now) };
   const networkSecret = generateNetworkSecret();
   const networkSecretEncrypted = encryptNetworkSecret(networkSecret);
   const networkRef = db.collection('networks').doc(networkId);
@@ -246,6 +247,9 @@ export async function updateAccess(db, { value, actorUid, now }) {
     const endAt = Timestamp.fromMillis(value.subscriptionEndsAtMs);
     patch.subscriptionEndsAt = endAt;
     patch.subscription_end_date = endAt;
+  }
+  if (value.accessStatus !== undefined || value.subscriptionEndsAtMs !== undefined) {
+    Object.assign(patch, accessStamp(now));
   }
   if (value.commissionRate !== undefined) patch.commission_rate = value.commissionRate;
   if (value.warningMessage !== undefined) patch.warning_message = value.warningMessage;
@@ -362,6 +366,7 @@ export async function repairLegacyAccess(db, { value, actorUid, now }) {
         const patch = {
           accessStatus,
           ...legacyAccessFields(accessStatus),
+          ...accessStamp(now),
           updatedAt: FieldValue.serverTimestamp(),
           updatedAtMs: now,
         };
@@ -412,17 +417,6 @@ export async function renewSubscription(db, { value, actorUid, now }) {
     if (!userSnap.exists) return { status: 'account_not_found' };
 
     const user = userSnap.data() || {};
-    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-    const nextEnd = computeRenewalEnd(previousEnd, now, value.extensionDays);
-    const endAt = Timestamp.fromMillis(nextEnd);
-    const patch = {
-      accessStatus: 'ACTIVE_PAID',
-      ...legacyAccessFields('ACTIVE_PAID', endAt),
-      subscriptionEndsAt: endAt,
-      updatedAt: FieldValue.serverTimestamp(),
-      updatedAtMs: now,
-    };
-
     const networkId = typeof user.networkId === 'string' && UID_PATTERN.test(user.networkId)
       ? user.networkId
       : value.uid;
@@ -431,6 +425,24 @@ export async function renewSubscription(db, { value, actorUid, now }) {
     const networkData = networkSnap.exists ? (networkSnap.data() || {}) : null;
     const networkBelongsToUser = Boolean(networkData)
       && (networkData.owner_uid === value.uid || (!networkData.owner_uid && networkId === value.uid));
+
+    // Extend from the newest recorded end date (user or owned network) so a
+    // renewal never shortens a subscription that one record already extended.
+    const latest = chooseLatestAccessState(user, networkBelongsToUser ? networkData : null) || user;
+    const previousEnd = Math.max(
+      toMillis(latest.subscriptionEndsAt ?? latest.subscription_end_date),
+      toMillis(user.subscriptionEndsAt ?? user.subscription_end_date),
+    );
+    const nextEnd = computeRenewalEnd(previousEnd, now, value.extensionDays);
+    const endAt = Timestamp.fromMillis(nextEnd);
+    const patch = {
+      accessStatus: 'ACTIVE_PAID',
+      ...legacyAccessFields('ACTIVE_PAID', endAt),
+      ...accessStamp(now),
+      subscriptionEndsAt: endAt,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedAtMs: now,
+    };
 
     transaction.set(userRef, patch, { merge: true });
     if (networkBelongsToUser) transaction.set(networkRef, patch, { merge: true });
@@ -465,6 +477,7 @@ async function batchExpiry(db, { value, actorUid, now }) {
       const patch = {
         subscriptionEndsAt: end,
         subscription_end_date: end,
+        ...accessStamp(now),
         updatedAt: FieldValue.serverTimestamp(),
         updatedAtMs: now,
       };

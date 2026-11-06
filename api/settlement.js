@@ -16,8 +16,9 @@ import { ensureFirebaseAdmin, authenticateAdmin } from '../server/_lib/firebaseA
 import { isPositiveRiyal } from '../server/_lib/money.js';
 import { parseNetworkId } from '../server/_lib/networkId.js';
 import { monthlySalesQuery, settleNetworkPayment } from '../server/_lib/networkLedger.js';
-import { legacyAccessFields } from '../server/_lib/accessStatus.js';
+import { accessStamp, legacyAccessFields } from '../server/_lib/accessStatus.js';
 import recordPaymentHandler from '../server/record-payment.js';
+import { chooseLatestAccessState } from '../server/_lib/accessReconciliation.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -142,8 +143,16 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
     const userSnap = await transaction.get(userRef);
     if (!userSnap.exists) return { status: 'account_not_found', settlementId };
     const user = userSnap.data() || {};
+    const networkSnap = await transaction.get(networkRef);
+    const networkData = networkSnap.exists ? (networkSnap.data() || {}) : null;
+    const ownsNetwork = Boolean(networkData)
+      && (networkData.owner_uid === value.uid || (!networkData.owner_uid && networkId === value.uid));
+    const latest = chooseLatestAccessState(user, ownsNetwork ? networkData : null) || user;
 
-    const previousEnd = toMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
+    const previousEnd = Math.max(
+      toMillis(latest.subscriptionEndsAt ?? latest.subscription_end_date),
+      toMillis(user.subscriptionEndsAt ?? user.subscription_end_date),
+    );
     const extensionApplied = value.extensionDays > 0;
     const base = Math.max(previousEnd, now);
     const nextEnd = extensionApplied ? base + value.extensionDays * DAY_MS : previousEnd;
@@ -152,6 +161,7 @@ export async function approveSettlement({ db, callerUid, value, now = Date.now()
       ? {
           accessStatus: 'ACTIVE_PAID',
           ...legacyAccessFields('ACTIVE_PAID', endAt),
+          ...accessStamp(now),
           subscriptionEndsAt: endAt,
         }
       : {};

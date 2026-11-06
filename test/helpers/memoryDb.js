@@ -9,9 +9,14 @@ class MemoryTable {
 
   keyFor(row) {
     if (Array.isArray(this.keyPath)) {
-      return JSON.stringify(this.keyPath.map((part) => row[part]));
+      return this.normalizeKey(this.keyPath.map((part) => row[part]));
     }
     return row[this.keyPath];
+  }
+
+  // Compound keys are stored as JSON; single keys are stored as-is (like Dexie).
+  normalizeKey(key) {
+    return Array.isArray(this.keyPath) ? JSON.stringify(key) : key;
   }
 
   async bulkPut(rows) {
@@ -25,12 +30,12 @@ class MemoryTable {
   }
 
   async get(key) {
-    const found = this.rows.get(this.keyPath === 'key' ? key : JSON.stringify(key));
+    const found = this.rows.get(this.normalizeKey(key));
     return found ? { ...found } : undefined;
   }
 
   async delete(key) {
-    const normalized = this.keyPath === 'key' ? key : JSON.stringify(key);
+    const normalized = this.normalizeKey(key);
     this.rows.delete(normalized);
   }
 

@@ -26,7 +26,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { ensureFirebaseAdmin, isAdminUid } from '../../server/_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../../server/_lib/money.js';
 import { networkSecretCandidates } from '../../server/_lib/networkSecretStore.js';
-import { expiryMillis, shouldLockExpiredAccount } from '../../server/_lib/subscriptionExpiry.js';
+import { resolveAccountAccess, saleAllowedByAccess } from '../../server/_lib/accountAccess.js';
 
 const MAX_SALE_ID_LENGTH = 128;
 const MINOR_UNITS_PER_RIYAL = 100;
@@ -347,44 +347,15 @@ async function resolveClientUid(req, dependencies = {}) {
 }
 
 /**
- * Checks if a sale is permitted based on user access status and subscription expiry.
- * In accordance with OWNER_ACCESS_COMMISSION_POLICY_AR:
- * - If subscription is expired, commercial activity is locked for NEW sales.
- * - However, pending older sales created before expiration (from offline outbox) ARE allowed.
+ * Checks if a sale is permitted for the account (see server/_lib/accountAccess.js).
+ * `network` is the owned network document; the most recent access write
+ * between it and the user document wins, exactly like the license endpoint.
  */
-export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now()) {
+export function isSaleAllowedForAccount(user, saleCreatedMs, now = Date.now(), network = null) {
   if (!user || typeof user !== 'object') {
     return { ok: false, status: 404, error: 'account_not_found' };
   }
-
-  const accessStatus = typeof user.accessStatus === 'string'
-    ? user.accessStatus.trim().toUpperCase()
-    : '';
-
-  // 1. Manually suspended account
-  if (accessStatus === 'SUSPENDED_GRACE'
-      || accessStatus === 'SUSPENDED_MANUAL'
-      || accessStatus === 'SUSPENDED'
-      || user.blocked === true
-      || (user.is_active === false && accessStatus !== 'TRIAL' && accessStatus !== 'LOCKED_EXPIRED')) {
-    return { ok: false, status: 403, error: 'account_suspended' };
-  }
-
-  // 2. Subscription Expiry
-  const endMs = expiryMillis(user.subscriptionEndsAt ?? user.subscription_end_date);
-  const isExpired = shouldLockExpiredAccount(user, now) || accessStatus === 'LOCKED_EXPIRED';
-
-  if (isExpired && endMs > 0 && typeof saleCreatedMs === 'number' && saleCreatedMs > endMs) {
-    return {
-      ok: false,
-      status: 403,
-      error: 'subscription_expired_new_sales_locked',
-      subscriptionEndsAtMs: endMs,
-      saleCreatedMs,
-    };
-  }
-
-  return { ok: true };
+  return saleAllowedByAccess(resolveAccountAccess({ user, network, nowMs: now }), saleCreatedMs);
 }
 
 /**
@@ -456,15 +427,7 @@ export default async function handler(req, res, dependencies = {}) {
   try {
     userSnapshot = await db.collection('users').doc(uid).get();
     if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
-        const user = userSnapshot.data() || {};
-    const accessCheck = isSaleAllowedForAccount(user, payload.createdMs, serverNow);
-    if (!accessCheck.ok) {
-      return res.status(accessCheck.status).json({
-        success: false,
-        error: accessCheck.error,
-        ...(accessCheck.subscriptionEndsAtMs ? { subscriptionEndsAtMs: accessCheck.subscriptionEndsAtMs, saleCreatedMs: accessCheck.saleCreatedMs } : {}),
-      });
-    }
+    const user = userSnapshot.data() || {};
     networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim()
       : typeof user.network_id === 'string' && user.network_id.trim() ? user.network_id.trim()
         : uid;
@@ -476,6 +439,15 @@ export default async function handler(req, res, dependencies = {}) {
     const network = networkSnapshot.data() || {};
     if ((network.owner_uid && network.owner_uid !== uid) || (!network.owner_uid && networkId !== uid)) {
       return res.status(403).json({ success: false, error: 'network_owner_mismatch' });
+    }
+    const accessCheck = isSaleAllowedForAccount(user, payload.createdMs, serverNow, network);
+    if (!accessCheck.ok) {
+      logIngestRejection(uid, accessCheck.error, req.body);
+      return res.status(accessCheck.status).json({
+        success: false,
+        error: accessCheck.error,
+        ...(accessCheck.subscriptionEndsAtMs ? { subscriptionEndsAtMs: accessCheck.subscriptionEndsAtMs, saleCreatedMs: accessCheck.saleCreatedMs } : {}),
+      });
     }
     secretCandidates = networkSecretCandidates(network, { now: serverNow });
     if (secretCandidates.length === 0) {

@@ -2,12 +2,13 @@ import { createPrivateKey, sign } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { ensureFirebaseAdmin } from './firebaseAdmin.js';
-import { chooseLatestAccessState, accessStateMatches } from './accessReconciliation.js';
+import { accessStateMatches } from './accessReconciliation.js';
+import { loadAccountAccess } from './accountAccess.js';
+import { appendHistory, planDeviceTransfer } from './deviceTransferPolicy.js';
 
 export const ENTITLEMENT_KEY_ID = 'ed25519-krotak-2026-10-v1';
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const INSTALLATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
-const ACTIVE_STATUSES = new Set(['TRIAL', 'ACTIVE_PAID']);
 const OPERATIONS = Object.freeze(['sell', 'settle', 'sync', 'support', 'readOnly']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,17 +57,6 @@ function objectBody(body) {
     }
   }
   return body && typeof body === 'object' && !Array.isArray(body) ? body : null;
-}
-
-function timestampMillis(value) {
-  if (value == null) return NaN;
-  if (typeof value.toMillis === 'function') return value.toMillis();
-  if (typeof value.toDate === 'function') return value.toDate().getTime();
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return Date.parse(value);
-  if (typeof value._seconds === 'number') return value._seconds * 1000;
-  return NaN;
 }
 
 function response(res, status, body) {
@@ -156,73 +146,97 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
 
   try {
     const issued = await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(userRef);
-      if (!snapshot.exists) return { error: 'account_not_found', status: 404 };
+      const read = (ref) => transaction.get(ref);
+      const account = await loadAccountAccess(db, uid, { read, nowMs: now });
+      if (!account.exists) return { error: 'account_not_found', status: 404 };
+      const { user, network, networkRef, access } = account;
+
       const bindingSnapshot = await transaction.get(bindingRef);
       const binding = bindingSnapshot.exists ? (bindingSnapshot.data() || {}) : {};
       const bindingUid = typeof binding.uid === 'string' ? binding.uid.trim() : '';
       if (bindingUid && bindingUid !== uid) {
-        return { error: 'installation_bound_to_another_account', status: 409 };
-      }
-      const user = snapshot.data() || {};
-      const networkId = typeof user.networkId === 'string' && user.networkId.trim()
-        ? user.networkId.trim()
-        : uid;
-      const networkRef = db.collection('networks').doc(networkId);
-      const networkSnapshot = await transaction.get(networkRef);
-      const network = networkSnapshot.exists ? networkSnapshot.data() || {} : null;
-      const networkBelongsToUser = Boolean(network)
-        && (network.owner_uid === uid || (!network.owner_uid && networkId === uid));
-      const accessState = chooseLatestAccessState(user, networkBelongsToUser ? network : null);
-      const accessStatus = accessState?.accessStatus || '';
-      if (!ACTIVE_STATUSES.has(accessStatus)) {
-        return { error: 'account_not_eligible', status: 403 };
+        // A binding left behind by a deleted account must not lock the phone
+        // out forever: release it when its owner no longer exists.
+        const ownerSnapshot = await transaction.get(db.collection('users').doc(bindingUid));
+        if (ownerSnapshot.exists) {
+          return { error: 'installation_bound_to_another_account', status: 409 };
+        }
       }
 
-      const endMillis = timestampMillis(accessState?.subscriptionEndsAt ?? accessState?.subscription_end_date);
-      if (!Number.isFinite(endMillis) || endMillis <= now) {
-        return { error: 'account_not_eligible', status: 403 };
+      if (!access.eligible) {
+        // `error` keeps its historical value for installed apps; `reason`
+        // tells the app exactly which screen to show.
+        return { error: 'account_not_eligible', reason: access.reason, status: 403 };
       }
+      const accessState = access.state;
+      const accessStatus = accessState.accessStatus;
+      const endMillis = access.endMs;
 
       const boundInstallationId = typeof user.entitlementInstallationId === 'string'
         ? user.entitlementInstallationId.trim()
         : '';
+      let leaseVersion = leaseVersionFor(user);
+      const userPatch = {};
       if (boundInstallationId && boundInstallationId !== installationId) {
-        return { error: 'installation_mismatch', status: 409 };
+        const decision = planDeviceTransfer({ user, installationId, nowMs: now });
+        if (!decision.allowed) {
+          return { error: decision.error, reason: decision.reason, status: 409 };
+        }
+        leaseVersion = decision.nextVersion;
+        Object.assign(userPatch, {
+          entitlementInstallationId: installationId,
+          entitlementInstallationBoundAt: serverTimestamp(),
+          entitlementVersion: leaseVersion,
+          entitlementPreviousInstallationId: boundInstallationId,
+          entitlementInstallationHistory: decision.history,
+          entitlementAutoTransfersMs: decision.transfers,
+          entitlementLastTransferAtMs: now,
+          entitlementLastTransferBy: 'self_service',
+        });
+        transaction.set(db.collection('admin_audit_logs').doc(), {
+          action: 'ENTITLEMENT_DEVICE_SELF_TRANSFER',
+          actorUid: uid,
+          uid,
+          details: {
+            previousInstallationId: boundInstallationId,
+            installationId,
+            version: leaseVersion,
+            transfersInWindow: decision.transfers.length,
+          },
+          createdAt: serverTimestamp(),
+          createdAtMs: now,
+        });
+      } else if (!boundInstallationId) {
+        Object.assign(userPatch, {
+          entitlementInstallationId: installationId,
+          entitlementInstallationBoundAt: serverTimestamp(),
+          entitlementVersion: leaseVersion,
+          entitlementInstallationHistory: appendHistory(user.entitlementInstallationHistory, installationId),
+        });
       }
 
       // A previous deployment could update users and networks at different times.
       // Reconcile the older record before issuing a lease so the client cannot
       // receive "suspended" or an old expiry after an admin renewal.
-      if (accessState && !accessStateMatches(user, accessState)) {
-        transaction.set(userRef, {
-          ...accessState,
-          updatedAt: serverTimestamp(),
-          updatedAtMs: now,
-        }, { merge: true });
+      const { updatedAtMs: _ignoredUpdatedAtMs, ...accessFields } = accessState;
+      if (!accessStateMatches(user, accessState)) {
+        Object.assign(userPatch, accessFields, { updatedAt: serverTimestamp(), updatedAtMs: now });
       }
-      if (accessState && networkBelongsToUser && !accessStateMatches(network, accessState)) {
+      if (Object.keys(userPatch).length) transaction.set(account.userRef, userPatch, { merge: true });
+      if (network && !accessStateMatches(network, accessState)) {
         transaction.set(networkRef, {
-          ...accessState,
+          ...accessFields,
           updatedAt: serverTimestamp(),
           updatedAtMs: now,
         }, { merge: true });
       }
-      const leaseVersion = leaseVersionFor(user);
-      if (!boundInstallationId) {
-        transaction.set(userRef, {
-          entitlementInstallationId: installationId,
-          entitlementInstallationBoundAt: serverTimestamp(),
-          entitlementVersion: leaseVersion,
-        }, { merge: true });
-      }
-      if (!bindingSnapshot.exists) {
+      if (!bindingSnapshot.exists || bindingUid !== uid) {
         transaction.set(bindingRef, {
           uid,
           installationId,
           boundAt: serverTimestamp(),
           updatedAtMs: now,
-        }, { merge: true });
+        }, { merge: false });
       }
 
       const window = entitlementLeaseWindow({
@@ -261,7 +275,12 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
       return { payload, signature };
     });
 
-    if (issued?.error) return response(res, issued.status, { error: issued.error });
+    if (issued?.error) {
+      return response(res, issued.status, {
+        error: issued.error,
+        ...(issued.reason ? { reason: issued.reason } : {}),
+      });
+    }
     return response(res, 200, issued);
   } catch (error) {
     console.error('entitlement signing failed', {
