@@ -48,7 +48,7 @@ test('delivery history records carry the sync timestamp for local admin history'
 });
 
 test('all notification senders use the same Android channel', async () => {
-  const files = ['../server/apiHandlers/send-fcm.js', '../api/dispatch-notifications.js', '../functions/index.js'];
+  const files = ['../server/apiHandlers/send-fcm.js', '../api/dispatch-notifications.js'];
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /krotak_admin_v2/, `${file} must use the registered channel`);

@@ -180,6 +180,17 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
       if (boundInstallationId && boundInstallationId !== installationId) {
         const decision = planDeviceTransfer({ user, installationId, nowMs: now });
         if (!decision.allowed) {
+          // Record the refused installation so the admin can approve it from
+          // the dashboard (device-rebind) without asking the customer for ids.
+          transaction.set(userRef, {
+            entitlementPendingTransfer: {
+              installationId,
+              reason: decision.reason,
+              requestedAtMs: now,
+            },
+            // Bumped so the admin dashboard's delta sync picks the request up.
+            updatedAtMs: now,
+          }, { merge: true });
           return { error: decision.error, reason: decision.reason, status: 409 };
         }
         leaseVersion = decision.nextVersion;
@@ -222,7 +233,13 @@ export default async function activateEntitlement(req, res, dependencies = {}) {
       if (!accessStateMatches(user, accessState)) {
         Object.assign(userPatch, accessFields, { updatedAt: serverTimestamp(), updatedAtMs: now });
       }
-      if (Object.keys(userPatch).length) transaction.set(account.userRef, userPatch, { merge: true });
+      // The device that is now issued a lease no longer has a pending request.
+      if (user.entitlementPendingTransfer) userPatch.entitlementPendingTransfer = null;
+      if (Object.keys(userPatch).length) {
+        // Any binding change must reach the admin dashboard (delta sync by updatedAtMs).
+        userPatch.updatedAtMs = now;
+        transaction.set(account.userRef, userPatch, { merge: true });
+      }
       if (network && !accessStateMatches(network, accessState)) {
         transaction.set(networkRef, {
           ...accessFields,

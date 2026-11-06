@@ -11,7 +11,7 @@
 |---|---|
 | `assets/template_catalog/krotak_default_catalog_v1.json` | الكتالوج الكامل: المحافظ ومصادر الرسائل، قوالب التحويل الواردة، قوالب الرسائل الصادرة، تعريفات قوالب نقطة البيع |
 | `assets/template_catalog/krotak_default_catalog_v1.sha256` | بصمة SHA-256 للملف (تُتحقق منها الإدارة قبل الاستيراد) |
-| `docs/contracts/default-template-catalog.schema.json` | JSON Schema للتحقق من بنية الكتالوج قبل الاستيراد |
+| `contracts/schemas/default-template-catalog.schema.json` | JSON Schema للتحقق من بنية الكتالوج قبل الاستيراد |
 | `lib/domain/services/default_template_catalog.dart` | المصدر الوحيد للكتالوج داخل التطبيق |
 | `tools/export_default_catalog.dart` | مولّد الكتالوج: `dart run tools/export_default_catalog.dart` |
 

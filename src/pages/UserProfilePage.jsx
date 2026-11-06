@@ -452,6 +452,7 @@ export default function UserProfilePage() {
         expired={expired}
         updateStatus={updateStatus}
         updateLabel={updateLabel}
+        onChanged={refresh}
       />
 
       <UserProfileFinancialSummary

@@ -442,7 +442,9 @@ test('لا يعيد الترخيص إلى تثبيت سبق استبداله (م
   assert.equal(res.body.error, 'installation_mismatch');
   assert.equal(res.body.reason, 'installation_replaced');
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-b');
-  assert.equal(writes.length, 0);
+  // Only the pending request for admin approval is written; nothing is rebound.
+  assert.equal(writes.length, 1);
+  assert.equal(docs.get('users/user-1').entitlementPendingTransfer.reason, 'installation_replaced');
 });
 
 test('يوقف النقل الذاتي بعد بلوغ الحد ويطلب الدعم', async () => {
@@ -461,7 +463,30 @@ test('يوقف النقل الذاتي بعد بلوغ الحد ويطلب ال�
   assert.equal(res.body.error, 'installation_mismatch');
   assert.equal(res.body.reason, 'device_transfer_limit_reached');
   assert.equal(docs.get('users/user-1').entitlementInstallationId, 'install-c');
-  assert.equal(writes.length, 0);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(docs.get('users/user-1').entitlementPendingTransfer, {
+    installationId: 'install-d',
+    reason: 'device_transfer_limit_reached',
+    requestedAtMs: NOW,
+  });
+});
+
+test('بعد موافقة الإدارة على التثبيت المعلّق يصدر له العقد ويُمسح الطلب', async () => {
+  const { db, docs } = makeDb(baseUser({
+    entitlementInstallationId: 'install-d',
+    entitlementVersion: 5,
+    entitlementInstallationHistory: ['install-a', 'install-b', 'install-c', 'install-d'],
+    entitlementPendingTransfer: { installationId: 'install-d', reason: 'device_transfer_limit_reached', requestedAtMs: NOW - 1 },
+  }));
+  const res = makeResponse();
+  await activateEntitlement(
+    request({ userId: 'user-1', deviceId: 'install-d' }),
+    res,
+    activationDependencies(db),
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.payload.installationId, 'install-d');
+  assert.equal(docs.get('users/user-1').entitlementPendingTransfer, null);
 });
 
 test('لا ينقل ترخيص حساب غير مؤهل ويعيد سبب الرفض', async () => {

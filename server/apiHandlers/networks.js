@@ -24,7 +24,7 @@ import { encryptNetworkSecret, generateNetworkSecret } from '../_lib/networkSecr
 import { ensureNetworkSecret } from '../_lib/networkSecretStore.js';
 import { ACCESS_STATUSES, accessStamp, legacyAccessFields } from '../_lib/accessStatus.js';
 import deviceHeartbeatHandler from '../_lib/deviceHeartbeat.js';
-import deviceHeartbeatsHandler from '../_lib/deviceHeartbeats.js';
+import deviceHeartbeatsHandler from '../_lib/deviceHeartbeatsApi.js';
 import { chooseLatestAccessState } from '../_lib/accessReconciliation.js';
 
 export { ACCESS_STATUSES, legacyAccessFields };

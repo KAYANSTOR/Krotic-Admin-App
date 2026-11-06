@@ -71,7 +71,7 @@
 **المستقبل الخادمي (منفَّذ في هذه المهمة):**
 
 - المسار: `POST /api/template-center?__apiRoute=template-center` مع `action=ack`
-  (عبر `api/settings.js` — بلا دالة Vercel جديدة).
+  (عبر `api/router.js` ← `server/apiHandlers/settings.js` — بلا دالة Vercel جديدة).
 - الكود: `server/_lib/templateCenterAck.js` (تحقق + idempotency) و`handleAck`
   في `server/_lib/templateCenterApi.js` (مصادقة + كتابة).
 - التخزين: مجموعة `template_center_acks` بمعرّف حتمي؛ تُعرض في `action=list`

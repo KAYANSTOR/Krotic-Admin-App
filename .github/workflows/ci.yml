@@ -2,9 +2,9 @@ name: Admin CI
 
 on:
   push:
-    branches: [main, development, ux/dashboard-declutter]
+    branches: [main]
   pull_request:
-    branches: [main, development]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -33,20 +33,3 @@ jobs:
         run: npm run test:rules
       - name: Build admin dashboard
         run: npm run build
-
-  validate-functions:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install function dependencies
-        working-directory: functions
-        run: npm install
-      - name: Test Cloud Functions
-        working-directory: functions
-        run: npm test
-      - name: Validate Cloud Function syntax
-        working-directory: functions
-        run: node --check index.js

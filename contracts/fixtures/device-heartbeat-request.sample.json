@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "installationId": "inst-7f3c2a9e",
+  "accountId": "Y5sgMLcjSampleUid01",
+  "networkId": "NET-10025",
+  "appVersion": "2.4.0",
+  "releaseId": "release-2026-11",
+  "pendingCount": 0,
+  "unknownDeliveryCount": 0,
+  "riskSignals": [],
+  "lastSeenAt": "2026-11-06T21:51:00.000Z",
+  "lastSyncAt": "2026-11-06T21:50:00.000Z",
+  "oldestPendingAt": null,
+  "lastError": null
+}

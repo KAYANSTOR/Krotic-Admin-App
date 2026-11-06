@@ -61,4 +61,4 @@ flutter run --dart-define=KROTAK_ENABLE_ENTITLEMENT_LEASE=true
 
 ## النشر والفحص
 
-تعديلات الخادم تمر من `api/settings.js` المعاد استخدامه كي لا تضاف Serverless Function جديدة. بعد دفع commit إلى `main` يبدأ Vercel النشر تلقائياً. تُشغّل اختبارات الخادم بواسطة `node --test test/entitlementActivation.test.js`، واختبارات Android بواسطة Flutter CI/local.
+تعديلات الخادم تمر من `server/apiHandlers/settings.js` عبر الموجّه المشترك `api/router.js` كي لا تضاف Serverless Function جديدة. بعد دفع commit إلى `main` يبدأ Vercel النشر تلقائياً. تُشغّل اختبارات الخادم بواسطة `node --test test/entitlementActivation.test.js`، واختبارات Android بواسطة Flutter CI/local.

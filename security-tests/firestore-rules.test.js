@@ -472,55 +472,18 @@ if (!emulatorAddress) {
     await assertFails(getDocs(collection(userDb, 'admin_audit_logs')));
   });
 
-  test('sale uploads are constrained; server-owned fields and revisions are rejected', async () => {
-    const db = testEnv.authenticatedContext('user-1').firestore();
-    const saleRef = doc(db, 'networks/user-1/sales/sale-1');
+  test('sales are server-written only: owners and admins cannot write them directly', async () => {
     const sale = {
       saleId: 'sale-1',
-      customerId: 'customer-1',
-      cardId: 'card-1',
-      faceValue: 100,
-      amount: 100,
       amountMinor: 10000,
       currencyCode: 'YER',
-      face_value: 100,
-      commission: 0,
-      commissionAmount: 0,
-      netAmount: 100,
       status: 'COMPLETED',
-      createdAt: Timestamp.now(),
-      created_at: Timestamp.now(),
       source: 'krotak_app',
+      createdAt: Timestamp.now(),
     };
-    await assertSucceeds(setDoc(saleRef, sale));
-    await assertSucceeds(updateDoc(saleRef, sale));
-    await assertFails(updateDoc(saleRef, { amountMinor: 990000 }));
-    await assertFails(setDoc(doc(db, 'networks/user-1/sales/forged'), {
-      ...sale,
-      saleId: 'forged',
-      status: 'PENDING',
-    }));
-    await assertFails(setDoc(doc(db, 'networks/user-1/sales/inconsistent'), {
-      ...sale,
-      saleId: 'inconsistent',
-      amount: 999,
-    }));
-    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-fields'), {
-      ...sale,
-      saleId: 'server-fields',
-      settlement_status: 'SETTLED',
-    }));
-    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-commission'), {
-      ...sale,
-      saleId: 'server-commission',
-      commissionMinor: 500,
-    }));
-    await assertFails(setDoc(doc(db, 'networks/user-1/sales/server-riyal-fields'), {
-      ...sale,
-      saleId: 'server-riyal-fields',
-      amountRiyal: 100,
-      commissionRiyal: 5,
-      moneyPolicyVersion: 2,
-    }));
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    await assertFails(setDoc(doc(ownerDb, 'networks/user-1/sales/sale-1'), sale));
+    await assertFails(setDoc(doc(adminDb, 'networks/user-1/sales/sale-2'), { ...sale, saleId: 'sale-2' }));
   });
 }

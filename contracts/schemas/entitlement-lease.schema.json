@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/entitlement-lease.schema.json",
+  "title": "POST /api/entitlements/activate — 200 response (signed lease)",
+  "schemaVersion": 1,
+  "description": "signature = base64 Ed25519 over the UTF-8 bytes of JSON.stringify(payload) exactly as sent (key order is part of the contract). commercialUntil = last moment for sell/settle. maxOfflineUntil = min(commercialUntil + 7d, issuedAt + 30d): after it the device must reach the server. expiry/userId/deviceId are legacy aliases of commercialUntil/uid/installationId.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "payload",
+    "signature"
+  ],
+  "properties": {
+    "signature": {
+      "type": "string",
+      "minLength": 80,
+      "maxLength": 100
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "installationId",
+        "issuedAt",
+        "notBefore",
+        "version",
+        "keyId",
+        "operations",
+        "commercialUntil",
+        "maxOfflineUntil",
+        "serverTime",
+        "expiry",
+        "userId",
+        "deviceId"
+      ],
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "installationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "keyId": {
+          "const": "ed25519-krotak-2026-10-v1"
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "enum": [
+              "sell",
+              "settle",
+              "sync",
+              "support",
+              "readOnly"
+            ]
+          }
+        },
+        "commercialUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxOfflineUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trialEndsAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiry": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "userId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "deviceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        }
+      }
+    }
+  }
+}

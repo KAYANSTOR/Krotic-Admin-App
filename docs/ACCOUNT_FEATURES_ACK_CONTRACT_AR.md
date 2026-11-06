@@ -27,7 +27,7 @@
 
 تبقى `active` دون هجرة أو حذف في هذه المرحلة.
 
-المسار الإداري هو `POST /api/admin/account-features`، ويُعاد توجيهه إلى دالة `api/settings.js` القائمة للمحافظة على حد Vercel Hobby. يدعم `action: catalog` و`action: get` و`action: set`. المسارات الخادمية تتحقق من صلاحية المدير، وتقبل مفاتيح الكتالوج النشطة وقيم Boolean فقط. التحديث ذري ويضبط `account_features_version` و`account_features_updated_at_ms` و`account_features_updated_by` و`account_features_source` و`updatedAtMs`، ويكتب أثراً في `users/{uid}/account_feature_audit/{id}` يحوي `previous` و`next` و`changed_keys` الفعلية فقط.
+المسار الإداري هو `POST /api/admin/account-features`، ويُعاد توجيهه إلى دالة `server/apiHandlers/settings.js` القائمة للمحافظة على حد Vercel Hobby. يدعم `action: catalog` و`action: get` و`action: set`. المسارات الخادمية تتحقق من صلاحية المدير، وتقبل مفاتيح الكتالوج النشطة وقيم Boolean فقط. التحديث ذري ويضبط `account_features_version` و`account_features_updated_at_ms` و`account_features_updated_by` و`account_features_source` و`updatedAtMs`، ويكتب أثراً في `users/{uid}/account_feature_audit/{id}` يحوي `previous` و`next` و`changed_keys` الفعلية فقط.
 
 الكتالوج الابتدائي في `app_settings/account_features_catalog`. عند وجود كتالوج قديم ناقص، يُدمَج أي مفتاح معتمد ناقص تلقائياً دون حذف المفاتيح الموجودة. شاشة الإدارة على الرابط `/paid-features` (الاسم الظاهر «مزايا الحساب»). وجود المفتاح على الخادم لا يثبت وحده أن نسخة Android قد استهلكته أو فعلت الميزة.
 

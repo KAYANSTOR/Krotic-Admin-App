@@ -2,11 +2,12 @@ import Section from '../ui/Section';
 import { Card } from '../ui/Card';
 import Badge from '../ui/Badge';
 import UserDevicesPanel from '../UserDevicesPanel';
+import EntitlementDeviceCard from './EntitlementDeviceCard';
 import { formatDate } from '../../lib/format';
 import { formatAppVersion } from '../../lib/users/profileHelpers';
 
 export default function UserProfileDeviceSection({
-  user, uid, targetName, globalConfig, status, expired, updateStatus, updateLabel,
+  user, uid, targetName, globalConfig, status, expired, updateStatus, updateLabel, onChanged,
 }) {
   return (
           <Section eyebrow="التطبيق والجهاز" title="الإصدار المثبت وآخر ظهور">
@@ -54,6 +55,7 @@ export default function UserProfileDeviceSection({
                 تعكس هذه البيانات آخر تقرير ناجح من التطبيق، وليست فحصاً لحظياً للجهاز.
               </p>
             </Card>
+            <EntitlementDeviceCard user={user} uid={uid} onChanged={onChanged} />
             <UserDevicesPanel userId={uid} userLabel={targetName} />
           </Section>
   );

@@ -5,8 +5,12 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
 
 function requestedLimit(req) {
-  const raw = new URL(req.url || '/api/device-heartbeats', 'https://krotak.invalid')
-    .searchParams.get('limit');
+  // Behind the shared Vercel router req.url is the rewritten destination, so
+  // req.query (merged by Vercel) is authoritative; the URL is a fallback.
+  const fromQuery = Array.isArray(req.query?.limit) ? req.query.limit[0] : req.query?.limit;
+  const raw = fromQuery != null
+    ? String(fromQuery)
+    : new URL(req.url || '/api/device-heartbeats', 'https://krotak.invalid').searchParams.get('limit');
   if (raw == null || raw.trim() === '') return DEFAULT_LIMIT;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isSafeInteger(parsed)) return DEFAULT_LIMIT;

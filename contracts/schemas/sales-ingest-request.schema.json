@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/sales-ingest-request.schema.json",
+  "title": "POST /api/sales/ingest — request body",
+  "schemaVersion": 1,
+  "description": "Headers: Authorization: Bearer <Firebase ID token>, x-verification-receipt: <timestamp>.<hex HMAC-SHA256 with the network secret>. Identity, commission and settlement fields are server-owned: sending any of them is rejected (client_identity_field_forbidden / client_financial_field_forbidden / client_field_forbidden). amountMinor is YER in minor units and must be a whole riyal. saleUuid is preferred; saleId is the legacy alias and must equal it when both are sent. Responses: 201 CREATED, 200 ALREADY_EXISTS_ACKED (same payloadHash), 409 conflict (same id, different payload).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "amountMinor",
+    "currencyCode",
+    "createdMs"
+  ],
+  "properties": {
+    "saleUuid": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
+    "saleId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
+    "amountMinor": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000000000000
+    },
+    "currencyCode": {
+      "const": "YER"
+    },
+    "createdMs": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "customerId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "cardId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "payloadHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "saleUuid"
+      ]
+    },
+    {
+      "required": [
+        "saleId"
+      ]
+    }
+  ]
+}

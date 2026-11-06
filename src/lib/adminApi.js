@@ -65,6 +65,7 @@ export const ADMIN_API_ERRORS = {
   entitlement_signing_not_configured: 'توقيع عقود الاستحقاق غير مهيّأ على الخادم.',
   entitlement_signing_failed: 'تعذر إصدار عقد الاستحقاق الموقّع.',
   entitlement_device_rebind_failed: 'تعذر تنفيذ استبدال جهاز الاستحقاق على الخادم.',
+  rebind_input_invalid: 'اكتب سبب الموافقة وتأكد من معرّف التثبيت.',
   default_trial_days_out_of_range: 'الأيام التجريبية يجب أن تكون بين 0 و30.',
   default_trial_days_invalid: 'الأيام التجريبية يجب أن تكون عدداً صحيحاً.',
   default_commission_rate_out_of_range: 'العمولة العامة يجب أن تكون بين 0 و20.',
@@ -170,6 +171,11 @@ export async function updateNetworkAccess(payload) {
 
 export async function renewNetwork(uid, extensionDays = 30) {
   return callAdminApi('/api/networks', { action: 'renew', uid, extensionDays });
+}
+
+export async function rebindEntitlementDevice({ uid, installationId, reason }) {
+  // Admin approval for a device the server refused to move automatically.
+  return callAdminApi('/api/entitlements/device-rebind', { uid, installationId, reason });
 }
 
 export async function batchExpiry(subscriptionEndsAt) {

@@ -107,6 +107,8 @@ export default async function rebindEntitlementDevice(req, res, dependencies = {
         entitlementReboundAtMs: now,
         entitlementReboundBy: caller.callerUid,
         entitlementLeaseRevokedAtMs: now,
+        entitlementPendingTransfer: null,
+        updatedAtMs: now,
         entitlementInstallationHistory: appendHistory(
           previousInstallationId
             ? appendHistory(user.entitlementInstallationHistory, previousInstallationId)

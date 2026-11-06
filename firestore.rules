@@ -68,35 +68,6 @@ service cloud.firestore {
         && request.resource.data.last_seen_at is timestamp;
     }
 
-    function validSale(saleId) {
-      return request.resource.data.keys().hasOnly([
-          'saleId', 'customerId', 'cardId', 'faceValue', 'amount',
-          'amountMinor', 'currencyCode', 'face_value', 'commission',
-          'commissionAmount', 'netAmount', 'status', 'createdAt',
-          'created_at', 'source'
-        ])
-        && !request.resource.data.keys().hasAny([
-          'settlement_status', 'is_settled', 'settled', 'settlementId', 'settledAt',
-          'settledBy', 'commissionRateBps', 'commissionMinor', 'commissionRiyal',
-          'amountRiyal', 'paidRiyal', 'moneyPolicyVersion', 'payloadPolicyVersion', 'verified'
-        ])
-        && request.resource.data.saleId == saleId
-        && request.resource.data.status == 'COMPLETED'
-        && request.resource.data.source == 'krotak_app'
-        && request.resource.data.amountMinor is int
-        && request.resource.data.amountMinor > 0
-        && request.resource.data.currencyCode is string
-        && request.resource.data.amount == request.resource.data.amountMinor / 100
-        && request.resource.data.faceValue == request.resource.data.amountMinor / 100
-        && request.resource.data.face_value == request.resource.data.amountMinor / 100
-        && request.resource.data.netAmount == request.resource.data.amountMinor / 100
-        && request.resource.data.commission == 0
-        && request.resource.data.commissionAmount == 0
-        && request.resource.data.createdAt is timestamp
-        && request.resource.data.created_at is timestamp
-        && request.resource.data.createdAt == request.resource.data.created_at;
-    }
-
     match /Admins/{adminId} {
       allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
       allow write: if false;
@@ -267,11 +238,10 @@ service cloud.firestore {
 
       match /sales/{saleId} {
         allow read: if isAdmin() || isNetworkOwner(networkId);
-        allow create: if isAdmin() || (isNetworkOwner(networkId) && validSale(saleId));
-        allow update: if isAdmin() || (isNetworkOwner(networkId)
-          && validSale(saleId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([]));
-        allow delete: if false;
+        // Sales are written only by POST /api/sales/ingest (Admin SDK): it
+        // verifies the HMAC receipt, entitlement and idempotency, and computes
+        // commission/totals. A direct client write would bypass all of that.
+        allow write: if false;
       }
 
       match /payments/{paymentId} {

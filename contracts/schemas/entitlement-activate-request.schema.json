@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/entitlement-activate-request.schema.json",
+  "title": "POST /api/entitlements/activate — request body",
+  "schemaVersion": 1,
+  "description": "Authorization: Bearer <Firebase ID token>. The account is taken from the token; userId is optional and must match it. deviceId and installationId are aliases; at least one is required and both must match when sent.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "userId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    },
+    "installationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "deviceId"
+      ]
+    },
+    {
+      "required": [
+        "installationId"
+      ]
+    }
+  ]
+}

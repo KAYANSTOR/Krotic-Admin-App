@@ -80,6 +80,11 @@ const SCHEMA_FILES = [
   'account-features-catalog.schema.json',
   'default-template-catalog.schema.json',
   'inventory-snapshot.schema.json',
+  'entitlement-activate-request.schema.json',
+  'entitlement-lease.schema.json',
+  'sales-ingest-request.schema.json',
+  'device-heartbeat-request.schema.json',
+  'sms-device-task.schema.json',
 ];
 
 test('every contract schema is valid JSON and carries a schemaVersion', async () => {
@@ -105,6 +110,9 @@ const FIXTURE_SCHEMA_MAP = {
   'account-features-catalog.sample.json': 'account-features-catalog.schema.json',
   'android-default-catalog-v1.json': 'default-template-catalog.schema.json',
   'inventory-snapshot.sample.json': 'inventory-snapshot.schema.json',
+  'entitlement-activate-request.sample.json': 'entitlement-activate-request.schema.json',
+  'sales-ingest-request.sample.json': 'sales-ingest-request.schema.json',
+  'device-heartbeat-request.sample.json': 'device-heartbeat-request.schema.json',
 };
 
 test('every synthetic fixture validates against its schema', async () => {

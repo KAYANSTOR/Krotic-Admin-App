@@ -15,3 +15,6 @@
 | `account-features-catalog.sample.json` | `account-features-catalog.schema.json` | الكتالوج المغلق افتراضياً بمفاتيح المزايا الأربعة. |
 | `android-default-catalog-v1.json` | `default-template-catalog.schema.json` | كتالوج الاختبار المضمن في Android. |
 | `inventory-snapshot.sample.json` | `inventory-snapshot.schema.json` | ملخص أعداد مخزون الكروت من Android؛ أعداد فقط بلا أسرار. |
+| `entitlement-activate-request.sample.json` | `entitlement-activate-request.schema.json` | طلب تفعيل ترخيص الجهاز؛ الحساب من التوكن. |
+| `sales-ingest-request.sample.json` | `sales-ingest-request.schema.json` | رفع بيع بمعرّف منقّط؛ بلا حقول هوية أو عمولة. |
+| `device-heartbeat-request.sample.json` | `device-heartbeat-request.schema.json` | نبضة تشخيص فقط؛ لا تمنح ولا تسحب وصولًا. |
