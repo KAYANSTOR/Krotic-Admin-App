@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { sendTokensInBatches, buildDeliveryHistory } from '../api/send-fcm.js';
+import { sendTokensInBatches, buildDeliveryHistory } from '../server/apiHandlers/send-fcm.js';
 
 function successfulResult(tokens) {
   return {
@@ -48,7 +48,7 @@ test('delivery history records carry the sync timestamp for local admin history'
 });
 
 test('all notification senders use the same Android channel', async () => {
-  const files = ['../api/send-fcm.js', '../api/dispatch-notifications.js', '../functions/index.js'];
+  const files = ['../server/apiHandlers/send-fcm.js', '../api/dispatch-notifications.js', '../functions/index.js'];
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /krotak_admin_v2/, `${file} must use the registered channel`);

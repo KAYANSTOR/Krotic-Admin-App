@@ -6,7 +6,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // كل سلطة الإدارة تأتي من العضوية في مجموعة Admins/admins فقط.
     function isAdmin() {
       return signedIn() && (
         (exists(/databases/$(database)/documents/Admins/$(request.auth.uid))
@@ -20,8 +19,6 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
-    // حقول الصلاحية مملوكة للخادم. لا يجوز لأي عميل (ولا حتى المدير) كتابتها؛
-    // تتغيّر فقط عبر نقاط النهاية الخادمية الموقّعة (Admin SDK).
     function accessFields() {
       return ['accessStatus', 'trialStartedAt', 'subscriptionEndsAt', 'is_active',
               'is_trial', 'commission_rate', 'warning_message', 'has_custom_warning',
@@ -47,8 +44,6 @@ service cloud.firestore {
         && (!changed.hasAny(['app_version_code']) || request.resource.data.app_version_code is int);
     }
 
-    // الشبكة مملوكة للحساب المخزّن في owner_uid. الشبكات القديمة (قبل نظام
-    // NET-xxxxx) تبقى networkId == owner uid، لذا نغطّي الحالتين.
     function isNetworkOwner(networkId) {
       return signedIn() && (
         request.auth.uid == networkId
@@ -57,8 +52,6 @@ service cloud.firestore {
       );
     }
 
-    // التسجيل الذاتي يكتب الملف الشخصي فقط. حالة الوصول/التجربة قرار خادمي،
-    // لذا لم يعد يُقبل is_active / is_trial من العميل.
     function validSelfRegistration(userId) {
       return request.resource.data.keys().hasAll([
           'uid', 'phone', 'network_name', 'platform', 'app_version', 'created_at', 'last_seen_at'
@@ -75,9 +68,6 @@ service cloud.firestore {
         && request.resource.data.last_seen_at is timestamp;
     }
 
-    // رفع مبيعات العميل الانتقالي (Android قبل تعميم HMAC). يستطيع العميل إنشاء
-    // سجل مقيّد لشبكته فقط، ولا يستطيع أبدًا ضبط حقول العمولة/التسوية الخادمية،
-    // ولا تعديل سجل مبيعات قائم.
     function validSale(saleId) {
       return request.resource.data.keys().hasOnly([
           'saleId', 'customerId', 'cardId', 'faceValue', 'amount',
@@ -107,8 +97,6 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.resource.data.created_at;
     }
 
-    // مستندات المدراء تُنشأ/تُعدَّل/تُحذف فقط عبر المسار الخادمي POST /api/admins.
-    // العميل — حتى المدير — لا يكتبها مباشرة (قرار و3).
     match /Admins/{adminId} {
       allow read: if signedIn() && (adminId == request.auth.uid || isAdmin());
       allow write: if false;
@@ -118,8 +106,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // إعدادات التطبيق الجذرية تُقرأ من الحسابات المسجّلة، وتُكتب فقط عبر
-    // نقطة النهاية الخادمية المقيّدة POST /api/settings.
     match /app_settings/{document} {
       allow read: if signedIn() && document == 'global_config';
       allow write: if false;
@@ -130,8 +116,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Central template releases are served only by the authenticated API:
-    // clients cannot inspect drafts or alter immutable releases/pointers.
     match /template_center_drafts/{draftId} {
       allow read, write: if false;
     }
@@ -148,13 +132,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Billing aggregates are private to admins and cannot be changed by clients.
     match /admin_aggregates/{userId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
-    // تتيح للمزامنة الموحدة فحص سجلات الشبكات لكل المديرين فقط.
     match /{path=**}/sales/{saleId} {
       allow read: if isAdmin();
     }
@@ -162,21 +144,16 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
-    // شواهد الحذف تُنشأ عبر Admin SDK ويقرأها المدير لمزامنة الحذف محلياً.
     match /sync_tombstones/{tombstoneId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
-    // سجل تعارضات الاستقبال الخادمي للمبيعات (idempotency + payload hash).
-    // يكتبه الخادم عبر Admin SDK فقط؛ لا وصول من العميل.
     match /sale_ingest_registry/{entryId} {
       allow read: if isAdmin();
       allow write: if false;
     }
 
-    // ربط التثبيت بالحساب سجل خادمي مستقل يمنع استخدام الجهاز نفسه لحسابين.
-    // لا يقرأه العميل ولا يكتبه؛ يمر عبر مساري التفعيل/إعادة الربط فقط.
     match /device_bindings/{installationId} {
       allow read: if isAdmin();
       allow write: if false;
@@ -190,9 +167,6 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
-    // سجل العمليات الإدارية: قراءة/إضافة لكل مدير، وغير قابل للتعديل أو الحذف
-    // من العميل حتى يبقى أثراً تدقيقياً موثوقاً. المدراء العاديون كانوا يُمنعون
-    // من قراءته وإضافته (لا قاعدة سابقة) فتفشل الصفحة بصمت.
     match /admin_audit_logs/{logId} {
       allow read, create: if isAdmin();
       allow update, delete: if false;
@@ -208,23 +182,63 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // WhatsApp server-only collections (Admin SDK).
+    match /whatsapp_inbound_events/{eventId} {
+      allow read, write: if false;
+    }
+    match /whatsapp_delivery_operations/{operationId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /whatsapp_delivery_queue/{jobId} {
+      allow read, write: if false;
+    }
+    match /whatsapp_network_secrets/{networkId} {
+      allow read, write: if false;
+    }
+    match /whatsapp_status_events/{eventId} {
+      allow read, write: if false;
+    }
+    match /whatsapp_message_requests/{requestId} {
+      allow read, write: if false;
+    }
+
+    // Non-secret gateway session status (option 1). Service writes via Admin SDK only.
+    match /whatsapp_gateway_sessions/{networkId} {
+      allow read: if isAdmin() || isNetworkOwner(networkId);
+      allow write: if false;
+    }
+
+    // SMS device tasks: owner reads; device may update claim/result fields only.
+    match /whatsapp_sms_device_tasks/{taskId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'claimOwnerDeviceId', 'claimUntilMs',
+                       'deviceSentAtMs', 'deviceError', 'updatedAtMs'])
+        && request.resource.data.status in ['claimed', 'sent', 'failed']
+        && request.resource.data.taskId == resource.data.taskId
+        && request.resource.data.deliveryOperationId == resource.data.deliveryOperationId
+        && request.resource.data.networkId == resource.data.networkId
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.toLocalPhone == resource.data.toLocalPhone
+        && request.resource.data.body == resource.data.body;
+      allow create, delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || isSelf(userId);
       allow create: if isSelf(userId) && validSelfRegistration(userId);
-
-      // أصحاب الحسابات يحدّثون الملف الشخصي/الحضور فقط. حقول الوصول والفوترة
-      // مملوكة للخادم ولا يمكن تغييرها من أي عميل، ولا حتى من المدير.
       allow update: if !touchesAccessFields()
         && (isAdmin() || (isSelf(userId) && onlyProfileFields()));
-
       allow delete: if isAdmin();
 
-      // Device tokens are scoped to the owning account.
       match /devices/{deviceId} {
         allow read, create, update, delete: if isAdmin() || isSelf(userId);
       }
 
-      // Users can read their own inbox and toggle only its read flag.
       match /notifications/{notificationId} {
         allow read: if isAdmin() || isSelf(userId);
         allow update: if isAdmin() || (isSelf(userId)
@@ -235,8 +249,6 @@ service cloud.firestore {
 
       match /{subcollection}/{documentId} {
         allow read: if isAdmin();
-        // account_features وACK تكتبان عبر Admin SDK فقط؛ حتى مدير اللوحة
-        // لا يكتبها مباشرة من المتصفح، منعاً لتجاوز التحقق والتدقيق الخادمي.
         allow write: if isAdmin()
           && subcollection != 'template_acks'
           && subcollection != 'account_feature_audit'
@@ -247,7 +259,6 @@ service cloud.firestore {
 
     match /networks/{networkId} {
       allow read: if isAdmin() || isNetworkOwner(networkId);
-      // Network identity and ownership are server-managed; clients cannot delete records.
       allow write: if false;
 
       match /_metadata/{documentId} {
@@ -263,15 +274,11 @@ service cloud.firestore {
         allow delete: if false;
       }
 
-      // الدفعات والتسويات تُسجّل فقط عبر نقاط النهاية الخادمية الموثوقة
-      // (Admin SDK، idempotent). مسار كتابة العميل مغلق نهائياً.
       match /payments/{paymentId} {
         allow read: if isAdmin() || isNetworkOwner(networkId);
         allow write: if false;
       }
 
-      // ملخص أعداد المخزون يُكتب من نقطة النهاية الخادمية POST /api/inventory/snapshot
-      // (Admin SDK، idempotent). قراءة لوحة الإدارة فقط؛ بلا أي بيانات كروت سرية.
       match /inventory_snapshot/{documentId} {
         allow read: if isAdmin();
         allow write: if false;
@@ -282,7 +289,6 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Any other nested collection is read-only to admins; writes stay server-side.
       match /{subcollection}/{documentId} {
         allow read: if isAdmin();
         allow write: if false;

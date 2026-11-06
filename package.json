@@ -16,6 +16,7 @@
     "build": "vite build",
     "start": "tsx server.ts",
     "test": "node --test test/*.test.js",
+    "test:whatsapp-emulator": "npx -y firebase-tools@15.33.0 emulators:exec --project demo-krotic-local --only firestore \"node --test test/emulator/*.test.js\"",
     "test:rules:static": "node scripts/check-rules.mjs",
     "test:rules": "npx -y firebase-tools@15.33.0 emulators:exec --project demo-krotic-firestore-rules --only firestore \"node --test security-tests/firestore-rules.test.js\"",
     "preview": "vite preview"

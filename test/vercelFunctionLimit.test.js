@@ -3,58 +3,135 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { API_ROUTE_HANDLERS, WHATSAPP_API_ROUTE_HANDLERS } from '../api/router.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const apiRoot = path.join(root, 'api');
 
-async function countApiFunctions(directory) {
+async function listApiFunctions(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
+    const relative = path.posix.join(prefix, entry.name);
     const fullPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) return countApiFunctions(fullPath);
-    return /\.(js|mjs|cjs)$/.test(entry.name) ? 1 : 0;
+    if (entry.isDirectory()) return listApiFunctions(fullPath, relative);
+    return /\.(js|mjs|cjs)$/.test(entry.name) ? [relative] : [];
   }));
-  return nested.reduce((sum, count) => sum + count, 0);
+  return nested.flat();
 }
 
-test('Vercel Hobby deployment stays at or below 12 API functions', async () => {
-  assert.ok((await countApiFunctions(path.join(root, 'api'))) <= 12);
+async function readVercelConfig() {
+  return JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+}
+
+test('Vercel Hobby deployment has exactly four serverless entry points', async () => {
+  const functions = (await listApiFunctions(apiRoot)).sort();
+  assert.equal(functions.length, 4, `expected 4 functions, found: ${functions.join(', ')}`);
+  assert.deepEqual(functions, [
+    'dispatch-notifications.js',
+    'router.js',
+    'whatsapp/delivery/dispatch.js',
+    'whatsapp/meta/webhook.js',
+  ]);
 });
 
-test('template-center keeps its public API URL through the shared settings function', async () => {
-  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
-  assert.ok(config.rewrites.some((rule) => rule.source === '/api/template-center'
-    && rule.destination === '/api/settings?__apiRoute=template-center'));
-  assert.equal(await readFile(path.join(root, 'api', 'template-center.js')).then(() => true, () => false), false);
+test('all previous public API URLs are retained through the shared router', async () => {
+  const config = await readVercelConfig();
+  const destinations = new Map(config.rewrites.map((rule) => [rule.source, rule.destination]));
+  const expected = new Map([
+    ['/api/admin-session', '/api/router?__router=admin-session'],
+    ['/api/admins', '/api/router?__router=admins'],
+    ['/api/device-heartbeat', '/api/router?__router=device-heartbeat'],
+    ['/api/device-heartbeats', '/api/router?__router=device-heartbeat&__apiRoute=list'],
+    ['/api/inventory/snapshot', '/api/router?__router=inventory-snapshot'],
+    ['/api/manage-user-auth', '/api/router?__router=manage-user-auth'],
+    ['/api/networks', '/api/router?__router=networks'],
+    ['/api/register-network', '/api/router?__router=register-network'],
+    ['/api/sales/ingest', '/api/router?__router=sales-ingest'],
+    ['/api/send-fcm', '/api/router?__router=send-fcm'],
+    ['/api/settings', '/api/router?__router=settings'],
+    ['/api/settlement', '/api/router?__router=settlement'],
+    ['/api/whatsapp/network-config', '/api/router?__router=whatsapp-network-config'],
+    ['/api/whatsapp/retention/purge', '/api/router?__router=whatsapp-retention-purge'],
+    ['/api/whatsapp/unknown-outcomes', '/api/router?__router=whatsapp-unknown-outcomes'],
+    ['/api/whatsapp/gateway/status', '/api/router?__whatsappRoute=whatsapp-gateway-status'],
+    ['/api/template-center', '/api/router?__router=settings&__apiRoute=template-center'],
+    ['/api/admin/account-features', '/api/router?__router=settings&__apiRoute=account-features'],
+    ['/api/network-secret', '/api/router?__router=settings&__apiRoute=network-secret'],
+    ['/api/migrate', '/api/router?__router=settings&__apiRoute=migrate'],
+    ['/api/entitlements/activate', '/api/router?__router=settings&__apiRoute=entitlement-activate'],
+    ['/api/entitlements/device-rebind', '/api/router?__router=settings&__apiRoute=entitlement-device-rebind'],
+    ['/api/record-payment', '/api/router?__router=settlement&__apiRoute=record-payment'],
+    ['/api/request-otp', '/api/router?__router=manage-user-auth&__apiRoute=request-otp'],
+    ['/api/verify-otp', '/api/router?__router=manage-user-auth&__apiRoute=verify-otp'],
+    ['/api/account-notifications', '/api/router?__router=manage-user-auth&__apiRoute=account-notifications'],
+    ['/api/whatsapp/meta/exchange-token', '/api/router?__whatsappRoute=whatsapp-meta-exchange-token'],
+    ['/api/whatsapp/session', '/api/router?__whatsappRoute=whatsapp-session-status'],
+    ['/api/whatsapp/session/start', '/api/router?__whatsappRoute=whatsapp-session-start'],
+    ['/api/whatsapp/session/unlink', '/api/router?__whatsappRoute=whatsapp-session-unlink'],
+    ['/api/whatsapp/qr/generate', '/api/router?__whatsappRoute=whatsapp-qr-generate'],
+    ['/api/whatsapp/qr/status', '/api/router?__whatsappRoute=whatsapp-qr-status'],
+    ['/api/whatsapp/deliver', '/api/router?__whatsappRoute=whatsapp-deliver'],
+    ['/api/messages/send', '/api/router?__whatsappRoute=whatsapp-messages-send'],
+  ]);
+  for (const [source, destination] of expected) {
+    assert.equal(destinations.get(source), destination, `${source} must retain its public contract`);
+  }
 });
 
-test('account-features reuses the shared settings function without a new API file', async () => {
-  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
-  assert.ok(config.rewrites.some((rule) => rule.source === '/api/admin/account-features'
-    && rule.destination === '/api/settings?__apiRoute=account-features'));
-  assert.equal(await readFile(path.join(root, 'api', 'admin', 'account-features.js')).then(() => true, () => false), false);
+test('router exposes only the approved original server handlers', () => {
+  assert.deepEqual(Object.keys(API_ROUTE_HANDLERS).sort(), [
+    'admin-session',
+    'admins',
+    'device-heartbeat',
+    'inventory-snapshot',
+    'manage-user-auth',
+    'networks',
+    'register-network',
+    'sales-ingest',
+    'send-fcm',
+    'settings',
+    'settlement',
+    'whatsapp-network-config',
+    'whatsapp-retention-purge',
+    'whatsapp-unknown-outcomes',
+  ]);
+  for (const [route, handler] of Object.entries(API_ROUTE_HANDLERS)) {
+    assert.equal(typeof handler, 'function', `${route} must be callable`);
+  }
 });
 
-test('migrate reuses the shared settings function without a top-level API file', async () => {
-  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
-  assert.ok(config.rewrites.some((rule) => rule.source === '/api/migrate'
-    && rule.destination === '/api/settings?__apiRoute=migrate'));
-  assert.equal(await readFile(path.join(root, 'api', 'migrate.js')).then(() => true, () => false), false);
+test('WhatsApp endpoint map is callable and remains behind the shared router', () => {
+  assert.deepEqual(Object.keys(WHATSAPP_API_ROUTE_HANDLERS).sort(), [
+    'whatsapp-deliver',
+    'whatsapp-gateway-status',
+    'whatsapp-messages-send',
+    'whatsapp-meta-exchange-token',
+    'whatsapp-qr-generate',
+    'whatsapp-qr-status',
+    'whatsapp-session-start',
+    'whatsapp-session-status',
+    'whatsapp-session-unlink',
+  ]);
+  for (const [route, handler] of Object.entries(WHATSAPP_API_ROUTE_HANDLERS)) {
+    assert.equal(typeof handler, 'function', `${route} must be callable`);
+  }
 });
 
-test('entitlement endpoints keep their public URLs through the shared settings function', async () => {
-  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
-  assert.ok(config.rewrites.some((rule) => rule.source === '/api/entitlements/activate'
-    && rule.destination === '/api/settings?__apiRoute=entitlement-activate'));
-  assert.ok(config.rewrites.some((rule) => rule.source === '/api/entitlements/device-rebind'
-    && rule.destination === '/api/settings?__apiRoute=entitlement-device-rebind'));
-  assert.equal(await readFile(path.join(root, 'api', 'entitlements', 'activate.js')).then(() => true, () => false), false);
-});
+test('Meta webhook, WhatsApp dispatch, and notification cron remain isolated', async () => {
+  const config = await readVercelConfig();
+  const webhook = await readFile(path.join(apiRoot, 'whatsapp', 'meta', 'webhook.js'), 'utf8');
+  const whatsappDispatch = await readFile(path.join(apiRoot, 'whatsapp', 'delivery', 'dispatch.js'), 'utf8');
+  const notificationDispatch = await readFile(path.join(apiRoot, 'dispatch-notifications.js'), 'utf8');
 
-test('the inventory snapshot endpoint stays a real nested API route', async () => {
-  const config = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
-  // لا نضيف rewrite للمسار: الملف نفسه يوفّر /api/inventory/snapshot.
-  assert.equal(config.rewrites.some((rule) => rule.source === '/api/inventory/snapshot'), false);
-  const source = await readFile(path.join(root, 'api', 'inventory', 'snapshot.js'), 'utf8');
-  assert.match(source, /inventory_snapshot/);
-  assert.match(source, /STALE_REVISION/);
+  assert.match(webhook, /bodyParser:\s*false/);
+  assert.match(webhook, /rawBody/);
+  assert.match(whatsappDispatch, /whatsappDispatchHandler/);
+  assert.match(notificationDispatch, /isCronSecret/);
+  assert.equal(config.crons.some((cron) => cron.path === '/api/dispatch-notifications'), true);
+  assert.deepEqual(Object.keys(config.functions).sort(), [
+    'api/dispatch-notifications.js',
+    'api/router.js',
+    'api/whatsapp/delivery/dispatch.js',
+    'api/whatsapp/meta/webhook.js',
+  ]);
 });

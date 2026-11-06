@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { resolveAccountAccess, saleAllowedByAccess, ACCESS_REASONS } from '../server/_lib/accountAccess.js';
 import { chooseLatestAccessState } from '../server/_lib/accessReconciliation.js';
 import { planDeviceTransfer, MAX_TRANSFERS_PER_WINDOW, DEVICE_TRANSFER_WINDOW_MS } from '../server/_lib/deviceTransferPolicy.js';
-import { isSaleAllowedForAccount } from '../api/sales/ingest.js';
+import { isSaleAllowedForAccount } from '../server/apiHandlers/sales-ingest.js';
 
 const NOW = 1_800_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;

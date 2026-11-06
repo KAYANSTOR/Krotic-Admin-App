@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import handler, {
   createInternalReceipt,
   validateIngestInput,
-} from '../api/sales/ingest.js';
+} from '../server/apiHandlers/sales-ingest.js';
 import { encryptNetworkSecret, generateNetworkSecret } from '../server/_lib/networkSecret.js';
 import { createFakeFirestore, createRes } from './helpers/fakeFirestore.js';
 

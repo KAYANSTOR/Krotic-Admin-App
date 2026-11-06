@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import handler, {
   validateInventorySnapshot,
   decideInventoryOutcome,
-} from '../api/inventory/snapshot.js';
+} from '../server/apiHandlers/inventory-snapshot.js';
 
 const valid = {
   schemaVersion: 1,

@@ -186,7 +186,7 @@ test('inventory snapshot contract is counts-only and rejects identity or secret 
   assert.ok(validateSchema({ ...base, generatedAt: 'yesterday' }, schema).length > 0);
 
   // نفس القواعد مفروضة فعلياً في نقطة النهاية الخادمية.
-  const { validateInventorySnapshot } = await import('../api/inventory/snapshot.js');
+  const { validateInventorySnapshot } = await import('../server/apiHandlers/inventory-snapshot.js');
   assert.equal(validateInventorySnapshot(base).ok, true);
   assert.equal(validateInventorySnapshot({ ...base, uid: 'spoofed' }).error, 'unknown_field');
   assert.equal(validateInventorySnapshot({ ...base, cardNumber: '1234' }).error, 'secret_field_forbidden');
@@ -231,10 +231,19 @@ test('account_features uses the approved catalog and remains server-only', async
   } = await import('../server/_lib/accountFeatures.js');
   assert.deepEqual(ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key).sort(), [
     'advanced_analytics',
+    'hotspot_phone_recharge',
     'hotspot_template_editor',
     'mikrotik_card_generator',
+    'smart_delivery_routing',
     'sms_auto_parser',
+    'whatsapp_card_delivery',
   ]);
+  const { KROTAK_PRO_REQUIRED_FEATURE_KEYS } = await import('../server/_lib/accountFeatures.js');
+  const catalogSet = new Set(ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key));
+  for (const key of KROTAK_PRO_REQUIRED_FEATURE_KEYS) {
+    assert.ok(catalogSet.has(key), `missing Krotak Pro key ${key}`);
+  }
+  assert.equal(KROTAK_PRO_REQUIRED_FEATURE_KEYS.length, 5);
   assert.ok(ACCOUNT_FEATURE_CATALOG.every((feature) => feature.default === false));
   assert.equal(validateAccountFeatureInput({ made_up_feature: true }).ok, false);
   assert.equal(validateAccountFeatureInput({ hotspot_template_editor: 1 }).ok, false);

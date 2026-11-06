@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateAdminInput, ADMIN_ACTIONS } from '../api/admins.js';
+import { validateAdminInput, ADMIN_ACTIONS } from '../server/apiHandlers/admins.js';
 import { isAdminUid } from '../server/_lib/firebaseAdmin.js';
 
 test('admin actions are enumerated and default to list', () => {

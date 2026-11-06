@@ -116,6 +116,12 @@ if (!emulatorAddress) {
       await setDoc(doc(db, 'sync_tombstones/tombstone-1'), {
         collection: 'sales', networkId: 'NET-10001', id: 'old-sale', updatedAtMs: 1,
       });
+      await setDoc(doc(db, 'whatsapp_network_secrets/NET-10001'), {
+        whatsappAccessTokenEnc: 'test-ciphertext-only',
+      });
+      await setDoc(doc(db, 'whatsapp_message_requests/request-1'), {
+        networkId: 'NET-10001', requestHash: 'opaque-test-hash', status: 'sent',
+      });
     });
   }
 
@@ -343,6 +349,24 @@ if (!emulatorAddress) {
     const phoneIndex = doc(db, 'network_registration_phone_index/opaque-hash');
     await assertFails(getDoc(phoneIndex));
     await assertFails(setDoc(phoneIndex, { uid: 'user-1' }));
+  });
+
+  test('WhatsApp access-token and message-idempotency records are server-only', async () => {
+    const clients = [
+      testEnv.authenticatedContext('admin-1').firestore(),
+      testEnv.authenticatedContext('user-1').firestore(),
+      testEnv.authenticatedContext('user-2').firestore(),
+    ];
+    for (const db of clients) {
+      const tokenRef = doc(db, 'whatsapp_network_secrets/NET-10001');
+      const requestRef = doc(db, 'whatsapp_message_requests/request-1');
+      await assertFails(getDoc(tokenRef));
+      await assertFails(setDoc(doc(db, 'whatsapp_network_secrets/client-write'), { value: 'ciphertext' }));
+      await assertFails(getDoc(requestRef));
+      await assertFails(setDoc(doc(db, 'whatsapp_message_requests/client-write'), { status: 'sent' }));
+      await assertFails(updateDoc(requestRef, { status: 'delivered' }));
+      await assertFails(deleteDoc(requestRef));
+    }
   });
 
   test('users cannot read other users or admin notification history', async () => {

@@ -23,7 +23,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { sendTokensInBatches } from './send-fcm.js';
+import { sendTokensInBatches } from '../server/apiHandlers/send-fcm.js';
 import { expireOverdueSubscriptions } from '../server/_lib/subscriptionExpiry.js';
 import { getAppFirestore, isAdminUid } from '../server/_lib/firebaseAdmin.js';
 

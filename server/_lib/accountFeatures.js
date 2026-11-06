@@ -1,47 +1,13 @@
-// ============================================================
-// Krotak Pro — server-owned account feature flags
-// POST /api/admin/account-features (shared Vercel settings function)
-// ============================================================
-
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { authenticateAdmin, ensureFirebaseAdmin } from './firebaseAdmin.js';
+import {
+  ACCOUNT_FEATURES_VERSION,
+  ACCOUNT_FEATURE_CATALOG,
+  KROTAK_PRO_REQUIRED_FEATURE_KEYS,
+} from './accountFeatureCatalog.js';
 
-export const ACCOUNT_FEATURES_VERSION = 1;
-export const ACCOUNT_FEATURE_CATALOG = Object.freeze([
-  Object.freeze({
-    key: 'mikrotik_card_generator',
-    label_ar: 'توليد وطباعة الكروت',
-    description_ar: 'إنشاء وطباعة كروت ميكروتك.',
-    default: false,
-    status: 'active',
-    min_app_build: 0,
-  }),
-  Object.freeze({
-    key: 'hotspot_template_editor',
-    label_ar: 'محرر صفحات الهوتسبوت',
-    description_ar: 'تحرير قوالب وصفحات الهوتسبوت.',
-    default: false,
-    status: 'active',
-    min_app_build: 0,
-  }),
-  Object.freeze({
-    key: 'sms_auto_parser',
-    label_ar: 'تحليل رسائل المحافظ والحوالات',
-    description_ar: 'تحليل رسائل المحافظ والحوالات تلقائياً.',
-    default: false,
-    status: 'active',
-    min_app_build: 0,
-  }),
-  Object.freeze({
-    key: 'advanced_analytics',
-    label_ar: 'التقارير المالية المتقدمة',
-    description_ar: 'عرض التقارير والتحليلات المالية المتقدمة.',
-    default: false,
-    status: 'active',
-    min_app_build: 0,
-  }),
-]);
+export { ACCOUNT_FEATURES_VERSION, ACCOUNT_FEATURE_CATALOG, KROTAK_PRO_REQUIRED_FEATURE_KEYS };
 
 const UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const FEATURE_KEY_PATTERN = /^[a-z][a-z0-9_]{2,63}$/;
@@ -109,13 +75,30 @@ export function validateAccountFeatureInput(raw, catalog = ACCOUNT_FEATURE_CATAL
   return { ok: true, value };
 }
 
+async function ensureCatalogIncludesApprovedFeatures(db, ref, data, now) {
+  const existingKeys = new Set(data.features.map((feature) => feature.key));
+  const missing = ACCOUNT_FEATURE_CATALOG.filter((feature) => !existingKeys.has(feature.key));
+  if (missing.length === 0) return data;
+  const next = {
+    schema_version: 1,
+    updated_at_ms: Math.max(now, Number.isSafeInteger(data.updated_at_ms) ? data.updated_at_ms : 0),
+    features: [
+      ...data.features.map((feature) => ({ ...feature })),
+      ...missing.map((feature) => ({ ...feature })),
+    ],
+  };
+  if (!validCatalogDocument(next)) throw new Error('account_feature_catalog_invalid');
+  await ref.set(next, { merge: false });
+  return next;
+}
+
 async function getOrCreateCatalog(db, now) {
   const ref = db.collection(CATALOG_PATH[0]).doc(CATALOG_PATH[1]);
   const snapshot = await ref.get();
   if (snapshot.exists) {
     const data = snapshot.data();
     if (!validCatalogDocument(data)) throw new Error('account_feature_catalog_invalid');
-    return data;
+    return ensureCatalogIncludesApprovedFeatures(db, ref, data, now);
   }
   let result;
   await db.runTransaction(async (transaction) => {
@@ -131,7 +114,6 @@ async function getOrCreateCatalog(db, now) {
   return result;
 }
 
-/** Reads/writes account_features only; legacy feature_entitlements are never read or copied. */
 export default async function accountFeaturesHandler(req, res, dependencies = {}) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');

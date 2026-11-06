@@ -9,7 +9,7 @@ import {
   sumVerifiedOutstanding,
   sumLegacyUnverifiedSales,
 } from '../src/lib/commission.js';
-import { ackForExistingSale } from '../api/sales/ingest.js';
+import { ackForExistingSale } from '../server/apiHandlers/sales-ingest.js';
 import { computeOutstanding } from '../server/_lib/networkLedger.js';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authorizeTargetClient, validateManageUserInput } from '../api/manage-user-auth.js';
+import { authorizeTargetClient, validateManageUserInput } from '../server/apiHandlers/manage-user-auth.js';
 
 function fakeDb({ userExists = false, adminExists = false } = {}) {
   const reads = [];

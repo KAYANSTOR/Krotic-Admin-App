@@ -10,7 +10,7 @@ import {
   verifyInternalReceipt,
   verifyReceiptWithCandidates,
   isSaleAllowedForAccount,
-} from '../api/sales/ingest.js';
+} from '../server/apiHandlers/sales-ingest.js';
 
 const validBody = {
   saleId: 'sale_abc-123',

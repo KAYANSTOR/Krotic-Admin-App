@@ -2,47 +2,139 @@
   "rewrites": [
     {
       "source": "/api/entitlements/activate",
-      "destination": "/api/settings?__apiRoute=entitlement-activate"
+      "destination": "/api/router?__router=settings&__apiRoute=entitlement-activate"
     },
     {
       "source": "/api/entitlements/device-rebind",
-      "destination": "/api/settings?__apiRoute=entitlement-device-rebind"
+      "destination": "/api/router?__router=settings&__apiRoute=entitlement-device-rebind"
     },
     {
       "source": "/api/record-payment",
-      "destination": "/api/settlement?__apiRoute=record-payment"
+      "destination": "/api/router?__router=settlement&__apiRoute=record-payment"
     },
     {
       "source": "/api/template-center",
-      "destination": "/api/settings?__apiRoute=template-center"
+      "destination": "/api/router?__router=settings&__apiRoute=template-center"
     },
     {
       "source": "/api/admin/account-features",
-      "destination": "/api/settings?__apiRoute=account-features"
+      "destination": "/api/router?__router=settings&__apiRoute=account-features"
     },
     {
       "source": "/api/network-secret",
-      "destination": "/api/settings?__apiRoute=network-secret"
+      "destination": "/api/router?__router=settings&__apiRoute=network-secret"
     },
     {
       "source": "/api/migrate",
-      "destination": "/api/settings?__apiRoute=migrate"
+      "destination": "/api/router?__router=settings&__apiRoute=migrate"
     },
     {
       "source": "/api/device-heartbeats",
-      "destination": "/api/device-heartbeat?__apiRoute=list"
+      "destination": "/api/router?__router=device-heartbeat&__apiRoute=list"
     },
     {
       "source": "/api/request-otp",
-      "destination": "/api/manage-user-auth?__apiRoute=request-otp"
+      "destination": "/api/router?__router=manage-user-auth&__apiRoute=request-otp"
     },
     {
       "source": "/api/verify-otp",
-      "destination": "/api/manage-user-auth?__apiRoute=verify-otp"
+      "destination": "/api/router?__router=manage-user-auth&__apiRoute=verify-otp"
     },
     {
       "source": "/api/account-notifications",
-      "destination": "/api/manage-user-auth?__apiRoute=account-notifications"
+      "destination": "/api/router?__router=manage-user-auth&__apiRoute=account-notifications"
+    },
+    {
+      "source": "/api/admin-session",
+      "destination": "/api/router?__router=admin-session"
+    },
+    {
+      "source": "/api/admins",
+      "destination": "/api/router?__router=admins"
+    },
+    {
+      "source": "/api/device-heartbeat",
+      "destination": "/api/router?__router=device-heartbeat"
+    },
+    {
+      "source": "/api/inventory/snapshot",
+      "destination": "/api/router?__router=inventory-snapshot"
+    },
+    {
+      "source": "/api/manage-user-auth",
+      "destination": "/api/router?__router=manage-user-auth"
+    },
+    {
+      "source": "/api/networks",
+      "destination": "/api/router?__router=networks"
+    },
+    {
+      "source": "/api/register-network",
+      "destination": "/api/router?__router=register-network"
+    },
+    {
+      "source": "/api/sales/ingest",
+      "destination": "/api/router?__router=sales-ingest"
+    },
+    {
+      "source": "/api/send-fcm",
+      "destination": "/api/router?__router=send-fcm"
+    },
+    {
+      "source": "/api/settings",
+      "destination": "/api/router?__router=settings"
+    },
+    {
+      "source": "/api/settlement",
+      "destination": "/api/router?__router=settlement"
+    },
+    {
+      "source": "/api/whatsapp/network-config",
+      "destination": "/api/router?__router=whatsapp-network-config"
+    },
+    {
+      "source": "/api/whatsapp/retention/purge",
+      "destination": "/api/router?__router=whatsapp-retention-purge"
+    },
+    {
+      "source": "/api/whatsapp/unknown-outcomes",
+      "destination": "/api/router?__router=whatsapp-unknown-outcomes"
+    },
+    {
+      "source": "/api/whatsapp/gateway/status",
+      "destination": "/api/router?__whatsappRoute=whatsapp-gateway-status"
+    },
+    {
+      "source": "/api/whatsapp/meta/exchange-token",
+      "destination": "/api/router?__whatsappRoute=whatsapp-meta-exchange-token"
+    },
+    {
+      "source": "/api/whatsapp/session/start",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-start"
+    },
+    {
+      "source": "/api/whatsapp/session/unlink",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-unlink"
+    },
+    {
+      "source": "/api/whatsapp/session",
+      "destination": "/api/router?__whatsappRoute=whatsapp-session-status"
+    },
+    {
+      "source": "/api/whatsapp/qr/generate",
+      "destination": "/api/router?__whatsappRoute=whatsapp-qr-generate"
+    },
+    {
+      "source": "/api/whatsapp/qr/status",
+      "destination": "/api/router?__whatsappRoute=whatsapp-qr-status"
+    },
+    {
+      "source": "/api/whatsapp/deliver",
+      "destination": "/api/router?__whatsappRoute=whatsapp-deliver"
+    },
+    {
+      "source": "/api/messages/send",
+      "destination": "/api/router?__whatsappRoute=whatsapp-messages-send"
     },
     {
       "source": "/((?!api/).*)",
@@ -54,20 +146,28 @@
     {
       "path": "/api/dispatch-notifications",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/whatsapp/delivery/dispatch",
+      "schedule": "30 6 * * *"
     }
   ],
   "functions": {
-    "api/send-fcm.js": {
-      "maxDuration": 30,
+    "api/router.js": {
+      "maxDuration": 60,
       "memory": 512
     },
     "api/dispatch-notifications.js": {
       "maxDuration": 60,
       "memory": 512
     },
-    "api/manage-user-auth.js": {
+    "api/whatsapp/meta/webhook.js": {
       "maxDuration": 15,
-      "memory": 512
+      "memory": 256
+    },
+    "api/whatsapp/delivery/dispatch.js": {
+      "maxDuration": 30,
+      "memory": 256
     }
   }
 }

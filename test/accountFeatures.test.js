@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import accountFeaturesHandler, {
   ACCOUNT_FEATURE_CATALOG,
+  KROTAK_PRO_REQUIRED_FEATURE_KEYS,
   normalizeAccountFeatures,
   validateAccountFeatureInput,
 } from '../server/_lib/accountFeatures.js';
@@ -26,12 +27,25 @@ async function call(db, body, dependencies = deps(db), method = 'POST') {
   return res;
 }
 
-test('catalog is initialized once with the four approved closed-by-default keys', async () => {
+const ALL_FALSE = Object.fromEntries(
+  ACCOUNT_FEATURE_CATALOG.map((feature) => [feature.key, false]),
+);
+
+test('catalog is initialized with approved closed-by-default keys including Krotak Pro five', async () => {
   const db = createFakeFirestore();
   const first = await call(db, { action: 'catalog' });
   assert.equal(first.statusCode, 200);
-  assert.deepEqual(first.body.catalog.features.map((feature) => feature.key), ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key));
+  assert.deepEqual(
+    first.body.catalog.features.map((feature) => feature.key),
+    ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key),
+  );
   assert.ok(first.body.catalog.features.every((feature) => feature.default === false && feature.status === 'active'));
+  for (const key of KROTAK_PRO_REQUIRED_FEATURE_KEYS) {
+    assert.ok(
+      first.body.catalog.features.some((feature) => feature.key === key),
+      `missing required key ${key}`,
+    );
+  }
   const saved = db._store.get('app_settings/account_features_catalog');
   assert.equal(saved.schema_version, 1);
   assert.equal(saved.updated_at_ms, 1_798_000_000_000);
@@ -45,6 +59,9 @@ test('catalog is initialized once with the four approved closed-by-default keys'
   });
   const existing = await call(customDb, { action: 'catalog' });
   assert.equal(existing.body.catalog.features[0].key, 'custom_feature');
+  for (const key of KROTAK_PRO_REQUIRED_FEATURE_KEYS) {
+    assert.ok(existing.body.catalog.features.some((feature) => feature.key === key));
+  }
 });
 
 test('old feature_entitlements are ignored and never copied into account_features', async () => {
@@ -58,9 +75,7 @@ test('old feature_entitlements are ignored and never copied into account_feature
   const result = await call(db, { action: 'get', uid: 'user-1' });
   assert.equal(result.statusCode, 200);
   assert.deepEqual(result.body.accountFeatures, {
-    mikrotik_card_generator: false,
-    hotspot_template_editor: false,
-    sms_auto_parser: false,
+    ...ALL_FALSE,
     advanced_analytics: true,
   });
   assert.equal(normalizeAccountFeatures({ feature_entitlements: { hotspot_template_editor: true } }).hotspot_template_editor, false);
@@ -78,13 +93,17 @@ test('set merges catalog keys, stamps sync versions and appends per-user audit t
   const result = await call(db, {
     action: 'set',
     uid: 'user-1',
-    features: { hotspot_template_editor: true, advanced_analytics: false },
+    features: {
+      hotspot_template_editor: true,
+      advanced_analytics: false,
+      whatsapp_card_delivery: true,
+    },
   });
   assert.equal(result.statusCode, 200);
   assert.deepEqual(result.body.accountFeatures, {
-    mikrotik_card_generator: false,
+    ...ALL_FALSE,
     hotspot_template_editor: true,
-    sms_auto_parser: false,
+    whatsapp_card_delivery: true,
     advanced_analytics: false,
   });
   const user = db._store.get('users/user-1');
@@ -99,7 +118,7 @@ test('set merges catalog keys, stamps sync versions and appends per-user audit t
   assert.ok(audit);
   assert.equal(audit.actor_uid, 'admin-1');
   assert.deepEqual(audit.next, result.body.accountFeatures);
-  assert.deepEqual(audit.changed_keys, ['hotspot_template_editor', 'advanced_analytics']);
+  assert.deepEqual(audit.changed_keys.sort(), ['advanced_analytics', 'hotspot_template_editor', 'whatsapp_card_delivery']);
 });
 
 test('set rejects unknown keys, non-booleans, empty maps and unknown accounts', async () => {
@@ -122,4 +141,13 @@ test('endpoint requires POST and admin authorization', async () => {
   }));
   assert.equal(denied.statusCode, 403);
   assert.equal(db._store.has('app_settings/account_features_catalog'), false);
+});
+
+test('Krotak Pro five required keys are a subset of the admin catalog', () => {
+  const catalogKeys = new Set(ACCOUNT_FEATURE_CATALOG.map((feature) => feature.key));
+  for (const key of KROTAK_PRO_REQUIRED_FEATURE_KEYS) {
+    assert.ok(catalogKeys.has(key), `admin catalog missing ${key}`);
+  }
+  assert.equal(KROTAK_PRO_REQUIRED_FEATURE_KEYS.length, 5);
+  assert.ok(ACCOUNT_FEATURE_CATALOG.every((feature) => feature.default === false));
 });

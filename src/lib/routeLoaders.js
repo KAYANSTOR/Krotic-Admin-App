@@ -14,6 +14,8 @@ const routeLoaders = {
   '/template-center/releases': () => import('../pages/TemplateCenterPage'),
   '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
   '/paid-features': () => import('../pages/PaidFeaturesPage'),
+  '/whatsapp-settings': () => import('../pages/WhatsAppNetworkSettingsPage'),
+  '/whatsapp-unknown-outcomes': () => import('../pages/WhatsAppUnknownOutcomesPage'),
   '/devices': () => import('../pages/DevicesPage'),
 };
 
@@ -24,7 +26,6 @@ function getConnection() {
   return navigator.connection || navigator.mozConnection || navigator.webkitConnection;
 }
 
-/** لا نضيف طلبات اختيارية على الشبكات التي يُرجح أن تكون محدودة أو بطيئة. */
 export function canPreloadRoute() {
   const connection = getConnection();
   if (!connection) return true;
@@ -40,16 +41,11 @@ export function loadRoute(path) {
   return loadedRoutes.get(path);
 }
 
-/** يُستدعى فقط من نوايا تنقل واضحة مثل hover أو focus أو pointer-down. */
 export function preloadRoute(path) {
   if (!canPreloadRoute()) return Promise.resolve();
   return loadRoute(path);
 }
 
-/**
- * تحميل كل الصفحات في وقت الخمول بعد تسجيل الدخول، حتى لا يظهر سبينر
- * كامل الشاشة عند أول تنقل إلى أي صفحة.
- */
 export function preloadAllRoutes() {
   if (!canPreloadRoute()) return Promise.resolve();
   return Promise.all(Object.keys(routeLoaders).map((path) => loadRoute(path)));

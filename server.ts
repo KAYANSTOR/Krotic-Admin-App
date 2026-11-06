@@ -3,24 +3,35 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 // API Route Handlers
-import networksHandler from './api/networks.js';
-import adminsHandler from './api/admins.js';
-import manageUserAuthHandler from './api/manage-user-auth.js';
-import settingsHandler from './api/settings.js';
-import settlementHandler from './api/settlement.js';
+import networksHandler from './server/apiHandlers/networks.js';
+import adminsHandler from './server/apiHandlers/admins.js';
+import manageUserAuthHandler from './server/apiHandlers/manage-user-auth.js';
+import settingsHandler from './server/apiHandlers/settings.js';
+import settlementHandler from './server/apiHandlers/settlement.js';
 import recordPaymentHandler from './server/record-payment.js';
-import registerNetworkHandler from './api/register-network.js';
-import salesIngestHandler from './api/sales/ingest.js';
-import deviceHeartbeatHandler from './api/device-heartbeat.js';
-import sendFcmHandler from './api/send-fcm.js';
+import registerNetworkHandler from './server/apiHandlers/register-network.js';
+import salesIngestHandler from './server/apiHandlers/sales-ingest.js';
+import deviceHeartbeatHandler from './server/apiHandlers/device-heartbeat.js';
+import sendFcmHandler from './server/apiHandlers/send-fcm.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
 import migrateHandler from './server/_lib/migrationApi.js';
 import networkSecretHandler from './server/_lib/networkSecretApi.js';
-import adminSessionHandler from './api/admin-session.js';
+import adminSessionHandler from './server/apiHandlers/admin-session.js';
 import templateCenterHandler from './server/_lib/templateCenterApi.js';
 import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
 import rebindEntitlementDeviceHandler from './server/_lib/entitlementDeviceRebind.js';
-import inventorySnapshotHandler from './api/inventory/snapshot.js';
+import inventorySnapshotHandler from './server/apiHandlers/inventory-snapshot.js';
+import metaExchangeHandler from './server/_lib/whatsapp/metaExchangeHandler.js';
+import {
+  whatsappQrGenerateHandler,
+  whatsappQrStatusHandler,
+  whatsappSessionStartHandler,
+  whatsappSessionStatusHandler,
+  whatsappSessionUnlinkHandler,
+} from './server/_lib/whatsapp/gatewaySessionApi.js';
+import unifiedMessageHandler from './server/_lib/whatsapp/unifiedMessageHandler.js';
+import metaWebhookHandler from './api/whatsapp/meta/webhook.js';
+import gatewayStatusCallbackHandler from './server/_lib/whatsapp/gatewayStatusCallbackHandler.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -58,6 +69,16 @@ async function startServer() {
   app.all('/api/inventory/snapshot', (req, res) => inventorySnapshotHandler(req, res));
   app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
   app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
+  app.all('/api/whatsapp/meta/exchange-token', (req, res) => metaExchangeHandler(req, res));
+  app.all('/api/whatsapp/meta/webhook', (req, res) => metaWebhookHandler(req, res));
+  app.all('/api/whatsapp/gateway/status', (req, res) => gatewayStatusCallbackHandler(req, res));
+  app.all('/api/whatsapp/session', (req, res) => whatsappSessionStatusHandler(req, res));
+  app.all('/api/whatsapp/session/start', (req, res) => whatsappSessionStartHandler(req, res));
+  app.all('/api/whatsapp/session/unlink', (req, res) => whatsappSessionUnlinkHandler(req, res));
+  app.all('/api/whatsapp/qr/generate', (req, res) => whatsappQrGenerateHandler(req, res));
+  app.all('/api/whatsapp/qr/status', (req, res) => whatsappQrStatusHandler(req, res));
+  app.all('/api/whatsapp/deliver', (req, res) => unifiedMessageHandler(req, res));
+  app.all('/api/messages/send', (req, res) => unifiedMessageHandler(req, res));
   app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));
   app.all('/api/entitlements/device-rebind', (req, res) => rebindEntitlementDeviceHandler(req, res));
 

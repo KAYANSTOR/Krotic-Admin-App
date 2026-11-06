@@ -1,21 +1,35 @@
 # عقد مزايا الحساب وACK القوالب
 
-**الحالة:** التنفيذ في مستودع `KAYANSTOR/Krotic-Admin-App` على الفرع `cline/f0d32hzt`. هذه الوثيقة تحل محل وصف `feature_entitlements` وACK التراكمي في المستندات الأقدم. لم يُدفع شيء إلى `main`.
+**الحالة:** فرع `تكامل-مزايا-المدفوعة` في `KAYANSTOR/Krotic-Admin-App`. هذه الوثيقة تحل محل وصف `feature_entitlements` وACK التراكمي في المستندات الأقدم.
 
 ## 1. مزايا الحساب
 
-المصدر المعتمد الوحيد للصلاحيات هو `users/{uid}.account_features`. لا يقرأ الخادم ولا ينسخ `feature_entitlements` أو أي حقل قديم. المفاتيح المعتمدة، وكلها مغلقة افتراضياً، هي:
+المصدر المعتمد الوحيد للصلاحيات هو `users/{uid}.account_features`. لا يقرأ الخادم ولا ينسخ `feature_entitlements` أو أي حقل قديم.
 
-| المفتاح | الوصف |
-|---|---|
-| `mikrotik_card_generator` | توليد وطباعة الكروت |
-| `hotspot_template_editor` | محرر صفحات الهوتسبوت |
-| `sms_auto_parser` | تحليل رسائل المحافظ والحوالات |
-| `advanced_analytics` | التقارير المالية المتقدمة |
+### 1.1 المفاتيح الخمسة المطلوبة من عقد Android (`feature/paid-features`)
+
+| المفتاح | الوصف | الافتراضي |
+|---|---|---|
+| `hotspot_template_editor` | محرر صفحات الهوتسبوت | `false` |
+| `mikrotik_card_generator` | توليد وطباعة الكروت | `false` |
+| `whatsapp_card_delivery` | إرسال الكروت عبر WhatsApp Business | `false` |
+| `smart_delivery_routing` | التوجيه الذكي ومسارات الإرسال | `false` |
+| `hotspot_phone_recharge` | الشحن المباشر برقم الهاتف | `false` |
+
+هذه الأسماء حرفية ومتطابقة مع `PaidFeature` في تطبيق Krotak Pro.
+
+### 1.2 مفاتيح إدارية إضافية (توافق)
+
+| المفتاح | الوصف | الافتراضي |
+|---|---|---|
+| `sms_auto_parser` | تحليل رسائل المحافظ والحوالات | `false` |
+| `advanced_analytics` | التقارير المالية المتقدمة | `false` |
+
+تبقى `active` دون هجرة أو حذف في هذه المرحلة.
 
 المسار الإداري هو `POST /api/admin/account-features`، ويُعاد توجيهه إلى دالة `api/settings.js` القائمة للمحافظة على حد Vercel Hobby. يدعم `action: catalog` و`action: get` و`action: set`. المسارات الخادمية تتحقق من صلاحية المدير، وتقبل مفاتيح الكتالوج النشطة وقيم Boolean فقط. التحديث ذري ويضبط `account_features_version` و`account_features_updated_at_ms` و`account_features_updated_by` و`account_features_source` و`updatedAtMs`، ويكتب أثراً في `users/{uid}/account_feature_audit/{id}` يحوي `previous` و`next` و`changed_keys` الفعلية فقط.
 
-الكتالوج الابتدائي في `app_settings/account_features_catalog`. شاشة الإدارة ما زالت على الرابط `/paid-features` لأجل الروابط المحفوظة، لكن اسمها الظاهر «مزايا الحساب». وجود المفتاح على الخادم لا يثبت وحده أن نسخة Android قد استهلكته أو فعلت الميزة.
+الكتالوج الابتدائي في `app_settings/account_features_catalog`. عند وجود كتالوج قديم ناقص، يُدمَج أي مفتاح معتمد ناقص تلقائياً دون حذف المفاتيح الموجودة. شاشة الإدارة على الرابط `/paid-features` (الاسم الظاهر «مزايا الحساب»). وجود المفتاح على الخادم لا يثبت وحده أن نسخة Android قد استهلكته أو فعلت الميزة.
 
 ## 2. ACK القوالب: Android إلى Vercel
 

@@ -4,7 +4,7 @@ import {
   validateSettlementInput,
   settlementDocId,
   settlementNotification,
-} from '../api/settlement.js';
+} from '../server/apiHandlers/settlement.js';
 
 test('settlement validates amount, month, idempotency, and extension policy', () => {
   const valid = {

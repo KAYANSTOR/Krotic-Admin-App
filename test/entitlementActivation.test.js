@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
 import activateEntitlement from '../server/_lib/entitlementActivation.js';
 import rebindEntitlementDevice from '../server/_lib/entitlementDeviceRebind.js';
-import { renewSubscription } from '../api/networks.js';
+import { renewSubscription } from '../server/apiHandlers/networks.js';
 
 const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

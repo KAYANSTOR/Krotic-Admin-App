@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateIngestInput, ackForExistingSale } from '../api/sales/ingest.js';
+import { validateIngestInput, ackForExistingSale } from '../server/apiHandlers/sales-ingest.js';
 
 const base = { amountMinor: 1500, currencyCode: 'YER', createdMs: 1_700_000_000_000 };
 
