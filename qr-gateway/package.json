@@ -1,0 +1,19 @@
+{
+  "name": "krotak-whatsapp-qr-gateway-poc",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20 <24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.24",
+    "express": "5.3.0",
+    "pino": "9.6.0",
+    "qrcode": "1.5.4"
+  }
+}

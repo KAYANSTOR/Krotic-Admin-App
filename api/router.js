@@ -21,6 +21,7 @@ import {
   whatsappSessionUnlinkHandler,
 } from '../server/_lib/whatsapp/gatewaySessionApi.js';
 import unifiedMessageHandler from '../server/_lib/whatsapp/unifiedMessageHandler.js';
+import gatewayStatusCallbackHandler from '../server/_lib/whatsapp/gatewayStatusCallbackHandler.js';
 
 // Each delegated handler retains its original authentication, authorization,
 // validation, and idempotency rules. This module only consolidates Vercel
@@ -50,6 +51,7 @@ export const WHATSAPP_API_ROUTE_HANDLERS = Object.freeze({
   'whatsapp-qr-generate': whatsappQrGenerateHandler,
   'whatsapp-qr-status': whatsappQrStatusHandler,
   'whatsapp-deliver': unifiedMessageHandler,
+  'whatsapp-gateway-status': gatewayStatusCallbackHandler,
   'whatsapp-messages-send': unifiedMessageHandler,
 });
 

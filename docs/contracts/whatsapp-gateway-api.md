@@ -80,8 +80,9 @@ sms_pending   (قبل نتيجة الجهاز)
 - حاوية أو VM **دائمة** (ليس Vercel Serverless).
 - قرص دائم لـ `GATEWAY_DATA_DIR`.
 - مفتاح 32 بايت: `GATEWAY_VAULT_KEY_BASE64` في Secret Manager منفصل عن بيانات الجلسات.
-- `FIREBASE_PROJECT_ID`.
-- `GATEWAY_ENGINE_CALLBACK_SECRET` لتوقيع HMAC على `/v1/engine/status-callback`.
+- `GATEWAY_SERVICE_TOKEN` بطول عشوائي قوي لا يقل عن 32 بايت؛ للمصادقة من Vercel ولتوقيع callback.
+- `GATEWAY_STATUS_CALLBACK_URL=https://<Vercel-host>/api/whatsapp/gateway/status`.
+- لا تُعطَ خدمة Render أي Firebase service-account؛ Vercel وحده يكتب بيانات الحالة في Firestore.
 - لا تُسجَّل أسرار أو QR أو نص رسالة أو رقم كامل.
 
 ---
@@ -98,7 +99,8 @@ sms_pending   (قبل نتيجة الجهاز)
 
 ### حالة الجلسة للوحة (خيار المالك 1 — معتمد)
 
-- الخدمة تكتب إلى `whatsapp_gateway_sessions/{networkId}` فقط: `status`, `lastSeenAtMs`, `reasonCode`, `deviceName`, `linkedAtMs`, `updatedAtMs`, `engineVersion`.
+- خدمة Render ترسل الحالة المسموح بها فقط إلى `/api/whatsapp/gateway/status` موقعة بـHMAC-SHA256 مع طابع زمني حديث و`X-Network-Id`.
+- نقطة Vercel تتحقق من التوقيع والطابع الزمني والشبكة والحقول، وترفض أي `updatedAtMs` مساوٍ أو أقدم من المخزن؛ محرك Render يولد الطابع بشكل رتيب ويحفظه مشفراً على القرص قبل إرسال callback.
 - **لا** مسار `/v1/admin/...`.
 - **لا** QR ولا أسرار في الوثيقة.
 
@@ -129,7 +131,7 @@ sms_pending   (قبل نتيجة الجهاز)
 
 ## 9. قرار المراقبة — مُغلق
 
-**الخيار 1 معتمد:** الخدمة تكتب حالة غير سرّية إلى `whatsapp_gateway_sessions/{networkId}`.
+**الخيار 1 معتمد:** محرك Render يرسل حالة غير سرّية موقّعة إلى Vercel، وVercel يكتب إلى `whatsapp_gateway_sessions/{networkId}`.
 لا مسار `/v1/admin/...`.
 التفاصيل: `docs/contracts/whatsapp-gateway-session-status.md`.
 
@@ -148,6 +150,8 @@ sms_pending   (قبل نتيجة الجهاز)
 9. انقطاع ⇒ `unknown` + SMS يعمل.
 10. لا `sms_sent` قبل نتيجة الجهاز.
 11. لا أسرار في السجلات / اللوحة / APK.
+12. إرسال حدثين في المللي ثانية نفسها ثم وصول callback الأقدم متأخراً لا يقلب الحالة.
+13. بلوغ دفتر الإرسال 5,000 سجل حي يعيد `503` من دون حذف مفاتيح ضمن مدة الاحتفاظ.
 
 ---
 
@@ -165,8 +169,8 @@ sms_pending   (قبل نتيجة الجهاز)
 
 ## 12. الحالة الصادقة الحالية
 
-واجهات الإدارة الوسيطة واختبار عقودها الآلية أضيفت في فرع `تكامل-مزايا-المدفوعة`؛ هذا لا يعني نشر المحرك الدائم.
-لا ربط QR حقيقي، ولا إرسال عبر محرك QR، ولا اختبار Staging موثق حتى الآن.
+واجهات Vercel ومحرك Baileys PoC معزول في `qr-gateway/` واختباراته الآلية موجودة في فرع `تكامل-مزايا-المدفوعة`؛ هذا لا يعني إنشاء أو نشر خدمة Render.
+لا ربط QR حقيقي، ولا إرسال عبر محرك QR، ولا اختبار Staging موثق حتى الآن. يحتفظ دفتر المحرك ببصمات idempotency لمدة 30 يوماً وبحد أقصى 5,000 سجل؛ عند بلوغ السقف يرفض الإرسال الجديد بـ503 بدلاً من إخلاء مفتاح غير منتهٍ. لا تفعّل `WHATSAPP_GATEWAY_ENABLED` قبل خطة Render وموافقة التكلفة واختبار رقم تجريبي.
 بوابة PoC للمحرك (رقم اختبار + بيئة بناء + استعادة بعد إعادة التشغيل + عزل شبكتين) ما زالت شرطًا قبل وصف QR بأنه جاهز للإنتاج. Cloud API يحتاج كذلك إعداد Meta/Vercel واختباراً فعلياً مستقلاً.
 
 ---
@@ -181,6 +185,7 @@ sms_pending   (قبل نتيجة الجهاز)
 | `GET` | `/api/whatsapp/session?networkId=…` | قراءة لقطة `whatsapp_gateway_sessions/{networkId}` غير السرية. |
 | `POST` | `/api/whatsapp/session/start` | استدعاء `POST /v1/session/link` ثم `POST /v1/session/qr` إلى الخدمة الدائمة. |
 | `POST` | `/api/whatsapp/session/unlink` | استدعاء `POST /v1/session/unlink`. |
+| `POST` | `/api/whatsapp/gateway/status` | callback داخلي: يتحقق HMAC-SHA256 والطابع الزمني، ثم يكتب حقول الحالة المسموح بها فقط إلى Firestore. |
 | `GET` | `/api/whatsapp/qr/generate?networkId=…` | مسار توافق لتوليد QR عبر الخدمة الدائمة؛ لا يخزن QR في Firestore. |
 | `GET` | `/api/whatsapp/qr/status?networkId=…` | قراءة الحالة غير السرية. |
 | `POST` | `/api/whatsapp/deliver` | عقد التطبيق الحالي: `networkId`, `deliveryId`, `destination`, `body`, `templateKey?`. |

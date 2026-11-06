@@ -53,6 +53,7 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/whatsapp/network-config', '/api/router?__router=whatsapp-network-config'],
     ['/api/whatsapp/retention/purge', '/api/router?__router=whatsapp-retention-purge'],
     ['/api/whatsapp/unknown-outcomes', '/api/router?__router=whatsapp-unknown-outcomes'],
+    ['/api/whatsapp/gateway/status', '/api/router?__whatsappRoute=whatsapp-gateway-status'],
     ['/api/template-center', '/api/router?__router=settings&__apiRoute=template-center'],
     ['/api/admin/account-features', '/api/router?__router=settings&__apiRoute=account-features'],
     ['/api/network-secret', '/api/router?__router=settings&__apiRoute=network-secret'],
@@ -102,6 +103,7 @@ test('router exposes only the approved original server handlers', () => {
 test('WhatsApp endpoint map is callable and remains behind the shared router', () => {
   assert.deepEqual(Object.keys(WHATSAPP_API_ROUTE_HANDLERS).sort(), [
     'whatsapp-deliver',
+    'whatsapp-gateway-status',
     'whatsapp-messages-send',
     'whatsapp-meta-exchange-token',
     'whatsapp-qr-generate',

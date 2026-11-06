@@ -55,11 +55,12 @@ export async function callGateway(path, { networkId, method = 'GET', body, deliv
   try { data = text ? JSON.parse(text) : null; } catch {}
   if (!response.ok) {
     // Upstream bodies are deliberately not propagated; they can contain QR or session material.
+    const conflict = response.status === 409;
     return {
       ok: false,
-      status: response.status === 404 ? 404 : 502,
-      error: 'gateway_request_failed',
-      uncertain: method === 'POST',
+      status: response.status === 404 ? 404 : (conflict ? 409 : 502),
+      error: conflict ? 'gateway_conflict' : 'gateway_request_failed',
+      uncertain: method === 'POST' && !conflict,
     };
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {

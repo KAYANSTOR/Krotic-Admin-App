@@ -31,6 +31,7 @@ import {
 } from './server/_lib/whatsapp/gatewaySessionApi.js';
 import unifiedMessageHandler from './server/_lib/whatsapp/unifiedMessageHandler.js';
 import metaWebhookHandler from './api/whatsapp/meta/webhook.js';
+import gatewayStatusCallbackHandler from './server/_lib/whatsapp/gatewayStatusCallbackHandler.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -70,6 +71,7 @@ async function startServer() {
   app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
   app.all('/api/whatsapp/meta/exchange-token', (req, res) => metaExchangeHandler(req, res));
   app.all('/api/whatsapp/meta/webhook', (req, res) => metaWebhookHandler(req, res));
+  app.all('/api/whatsapp/gateway/status', (req, res) => gatewayStatusCallbackHandler(req, res));
   app.all('/api/whatsapp/session', (req, res) => whatsappSessionStatusHandler(req, res));
   app.all('/api/whatsapp/session/start', (req, res) => whatsappSessionStartHandler(req, res));
   app.all('/api/whatsapp/session/unlink', (req, res) => whatsappSessionUnlinkHandler(req, res));

@@ -101,6 +101,10 @@
       "destination": "/api/router?__router=whatsapp-unknown-outcomes"
     },
     {
+      "source": "/api/whatsapp/gateway/status",
+      "destination": "/api/router?__whatsappRoute=whatsapp-gateway-status"
+    },
+    {
       "source": "/api/whatsapp/meta/exchange-token",
       "destination": "/api/router?__whatsappRoute=whatsapp-meta-exchange-token"
     },

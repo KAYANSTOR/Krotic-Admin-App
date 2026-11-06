@@ -3,7 +3,7 @@
  *
  * Contract: docs/contracts/whatsapp-gateway-session-status.md
  * Collection: whatsapp_gateway_sessions/{networkId}
- * Written by gateway service only; admin panel reads.
+ * Written by Vercel only after verifying a signed gateway callback; admin panel reads.
  */
 
 export const GATEWAY_SESSIONS_COLLECTION = 'whatsapp_gateway_sessions';
