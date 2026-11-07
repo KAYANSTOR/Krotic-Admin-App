@@ -33,12 +33,26 @@
       "minimum": 1
     },
     "customerId": {
-      "type": "string",
-      "maxLength": 128
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 128
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "cardId": {
-      "type": "string",
-      "maxLength": 128
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 128
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "payloadHash": {
       "type": "string",
