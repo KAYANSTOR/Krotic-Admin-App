@@ -56,6 +56,11 @@ export const SALE_STATUS = {
     text: 'بانتظار SMS',
     class: 'bg-sky-100 text-sky-800 border-sky-300',
   },
+  // أُلغي من جهاز مالك الشبكة (O-07): يُعرض للشفافية ولا يدخل في العمولة.
+  CANCELLED: {
+    text: 'ملغى',
+    class: 'bg-rose-100 text-rose-800 border-rose-300',
+  },
 };
 
 export const VERIFICATION_FILTERS = [
@@ -69,4 +74,5 @@ export const STATUS_FILTERS = [
   { value: 'COMPLETED', label: 'مكتمل فقط' },
   { value: 'ROLLED_BACK', label: 'مسترجع' },
   { value: 'SMS_PENDING', label: 'بانتظار SMS' },
+  { value: 'CANCELLED', label: 'ملغى' },
 ];

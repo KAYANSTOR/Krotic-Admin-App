@@ -5,6 +5,8 @@ export const SALE_STATUS = Object.freeze({
   COMPLETED: Object.freeze({ label: 'مكتمل', tone: 'success' }),
   ROLLED_BACK: Object.freeze({ label: 'مسترجع', tone: 'warning' }),
   SMS_PENDING: Object.freeze({ label: 'بانتظار SMS', tone: 'info' }),
+  // أُلغي من جهاز مالك الشبكة (O-07): يُعرض للشفافية ولا يدخل في العمولة.
+  CANCELLED: Object.freeze({ label: 'ملغى', tone: 'danger' }),
 });
 
 const SALE_STATUS_FALLBACK = Object.freeze({ label: 'غير محدد', tone: 'neutral' });

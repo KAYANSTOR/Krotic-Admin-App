@@ -1,11 +1,13 @@
 import {
-  Calendar, ChevronUp, ChevronDown, AlertCircle, Receipt, DollarSign,
+  Calendar, ChevronUp, ChevronDown, AlertCircle, Receipt, DollarSign, Ban,
 } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import SaleVerificationBadge from './SaleVerificationBadge';
 import { formatDate, formatNumber } from '../../lib/format';
-import { saleCommission, saleOutstanding, isServerVerifiedSale } from '../../lib/commission';
+import {
+  saleCommission, saleOutstanding, isServerVerifiedSale, isCancelledSale, isCompletedSale, cancelledSaleCommission,
+} from '../../lib/commission';
 import { formatMonthArabic } from '../../lib/users/profileHelpers';
 
 export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) {
@@ -13,6 +15,7 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
   // Do not subtract the month's total payment ledger again: that can double-count
   // payments which already appear on verified sale records.
   const remaining = Math.max(0, Number(m.verifiedOutstanding) || 0);
+  const cancelledCount = Number(m.cancelledCount) || 0;
   const isFullySettled = m.commissionDue > 0 && remaining === 0;
   const isPartiallySettled = remaining > 0 && remaining < m.commissionDue;
 
@@ -46,6 +49,7 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
               </div>
               <p className="text-[11px] text-muted mt-0.5">
                 {m.sales.length} عملية بيع • {m.payments.length} دفعات مسجلة
+                {cancelledCount > 0 ? ` • ${cancelledCount} ملغاة` : ''}
               </p>
             </div>
           </div>
@@ -75,7 +79,7 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
               {formatNumber(m.totalSales)} <small className="text-[10px] font-normal text-muted">ر.ي</small>
             </span>
             <span className="text-[9px] text-muted block mt-0.5">
-              {m.verifiedCount} معتمدة{m.legacyCount > 0 ? ` • ${m.legacyCount} قديمة` : ''}
+              {m.verifiedCount} معتمدة{m.legacyCount > 0 ? ` • ${m.legacyCount} قديمة` : ''}{cancelledCount > 0 ? ` • ${cancelledCount} ملغاة` : ''}
             </span>
           </div>
           <div className="bg-amber-500/5 p-2.5 rounded-xl border border-amber-500/20 text-right">
@@ -122,6 +126,20 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
             إجمالي الدفعات المسجلة يظهر للمراجعة منفصلاً. المتبقي المعتمد مصدره مبالغ العمولات المسددة المسجلة على عمليات البيع نفسها، كي لا تُطرح الدفعة مرتين أو تُنسب إلى عمولة قديمة بلا تخصيص واضح.
           </p>
 
+          {cancelledCount > 0 && (
+            <div className="p-3 rounded-xl bg-surface border border-line text-xs flex items-start gap-2" role="note">
+              <Ban className="w-4 h-4 text-muted mt-0.5 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-bold text-ink">
+                  مبيعات ملغاة هذا الشهر: {cancelledCount} ({formatNumber(Number(m.cancelledSalesTotal) || 0)} ر.ي)
+                </p>
+                <p className="text-[11px] text-muted mt-0.5">
+                  أُلغيت من جهاز مالك الشبكة قبل أي تسديد. عمولتها ({formatNumber(Number(m.cancelledCommission) || 0)} ر.ي) لا تدخل في المستحق ولا في التسوية، وتبقى ظاهرة هنا للشفافية.
+                </p>
+              </div>
+            </div>
+          )}
+
           {m.legacyCount > 0 && (
             <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" aria-hidden="true" />
@@ -154,7 +172,11 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
                 {m.sales.slice().reverse().map((sale, index) => {
                   const commission = saleCommission(sale);
                   const verified = isServerVerifiedSale(sale);
+                  const cancelled = isCancelledSale(sale);
+                  const counted = isCompletedSale(sale);
                   const isSaleSettled = verified && saleOutstanding(sale) === 0;
+                  const badgeTone = cancelled ? 'danger' : !counted ? 'neutral' : !verified ? 'warning' : isSaleSettled ? 'success' : 'warning';
+                  const badgeLabel = cancelled ? 'ملغى' : !counted ? 'غير محتسب' : !verified ? 'للمراجعة' : isSaleSettled ? 'مسواة' : 'غير مسواة';
                   return (
                     <div
                       key={sale.id || sale.saleId || `${m.month}-sale-${index}`}
@@ -166,21 +188,25 @@ export default function MonthCard({ month: m, isExpanded, onToggle, onSettle }) 
                             {sale.customerId || sale.voucherCode || 'كرت مبيعات'}
                           </span>
                           <SaleVerificationBadge sale={sale} />
-                          <Badge tone={!verified ? 'warning' : isSaleSettled ? 'success' : 'warning'}>
-                            {!verified ? 'للمراجعة' : isSaleSettled ? 'مسواة' : 'غير مسواة'}
-                          </Badge>
+                          <Badge tone={badgeTone}>{badgeLabel}</Badge>
                         </div>
                         <span className="text-[10px] text-muted block mt-0.5">
                           {formatDate(sale.createdAt, { withTime: true })}
                         </span>
                       </div>
                       <div className="text-left shrink-0">
-                        <div className="font-mono font-black text-ink">
+                        <div className={`font-mono font-black ${cancelled ? 'text-muted line-through' : 'text-ink'}`}>
                           {formatNumber(Number(sale.faceValue) || 0)} <small className="text-[9px] text-muted">ر.ي</small>
                         </div>
-                        <div className="text-[10px] font-bold text-brand mt-0.5">
-                          عمولة: {commission === null ? 'غير محتسب' : `${formatNumber(commission)} ر.ي`}
-                        </div>
+                        {cancelled ? (
+                          <div className="text-[10px] font-bold text-muted mt-0.5">
+                            عمولة ملغاة: <span className="line-through">{formatNumber(cancelledSaleCommission(sale))} ر.ي</span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] font-bold text-brand mt-0.5">
+                            عمولة: {commission === null ? 'غير محتسب' : `${formatNumber(commission)} ر.ي`}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

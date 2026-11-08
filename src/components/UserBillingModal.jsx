@@ -12,7 +12,10 @@ import { Field, Input } from './ui/Field';
 import LoadingSpinner from './LoadingSpinner';
 import { formatNumber, toDate } from '../lib/format';
 import { monthKeyFromDate, getCurrentMonthKey } from '../lib/billingHelpers';
-import { sumOutstanding, saleCommission, isServerVerifiedSale, sumVerifiedOutstanding } from '../lib/commission';
+import {
+  sumOutstanding, saleCommission, saleOutstanding, isServerVerifiedSale, sumVerifiedOutstanding,
+  isCompletedSale, isCancelledSale,
+} from '../lib/commission';
 import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { loadLocalBillingHistory } from '../lib/localDb/localData';
@@ -111,7 +114,9 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
 
   // حساب البيانات المالية الخاصة بالشهر المختار بدقة مع الفصل بين المعتمد خادمياً والقديم
   const monthFinancials = useMemo(() => {
-    const monthSales = sales.filter((s) => s.status === 'COMPLETED' && monthKeyFromDate(s.createdAt) === payMonth);
+    // O-07: المُسند المالي المشترك؛ البيع الملغى يُعدّ للعرض فقط ولا يدخل في العمولة.
+    const monthSales = sales.filter((s) => isCompletedSale(s) && monthKeyFromDate(s.createdAt) === payMonth);
+    const cancelledCount = sales.filter((s) => isCancelledSale(s) && monthKeyFromDate(s.createdAt) === payMonth).length;
     const verifiedSales = monthSales.filter(isServerVerifiedSale);
     const legacySales = monthSales.filter((s) => !isServerVerifiedSale(s));
 
@@ -143,6 +148,7 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
       count: monthSales.length,
       verifiedCount: verifiedSales.length,
       legacyCount: legacySales.length,
+      cancelledCount,
     };
   }, [sales, payments, payMonth]);
 
@@ -340,7 +346,7 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
 
   const monthsData = {};
   sales.forEach((sale) => {
-    if (sale.status === 'COMPLETED' && sale.createdAt) {
+    if (isCompletedSale(sale) && sale.createdAt) {
       let date = null;
       try {
         date = toDate(sale.createdAt);
@@ -368,7 +374,7 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
       if (verified) {
         monthsData[monthKey].verifiedSales += faceVal;
         monthsData[monthKey].verifiedCommissionDue += comm;
-        monthsData[monthKey].outstanding += (sale.status === 'COMPLETED' ? (saleCommission(sale) ?? 0) - (Number(sale.paidRiyal ?? sale.paidMinor) || 0) : 0);
+        monthsData[monthKey].outstanding += saleOutstanding(sale);
       } else {
         monthsData[monthKey].legacySales += faceVal;
         monthsData[monthKey].legacyEstimatedCommission += comm;
@@ -488,7 +494,7 @@ export default function UserBillingModal({ isOpen, onClose, user, initialMonth }
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-muted pt-1 border-t border-line/40">
-                    <span>مبيعات: {formatNumber(monthFinancials.monthSalesTotal)} ر.ي ({monthFinancials.verifiedCount} معتمدة{monthFinancials.legacyCount > 0 ? ` • ${monthFinancials.legacyCount} قديمة` : ''})</span>
+                    <span>مبيعات: {formatNumber(monthFinancials.monthSalesTotal)} ر.ي ({monthFinancials.verifiedCount} معتمدة{monthFinancials.legacyCount > 0 ? ` • ${monthFinancials.legacyCount} قديمة` : ''}{monthFinancials.cancelledCount > 0 ? ` • ${monthFinancials.cancelledCount} ملغاة غير محتسبة` : ''})</span>
                     <span>سُدّد: {formatNumber(monthFinancials.monthRecordedPayments)} ر.ي</span>
                   </div>
                   {monthFinancials.legacyCount > 0 && (

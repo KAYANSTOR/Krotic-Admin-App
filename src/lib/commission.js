@@ -3,7 +3,23 @@
  * القيم الخادمية: commissionMinor / commissionAmount / commission.
  * تُرجع null للسجلات القديمة غير المتحقق منها خادمياً.
  */
+export const CANCELLED_SALE_STATUS = 'CANCELLED';
+
+/**
+ * البيع الملغى من جهاز مالك الشبكة (قرار المالك O-07): يبقى السجل للشفافية
+ * لكنه لا يدخل في أي عمولة أو مستحق أو إجمالي أو تسوية.
+ */
+export function isCancelledSale(sale) {
+  return sale?.status === CANCELLED_SALE_STATUS || sale?.settlement_status === CANCELLED_SALE_STATUS;
+}
+
+/**
+ * المُسند المالي الوحيد للواجهة (O-07 القاعدة 3): يُحتسب فقط البيع المكتمل
+ * أو القديم بلا حالة. أي حالة أخرى (CANCELLED، ROLLED_BACK، SMS_PENDING...)
+ * تُستبعد من العمولة والمستحق والإجماليات.
+ */
 export function isCompletedSale(sale) {
+  if (isCancelledSale(sale)) return false;
   return !sale?.status || sale.status === 'COMPLETED';
 }
 
@@ -47,22 +63,23 @@ export function isServerVerifiedSale(sale) {
 }
 
 export function sumCommission(sales = []) {
-  return sales.reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0);
+  return sales.filter(isCompletedSale).reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0);
 }
 
 /** إجمالي العمولات المعتمدة خادمياً فقط عبر قائمة مبيعات. */
 export function sumVerifiedCommission(sales = []) {
   return sales
-    .filter(isServerVerifiedSale)
+    .filter((sale) => isCompletedSale(sale) && isServerVerifiedSale(sale))
     .reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0);
 }
 
 export function hasUnverifiedCommission(sales = []) {
-  return sales.some((sale) => saleCommission(sale) === null);
+  return sales.some((sale) => isCompletedSale(sale) && saleCommission(sale) === null);
 }
 
-/** المتبقي غير المسوّى على بيع واحد = عمولته − ما سُدّد منه. */
+/** المتبقي غير المسوّى على بيع واحد = عمولته − ما سُدّد منه (صفر للبيع غير المكتمل أو الملغى). */
 export function saleOutstanding(sale) {
+  if (!isCompletedSale(sale)) return 0;
   const commission = saleCommission(sale);
   if (commission === null) return 0;
   const paid = Number(sale?.paidRiyal ?? sale?.paidMinor) || 0;
@@ -77,15 +94,39 @@ export function sumOutstanding(sales = []) {
 /** إجمالي العمولة المعتمدة غير المسوّاة (للمبيعات الموثقة خادمياً فقط). */
 export function sumVerifiedOutstanding(sales = []) {
   return sales
-    .filter(isServerVerifiedSale)
+    .filter((sale) => isCompletedSale(sale) && isServerVerifiedSale(sale))
     .reduce((sum, sale) => sum + saleOutstanding(sale), 0);
 }
 
 /** إجمالي مبالغ المبيعات القديمة غير المعتمدة خادمياً (لأغراض المراجعة والتسوية اليدوية). */
 export function sumLegacyUnverifiedSales(sales = []) {
   return sales
-    .filter((s) => !isServerVerifiedSale(s))
+    .filter((s) => isCompletedSale(s) && !isServerVerifiedSale(s))
     .reduce((sum, s) => sum + saleFaceValue(s), 0);
+}
+
+/** العمولة التي أُلغيت مع البيع: اللقطة الخادمية وقت الإلغاء، وإلا عمولة البيع الأصلية. */
+export function cancelledSaleCommission(sale) {
+  const raw = sale?.cancelledCommissionRiyal;
+  if (raw !== null && raw !== undefined && raw !== '' && Number.isFinite(Number(raw))) return Number(raw);
+  return saleCommission(sale) ?? 0;
+}
+
+/** قيمة البيع الملغى: اللقطة الخادمية وقت الإلغاء، وإلا القيمة الاسمية الأصلية. */
+export function cancelledSaleAmount(sale) {
+  const raw = sale?.cancelledAmountRiyal;
+  if (raw !== null && raw !== undefined && raw !== '' && Number.isFinite(Number(raw)) && Number(raw) >= 0) return Number(raw);
+  return saleFaceValue(sale);
+}
+
+/** عدّادات المبيعات الملغاة للعرض الشفاف فقط؛ لا تدخل في أي عمولة أو مستحق. */
+export function summarizeCancelledSales(sales = []) {
+  const cancelled = sales.filter(isCancelledSale);
+  return {
+    cancelledTransactions: cancelled.length,
+    cancelledSalesValue: cancelled.reduce((sum, sale) => sum + cancelledSaleAmount(sale), 0),
+    cancelledCommission: cancelled.reduce((sum, sale) => sum + cancelledSaleCommission(sale), 0),
+  };
 }
 
 /**
@@ -105,6 +146,7 @@ export function summarizeCompletedSales(sales = []) {
     commissionDue,
     outstandingCommission,
     recordedPayments: Math.max(0, commissionDue - outstandingCommission),
+    ...summarizeCancelledSales(sales),
   };
 }
 
