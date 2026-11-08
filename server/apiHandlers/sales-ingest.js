@@ -20,55 +20,35 @@
 // يتطلب FIREBASE_SERVICE_ACCOUNT. لا يحتاج أي كتابة عميل في Firestore.
 // ============================================================
 
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
-import { ensureFirebaseAdmin, isAdminUid } from '../_lib/firebaseAdmin.js';
+import { ensureFirebaseAdmin } from '../_lib/firebaseAdmin.js';
 import { CURRENCY, commissionFromBps } from '../_lib/money.js';
 import { networkSecretCandidates } from '../_lib/networkSecretStore.js';
 import { resolveAccountAccess, saleAllowedByAccess } from '../_lib/accountAccess.js';
-import { MAX_SALE_ID_LENGTH, SALE_ID_PATTERN, saleDocumentId } from '../_lib/saleIdentity.js';
+import { saleDocumentId } from '../_lib/saleIdentity.js';
+import { normalizeBody, resolveSaleUuid, serverOwnedFieldError } from '../_lib/clientSaleRequest.js';
+import {
+  HMAC_MAX_SKEW_MS,
+  networkLookupFailure,
+  resolveClientUid,
+  resolveOwnedNetwork,
+  signCanonicalReceipt,
+  verifyCanonicalReceipt,
+  verifyCanonicalReceiptWithCandidates,
+} from '../_lib/clientRequestAuth.js';
 
 const MINOR_UNITS_PER_RIYAL = 100;
 const MAX_AMOUNT_RIYAL = 1_000_000_000_000;
 const MAX_AMOUNT_MINOR = MAX_AMOUNT_RIYAL * MINOR_UNITS_PER_RIYAL;
-const HMAC_MAX_SKEW_MS = 5 * 60 * 1000;
 const SALE_CREATED_MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
 
-// These fields are server-owned. Presence is rejected even when the client
-// sends a zero/false value; silently ignoring such fields hides contract bugs.
-const CLIENT_IDENTITY_FIELDS = [
-  'uid', 'userId', 'accountId', 'owner_uid', 'networkId', 'network_id',
-];
-const CLIENT_FINANCIAL_FIELDS = [
-  'amount', 'amountRiyal', 'faceValue', 'face_value',
-  'commission', 'commissionAmount', 'commissionMinor', 'commissionRiyal',
-  'commissionRate', 'commissionRateBps', 'commission_rate', 'commission_rate_bps',
-  'netAmount', 'netAmountMinor', 'paidMinor', 'paidRiyal',
-  'settlement_status', 'settlementStatus', 'is_settled', 'settled',
-  'settlementId', 'settledAt', 'settledBy',
-  'moneyPolicyVersion', 'payloadPolicyVersion', 'verified',
-  'verificationReceipt', 'verification_receipt',
-  'status', 'source', 'outstandingBalance', 'totalSalesAmount',
-  'totalCommissionDue', 'totalPaidAmount',
-];
+// Identity/financial field lists live in ../_lib/clientSaleRequest.js so that
+// ingest and cancel reject exactly the same server-owned fields.
 const CLIENT_ALLOWED_FIELDS = new Set([
   'saleId', 'saleUuid', 'amountMinor', 'currencyCode',
   'createdMs', 'customerId', 'cardId', 'payloadHash',
 ]);
-
-function normalizeBody(body) {
-  if (typeof body === 'string') {
-    try {
-      const parsed = JSON.parse(body);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
-  return body;
-}
 
 /**
  * Canonical, version-pinned representation the server hashes. The client may
@@ -101,29 +81,11 @@ export function canonicalReceiptPayload(input, timestamp) {
 }
 
 export function createInternalReceipt({ payload, timestamp, secret }) {
-  return `${timestamp}.${createHmac('sha256', secret)
-    .update(canonicalReceiptPayload(payload, timestamp))
-    .digest('hex')}`;
+  return signCanonicalReceipt({ canonical: canonicalSalePayload(payload), timestamp, secret });
 }
 
 export function verifyInternalReceipt({ token, payload, secret, now = Date.now(), maxSkewMs = HMAC_MAX_SKEW_MS }) {
-  if (!token || !secret) return { ok: false, error: 'hmac_invalid' };
-  const separator = token.indexOf('.');
-  if (separator <= 0) return { ok: false, error: 'hmac_invalid' };
-  const timestamp = Number(token.slice(0, separator));
-  const signature = token.slice(separator + 1);
-  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > maxSkewMs || !/^[a-f0-9]{64}$/i.test(signature)) {
-    return { ok: false, error: 'hmac_expired_or_malformed' };
-  }
-  const expected = createHmac('sha256', secret)
-    .update(canonicalReceiptPayload(payload, timestamp))
-    .digest('hex');
-  const actualBytes = Buffer.from(signature, 'hex');
-  const expectedBytes = Buffer.from(expected, 'hex');
-  if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) {
-    return { ok: false, error: 'hmac_invalid' };
-  }
-  return { ok: true, timestamp };
+  return verifyCanonicalReceipt({ token, canonical: canonicalSalePayload(payload), secret, now, maxSkewMs });
 }
 
 /**
@@ -132,48 +94,21 @@ export function verifyInternalReceipt({ token, payload, secret, now = Date.now()
  * version lets the sale record document which key proved the upload.
  */
 export function verifyReceiptWithCandidates({ token, payload, candidates, now = Date.now() }) {
-  let lastError = 'hmac_invalid';
-  for (const candidate of candidates || []) {
-    const attempt = verifyInternalReceipt({
-      token,
-      payload,
-      secret: candidate.secret,
-      now,
-    });
-    if (attempt.ok) {
-      return { ...attempt, secretVersion: candidate.version, usedPrevious: candidate.current === false };
-    }
-    if (attempt.error !== 'hmac_invalid') lastError = attempt.error;
-  }
-  return { ok: false, error: lastError };
+  return verifyCanonicalReceiptWithCandidates({ token, canonical: canonicalSalePayload(payload), candidates, now });
 }
 
 export function validateIngestInput(body) {
   const input = normalizeBody(body);
-  if (CLIENT_IDENTITY_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
-    return { ok: false, error: 'client_identity_field_forbidden' };
-  }
-  if (CLIENT_FINANCIAL_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(input, field))) {
-    return { ok: false, error: 'client_financial_field_forbidden' };
-  }
-  if (Object.keys(input).some((field) => !CLIENT_ALLOWED_FIELDS.has(field))) {
-    return { ok: false, error: 'client_field_forbidden' };
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'saleId')
-      && Object.prototype.hasOwnProperty.call(input, 'saleUuid')
-      && (typeof input.saleId !== 'string'
-        || typeof input.saleUuid !== 'string'
-        || input.saleId.trim() !== input.saleUuid.trim())) {
-    return { ok: false, error: 'sale_id_mismatch' };
-  }
+  const fieldError = serverOwnedFieldError(input, CLIENT_ALLOWED_FIELDS);
+  if (fieldError) return { ok: false, error: fieldError };
+  // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
+  const sale = resolveSaleUuid(input);
+  if (!sale.ok && sale.error === 'sale_id_mismatch') return sale;
   if (input.payloadHash != null && typeof input.payloadHash !== 'string') {
     return { ok: false, error: 'payload_hash_invalid' };
   }
-  // يقبل التطبيق `saleUuid` (المعتمد) مع دعم `saleId` القديم.
-  const saleUuid = typeof input.saleUuid === 'string' ? input.saleUuid.trim()
-    : (typeof input.saleId === 'string' ? input.saleId.trim() : '');
-  if (!saleUuid) return { ok: false, error: 'sale_id_required' };
-  if (saleUuid.length > MAX_SALE_ID_LENGTH || !SALE_ID_PATTERN.test(saleUuid)) return { ok: false, error: 'sale_id_invalid' };
+  if (!sale.ok) return sale;
+  const { saleUuid } = sale;
 
   // The actual Android payload uses a JSON integer; do not coerce strings or booleans.
   const amountMinor = input.amountMinor;
@@ -306,34 +241,6 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
   });
 }
 
-async function resolveClientUid(req, dependencies = {}) {
-  const authHeader = String(req.headers.authorization || '');
-  const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!idToken) return { ok: false, status: 401, error: 'missing_token' };
-
-  const getAuthFn = dependencies.getAuth || getAuth;
-  let uid;
-  try {
-    uid = (await getAuthFn().verifyIdToken(idToken)).uid;
-  } catch {
-    return { ok: false, status: 401, error: 'invalid_token' };
-  }
-
-  // Ingest is for client accounts only: an Admins/{uid} document is rejected.
-  const getFirestoreFn = dependencies.getFirestore || getFirestore;
-  const adminCheck = dependencies.isAdminUid || isAdminUid;
-  try {
-    if (await adminCheck(uid, getFirestoreFn)) return { ok: false, status: 403, error: 'not_client_account' };
-  } catch (error) {
-    console.error('sales/ingest: admin lookup failed', { code: error?.code, message: error?.message });
-    if (error?.code === 8 || error?.code === 'RESOURCE_EXHAUSTED') {
-      return { ok: false, status: 503, error: 'firestore_quota_exceeded' };
-    }
-    return { ok: false, status: 500, error: 'admin_check_failed' };
-  }
-  return { ok: true, uid };
-}
-
 /**
  * Checks if a sale is permitted for the account (see server/_lib/accountAccess.js).
  * `network` is the owned network document; the most recent access write
@@ -379,7 +286,7 @@ export default async function handler(req, res, dependencies = {}) {
   const init = (dependencies.ensureFirebaseAdmin || ensureFirebaseAdmin)();
   if (!init.ok) return res.status(503).json({ success: false, error: init.error });
 
-  const caller = await resolveClientUid(req, dependencies);
+  const caller = await resolveClientUid(req, dependencies, { label: 'sales/ingest' });
   if (!caller.ok) return res.status(caller.status).json({ success: false, error: caller.error });
   const uid = caller.uid;
 
@@ -413,21 +320,10 @@ export default async function handler(req, res, dependencies = {}) {
   let secretCandidates;
   let networkId;
   try {
-    userSnapshot = await db.collection('users').doc(uid).get();
-    if (!userSnapshot.exists) return res.status(404).json({ success: false, error: 'account_not_found' });
-    const user = userSnapshot.data() || {};
-    networkId = typeof user.networkId === 'string' && user.networkId.trim() ? user.networkId.trim()
-      : typeof user.network_id === 'string' && user.network_id.trim() ? user.network_id.trim()
-        : uid;
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(networkId)) {
-      return res.status(409).json({ success: false, error: 'network_mapping_invalid' });
-    }
-    const networkSnapshot = await db.collection('networks').doc(networkId).get();
-    if (!networkSnapshot.exists) return res.status(409).json({ success: false, error: 'network_not_provisioned' });
-    const network = networkSnapshot.data() || {};
-    if ((network.owner_uid && network.owner_uid !== uid) || (!network.owner_uid && networkId !== uid)) {
-      return res.status(403).json({ success: false, error: 'network_owner_mismatch' });
-    }
+    const owned = await resolveOwnedNetwork(db, uid);
+    if (!owned.ok) return res.status(owned.status).json({ success: false, error: owned.error });
+    ({ userSnapshot, networkId } = owned);
+    const { user, network } = owned;
     const accessCheck = isSaleAllowedForAccount(user, payload.createdMs, serverNow, network);
     if (!accessCheck.ok) {
       logIngestRejection(uid, accessCheck.error, req.body);
@@ -442,19 +338,8 @@ export default async function handler(req, res, dependencies = {}) {
       return res.status(409).json({ success: false, error: 'network_secret_not_provisioned' });
     }
   } catch (error) {
-    if (error?.message === 'network_secret_master_not_configured') {
-      return res.status(503).json({ success: false, error: 'hmac_not_configured' });
-    }
-    if (error?.message === 'network_secret_decryption_failed' || error?.message === 'network_secret_envelope_invalid') {
-      console.error('sales/ingest: network key unavailable', { uid });
-      return res.status(503).json({ success: false, error: 'network_secret_unavailable' });
-    }
-    console.error('sales/ingest: network key lookup failed', {
-      uid,
-      code: error?.code,
-      message: error?.message,
-    });
-    return res.status(500).json({ success: false, error: 'network_secret_lookup_failed' });
+    const failure = networkLookupFailure(error, { label: 'sales/ingest', uid });
+    return res.status(failure.status).json({ success: false, error: failure.error });
   }
   // Accept the current key first; a previous key is only tried during the
   // server-defined rotation grace window.
