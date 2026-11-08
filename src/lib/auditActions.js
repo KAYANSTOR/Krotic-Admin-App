@@ -41,6 +41,7 @@ export const AUDIT_ACTION_META = Object.freeze({
   TEMPLATE_RELEASE_PUBLISH: { label: 'نشر إصدار قوالب نشط', tone: 'success' },
   TEMPLATE_RELEASE_ROLLBACK: { label: 'تراجع عن إصدار قوالب', tone: 'warning' },
   SALE_CONFLICT_DETECTED: { label: 'تعارض في معرّف أو محتوى بيع', tone: 'danger' },
+  SALE_CANCELLED_BY_DEVICE: { label: 'إلغاء بيع من جهاز المالك', tone: 'warning' },
   LEGACY_SALES_RECONCILE: { label: 'تسوية ومطابقة مبيعات قديمة يدوياً', tone: 'warning' },
   COMMISSION_AUDIT_VERIFIED: { label: 'تدقيق واعتماد كشف حساب الشبكة', tone: 'success' },
   PAID_FEATURE_ENTITLEMENT_UPDATE: { label: 'تعديل المزايا المدفوعة لحساب', tone: 'brand' },

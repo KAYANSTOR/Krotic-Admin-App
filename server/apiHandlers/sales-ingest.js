@@ -195,6 +195,12 @@ export async function ingestSale({ db, uid, networkId = uid, payload, payloadHas
         }, { merge: false });
         return { status: 'conflict', error: conflictCode, saleId: payload.saleUuid, samePayload: ack.samePayload };
       }
+      // O-07: a sale cancelled through POST /api/sales/cancel stays cancelled.
+      // The same payload is still ACKed (the device must stop retrying), but the
+      // response tells it the sale is CANCELLED and nothing is written.
+      if (prev.status === 'CANCELLED') {
+        return { ...ack, saleId: payload.saleUuid, saleStatus: 'CANCELLED' };
+      }
       return { ...ack, saleId: payload.saleUuid };
     }
 

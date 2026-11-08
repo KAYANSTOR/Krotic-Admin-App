@@ -17,4 +17,5 @@
 | `inventory-snapshot.sample.json` | `inventory-snapshot.schema.json` | ملخص أعداد مخزون الكروت من Android؛ أعداد فقط بلا أسرار. |
 | `entitlement-activate-request.sample.json` | `entitlement-activate-request.schema.json` | طلب تفعيل ترخيص الجهاز؛ الحساب من التوكن. |
 | `sales-ingest-request.sample.json` | `sales-ingest-request.schema.json` | رفع بيع بمعرّف منقّط؛ بلا حقول هوية أو عمولة. |
+| `sales-cancel-request.sample.json` | `sales-cancel-request.schema.json` | إلغاء بيع غير مدفوع من جهاز المالك؛ `cancellationId` حتمي من `saleUuid`، بلا حقول هوية أو مال. |
 | `device-heartbeat-request.sample.json` | `device-heartbeat-request.schema.json` | نبضة تشخيص فقط؛ لا تمنح ولا تسحب وصولًا. |

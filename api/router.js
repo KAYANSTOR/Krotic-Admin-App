@@ -5,6 +5,7 @@ import inventorySnapshotHandler from '../server/apiHandlers/inventory-snapshot.j
 import manageUserAuthHandler from '../server/apiHandlers/manage-user-auth.js';
 import networksHandler from '../server/apiHandlers/networks.js';
 import registerNetworkHandler from '../server/apiHandlers/register-network.js';
+import salesCancelHandler from '../server/apiHandlers/sales-cancel.js';
 import salesIngestHandler from '../server/apiHandlers/sales-ingest.js';
 import sendFcmHandler from '../server/apiHandlers/send-fcm.js';
 import settingsHandler from '../server/apiHandlers/settings.js';
@@ -21,6 +22,7 @@ export const API_ROUTE_HANDLERS = Object.freeze({
   'manage-user-auth': manageUserAuthHandler,
   networks: networksHandler,
   'register-network': registerNetworkHandler,
+  'sales-cancel': salesCancelHandler,
   'sales-ingest': salesIngestHandler,
   'send-fcm': sendFcmHandler,
   settings: settingsHandler,

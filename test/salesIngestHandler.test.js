@@ -167,3 +167,46 @@ test('handler rejects invalid or expired HMAC receipts and unauthorised accounts
     else process.env.KROTAK_HMAC_SECRET = previous;
   }
 });
+
+test('re-ingesting a cancelled sale with the same payload ACKs with saleStatus CANCELLED and writes nothing', async () => {
+  const previous = process.env.KROTAK_HMAC_SECRET;
+  process.env.KROTAK_HMAC_SECRET = master;
+  try {
+    const db = createFakeFirestore(seed());
+    const input = body();
+    const receipt = receiptFor(normalizedPayload(input));
+    const created = createRes();
+    await handler(request(input, receipt), created, deps(db));
+    assert.equal(created.statusCode, 201);
+
+    // Simulate the state written by POST /api/sales/cancel (totals reversed).
+    const salePath = 'networks/NET-10001/sales/sale-handler-1';
+    db._store.set(salePath, {
+      ...db._store.get(salePath),
+      status: 'CANCELLED',
+      settlement_status: 'CANCELLED',
+      cancellationId: 'cxl_0123456789abcdef0123456789abcdef',
+    });
+    db._store.set('networks/NET-10001', {
+      ...db._store.get('networks/NET-10001'),
+      totalSalesAmount: 0,
+      totalCommissionDue: 0,
+      outstandingBalance: 0,
+    });
+    const before = JSON.stringify([...db._store.entries()]);
+
+    const repeated = createRes();
+    await handler(request(input, receipt), repeated, deps(db));
+    assert.equal(repeated.statusCode, 200);
+    assert.equal(repeated.body.success, true);
+    assert.equal(repeated.body.status, 'ALREADY_EXISTS_ACKED');
+    assert.equal(repeated.body.ack, true);
+    assert.equal(repeated.body.saleStatus, 'CANCELLED');
+    assert.equal(JSON.stringify([...db._store.entries()]), before, 'nothing may be written or reactivated');
+    assert.equal(db._store.get(salePath).status, 'CANCELLED');
+    assert.equal(db._store.get('networks/NET-10001').totalSalesAmount, 0);
+  } finally {
+    if (previous === undefined) delete process.env.KROTAK_HMAC_SECRET;
+    else process.env.KROTAK_HMAC_SECRET = previous;
+  }
+});
