@@ -15,7 +15,7 @@ import { useLocalQuery } from '../lib/localDb/useLocalQuery';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { loadLocalNetworkSales } from '../lib/localDb/localData';
 import {
-  saleCommission, saleFaceValue, isCompletedSale, sumOutstanding,
+  saleCommission, saleFaceValue, isCompletedSale, isCancelledSale, sumOutstanding,
   isServerVerifiedSale, sumVerifiedOutstanding,
 } from '../lib/commission';
 
@@ -35,6 +35,13 @@ import useInfiniteScroll from '../hooks/useInfiniteScroll';
 import NetworkSalesSheet from '../components/sales/NetworkSalesSheet';
 import NewSaleNotice from '../components/sales/NewSaleNotice';
 import SaleRow from '../components/sales/SaleRow';
+
+/** فلتر الحالة يستخدم المُسند المالي المشترك نفسه (O-07) بدل مقارنة نصية خام. */
+function saleMatchesStatusFilter(sale, statusFilter) {
+  if (statusFilter === 'COMPLETED') return isCompletedSale(sale);
+  if (statusFilter === 'CANCELLED') return isCancelledSale(sale);
+  return sale.status === statusFilter;
+}
 
 export default function SalesPage() {
   const location = useLocation();
@@ -75,7 +82,7 @@ export default function SalesPage() {
     const completed = [];
     (salesQuery.data || []).forEach((network) => {
       (network.sales || []).forEach((sale) => {
-        if (sale.status !== 'COMPLETED') return;
+        if (!isCompletedSale(sale)) return;
         const ms = Number(sale.createdAtMs) || toDate(sale.createdAt)?.getTime() || 0;
         completed.push({ sale, ms, networkName: network.networkName || network.uid });
       });
@@ -108,7 +115,7 @@ export default function SalesPage() {
 
   const filterSales = useCallback((sales) => {
     return sales.filter((sale) => {
-      if (statusFilter !== 'all' && !(statusFilter === 'COMPLETED' ? isCompletedSale(sale) : sale.status === statusFilter)) return false;
+      if (statusFilter !== 'all' && !saleMatchesStatusFilter(sale, statusFilter)) return false;
       if (verificationFilter === 'verified' && !isServerVerifiedSale(sale)) return false;
       if (verificationFilter === 'legacy' && isServerVerifiedSale(sale)) return false;
       if (dateFrom || dateTo) {
@@ -272,7 +279,7 @@ export default function SalesPage() {
       { label: 'التوثيق', value: (r) => isServerVerifiedSale(r.sale) ? 'معتمد' : 'قديم' },
       { label: 'Hash', value: (r) => r.sale.payloadHash || '—' },
       { label: 'نسبة العمولة (%)', value: (r) => r.network.commissionRate },
-      { label: 'العمولة', value: (r) => r.sale.status !== 'COMPLETED' || saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
+      { label: 'العمولة', value: (r) => !isCompletedSale(r.sale) || saleCommission(r.sale) === null ? '' : sumOutstanding([r.sale]) },
     ]);
     toast.success('تم التصدير');
   }, [networkSales, calcNetworkStats]);

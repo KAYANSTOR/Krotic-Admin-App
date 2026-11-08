@@ -7,7 +7,9 @@ import { formatMonthArabic } from '../../lib/users/profileHelpers';
 export default function UserProfileFinancialSummary({
   historyMonth, setHistoryMonth, monthOptions, totalSales,
   verifiedCommissionDue, legacyEstimatedCommission, verifiedOutstanding, totalPaid,
+  cancelledTransactions = 0, cancelledSalesValue = 0,
 }) {
+  const periodSubtitle = historyMonth === 'all' ? 'كل الأشهر • ريال يمني' : formatMonthArabic(historyMonth);
   return (
           <Section eyebrow="المؤشرات المالية" title="ملخص المبيعات والعمولات">
             <div className="flex items-center justify-between my-2 flex-wrap gap-2">
@@ -34,7 +36,9 @@ export default function UserProfileFinancialSummary({
                 value={formatNumber(totalSales)}
                 icon={DollarSign}
                 tone="brand"
-                subtitle={historyMonth === 'all' ? 'كل الأشهر • ريال يمني' : formatMonthArabic(historyMonth)}
+                subtitle={cancelledTransactions > 0
+                  ? `${periodSubtitle} • لا يشمل ${formatNumber(cancelledTransactions)} ملغاة (${formatNumber(cancelledSalesValue)} ر.ي)`
+                  : periodSubtitle}
               />
               <StatCard
                 title="العمولة المعتمدة خادمياً"

@@ -9,8 +9,21 @@ function whole(value) {
   return number > 0 ? number : 0;
 }
 
-/** المتبقي على بيع واحد = عمولته − ما سُدّد منه. */
+/**
+ * المُسند المالي الخادمي الوحيد (قرار المالك O-07 القاعدة 3): لا يُحتسب في
+ * العمولة أو المستحق أو التسوية إلا البيع المكتمل أو القديم بلا حالة.
+ * البيع الملغى (status أو settlement_status = CANCELLED) مستبعد دائماً.
+ */
+export function isCountableSale(sale) {
+  if (!sale || typeof sale !== 'object') return false;
+  if (sale.status === 'CANCELLED' || sale.settlement_status === 'CANCELLED') return false;
+  return !sale.status || sale.status === 'COMPLETED';
+}
+
+/** المتبقي على بيع واحد = عمولته − ما سُدّد منه (صفر للبيع غير المكتمل أو الملغى). */
 export function saleOutstanding(sale) {
+  // دفاع إضافي: حتى لو مرّ بيع ملغى من مسار ما فلن يُخصَّص له أي مبلغ.
+  if (!isCountableSale(sale)) return 0;
   // V2 has explicit whole-Riyal values; legacy aliases remain the fallback.
   const commission = whole(sale?.commissionRiyal ?? sale?.commissionMinor);
   const paid = whole(sale?.paidRiyal ?? sale?.paidMinor);
@@ -32,6 +45,7 @@ export function allocateFifo(sales = [], amountMinor) {
   const allocations = [];
   for (const sale of sales) {
     if (remaining <= 0) break;
+    if (!isCountableSale(sale)) continue;
     const outstanding = saleOutstanding(sale);
     if (outstanding <= 0) continue;
     const appliedMinor = Math.min(outstanding, remaining);
