@@ -6,6 +6,7 @@
 
 import { commissionFor } from './money.js';
 import { ACCESS_STATUSES } from './accessStatus.js';
+import { isCountableSale } from './settlementLedger.js';
 
 const KNOWN_ACCESS_STATUSES = new Set(ACCESS_STATUSES);
 
@@ -48,9 +49,8 @@ export function saleCommissionMinor(sale, commissionRatePercent = 5) {
   return commissionFor(saleFaceValue(sale), commissionRatePercent);
 }
 
-function isCompleted(sale) {
-  return !sale?.status || sale.status === 'COMPLETED';
-}
+// نفس المُسند الخادمي المشترك: إعادة بناء المجاميع لا تُعيد البيع الملغى أبداً.
+const isCompleted = isCountableSale;
 
 function monthKeyOf(value) {
   if (!value) return null;

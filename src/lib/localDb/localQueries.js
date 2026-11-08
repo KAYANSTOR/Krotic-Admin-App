@@ -1,5 +1,8 @@
 import { normalizeUserAccess } from '../accessStatus.js';
-import { summarizeCompletedSales } from '../commission.js';
+import {
+  summarizeCompletedSales, isCompletedSale, isCancelledSale, saleFaceValue, cancelledSaleAmount, cancelledSaleCommission,
+} from '../commission.js';
+import { monthKeyFromDate } from '../billingHelpers.js';
 
 /**
  * طبقة الاستعلام المحلية: كل الشاشات تقرأ من IndexedDB عبر هذه الدوال.
@@ -235,7 +238,9 @@ export function aggregateMapByUid(aggregateRows) {
  */
 export function buildNetworkReport({ user, sales, payments, aggregate, defaultCommissionRate = 5, preferAggregateSales = true }) {
   const summary = summarizeCompletedSales(sales || []);
-  const aggregateData = aggregate || {};
+  const aggregateData = preferAggregateSales
+    ? reconcileAggregateWithCancellations(aggregate || {}, sales || [])
+    : (aggregate || {});
   const due = preferAggregateSales
     ? (Number(aggregateData.totalCommissionDue) || summary.commissionDue)
     : summary.commissionDue;
@@ -260,11 +265,84 @@ export function buildNetworkReport({ user, sales, payments, aggregate, defaultCo
     recordedPayments,
     commissionDue: due,
     outstandingCommission: Math.max(0, due - recordedPayments),
-    monthly: Object.fromEntries(Object.entries(aggregateData.monthly || {}).map(([month, bucket]) => [
-      month,
-      { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
-    ])),
+    cancelledTransactions: summary.cancelledTransactions,
+    cancelledSalesValue: summary.cancelledSalesValue,
+    cancelledCommission: summary.cancelledCommission,
+    monthly: preferAggregateSales
+      ? Object.fromEntries(Object.entries(aggregateData.monthly || {}).map(([month, bucket]) => [
+        month,
+        { face: Number(bucket.face) || 0, count: Number(bucket.count) || 0 },
+      ]))
+      : monthlyFromCompletedSales(sales || []),
   };
+}
+
+function saleMs(sale, ...keys) {
+  for (const key of keys) {
+    const ms = timestampMs(sale?.[key]);
+    if (ms) return ms;
+  }
+  return 0;
+}
+
+/**
+ * لقطة admin_aggregates تُبنى خادمياً عند إعادة البناء فقط؛ البيع الذي أُلغي بعد
+ * آخر بناء ما زال محسوباً فيها. نطرح هنا من اللقطة كل بيع ملغى كان موجوداً وقت
+ * البناء وأُلغي بعده (O-07 القاعدة 3)، بلا قيم سالبة. لقطة بلا updatedAtMs
+ * تُعامل كأنها سبقت كل الإلغاءات وشملت كل المبيعات.
+ */
+export function reconcileAggregateWithCancellations(aggregate = {}, sales = []) {
+  const builtAtMs = Number(aggregate?.updatedAtMs) || 0;
+  const stale = (sales || []).filter((sale) => {
+    if (!isCancelledSale(sale)) return false;
+    if (!builtAtMs) return true;
+    const createdMs = saleMs(sale, 'createdAtMs', 'createdAt');
+    const cancelledMs = saleMs(sale, 'cancelReceivedAtMs', 'cancelledAt', 'cancelledAtMs', 'updatedAtMs');
+    return createdMs > 0 && createdMs <= builtAtMs && cancelledMs > builtAtMs;
+  });
+  if (!stale.length) return aggregate;
+
+  const floor = (value) => Math.max(0, value);
+  const monthly = Object.fromEntries(Object.entries(aggregate.monthly || {})
+    .map(([month, bucket]) => [month, { face: Number(bucket?.face) || 0, count: Number(bucket?.count) || 0 }]));
+  let face = Number(aggregate.totalFaceValue) || 0;
+  let count = Number(aggregate.totalTransactions) || 0;
+  let due = Number(aggregate.totalCommissionDue) || 0;
+  for (const sale of stale) {
+    const amount = cancelledSaleAmount(sale);
+    face -= amount;
+    count -= 1;
+    due -= cancelledSaleCommission(sale);
+    const month = monthKeyFromDate(sale?.createdAt ?? sale?.createdAtMs);
+    if (month && monthly[month]) {
+      monthly[month] = { face: floor(monthly[month].face - amount), count: floor(monthly[month].count - 1) };
+    }
+  }
+  return {
+    ...aggregate,
+    totalFaceValue: floor(face),
+    totalTransactions: floor(count),
+    totalCommissionDue: floor(due),
+    monthly,
+  };
+}
+
+/**
+ * توزيع شهري من المبيعات المحلية نفسها (المكتملة فقط)، حتى لا يبقى مبلغ بيع
+ * أُلغي لاحقاً داخل لقطة admin_aggregates القديمة (O-07 القاعدة 3).
+ */
+export function monthlyFromCompletedSales(sales = []) {
+  const monthly = {};
+  for (const sale of sales) {
+    if (!isCompletedSale(sale)) continue;
+    const month = monthKeyFromDate(sale?.createdAt ?? sale?.createdAtMs);
+    if (!month) continue;
+    const bucket = monthly[month] || { face: 0, count: 0 };
+    bucket.face += saleFaceValue(sale);
+    bucket.count += 1;
+    monthly[month] = bucket;
+  }
+  return monthly;
 }
 
 /** ينبّه على الاشتراكات المنتهية أو القريبة من الانتهاء. */

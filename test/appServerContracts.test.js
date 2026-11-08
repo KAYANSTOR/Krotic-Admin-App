@@ -10,6 +10,7 @@ import { generateKeyPairSync, verify } from 'node:crypto';
 import { validateSchema } from '../contracts/lib/schemaValidator.js';
 import activateEntitlement from '../server/_lib/entitlementActivation.js';
 import { validateIngestInput } from '../server/apiHandlers/sales-ingest.js';
+import { cancellationIdFor, validateCancelInput } from '../server/apiHandlers/sales-cancel.js';
 import { validateHeartbeat } from '../server/_lib/deviceHeartbeat.js';
 
 const load = async (name) => JSON.parse(await readFile(new URL(`../contracts/${name}`, import.meta.url), 'utf8'));
@@ -77,6 +78,42 @@ test('sales ingest: schema and server validator agree', async () => {
     assert.equal(validateIngestInput(bad).ok, false, JSON.stringify(bad));
   }
   for (const bad of cases.slice(0, 3).concat(cases.slice(4))) {
+    assert.ok(validateSchema(bad, schema).length > 0, JSON.stringify(bad));
+  }
+});
+
+test('sales cancel: schema and server validator agree', async () => {
+  const schema = await load('schemas/sales-cancel-request.schema.json');
+  const fixture = await load('fixtures/sales-cancel-request.sample.json');
+  assert.deepEqual(validateSchema(fixture, schema), []);
+  assert.equal(validateCancelInput(fixture).ok, true);
+  assert.equal(fixture.cancellationId, cancellationIdFor(fixture.saleUuid), 'fixture follows the deterministic client rule');
+  const { saleUuid: legacyId, ...withoutUuid } = fixture;
+  assert.deepEqual(validateSchema({ ...withoutUuid, saleId: legacyId }, schema), [], 'saleId is the legacy alias');
+  assert.equal(validateCancelInput({ ...withoutUuid, saleId: legacyId }).ok, true);
+  assert.equal(validateCancelInput({ ...fixture, saleId: 'other' }).error, 'sale_id_mismatch');
+  const cases = [
+    { ...fixture, uid: 'x' },
+    { ...fixture, networkId: 'NET-1' },
+    { ...fixture, status: 'CANCELLED' },
+    { ...fixture, amountRiyal: 1 },
+    { ...fixture, commissionRiyal: 0 },
+    { ...fixture, note: 'x' },
+    { ...fixture, saleUuid: 'bad/id' },
+    { ...fixture, saleUuid: 'x'.repeat(129) },
+    { ...fixture, cancellationId: 'short' },
+    { ...fixture, cancellationId: 'cxl bad id' },
+    { ...fixture, cancelledMs: '1793990600000' },
+    { ...fixture, cancelledMs: 0 },
+    { ...fixture, cancelledMs: 1.5 },
+    { ...fixture, reason: 'other' },
+    (({ reason: _r, ...rest }) => rest)(fixture),
+    (({ cancellationId: _c, ...rest }) => rest)(fixture),
+    (({ cancelledMs: _m, ...rest }) => rest)(fixture),
+    (({ saleUuid: _s, ...rest }) => rest)(fixture),
+  ];
+  for (const bad of cases) {
+    assert.equal(validateCancelInput(bad).ok, false, JSON.stringify(bad));
     assert.ok(validateSchema(bad, schema).length > 0, JSON.stringify(bad));
   }
 });

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://krotak-pro.vercel.app/contracts/sales-cancel-request.schema.json",
+  "title": "POST /api/sales/cancel — request body",
+  "schemaVersion": 1,
+  "description": "Cancels an unpaid sale previously accepted by POST /api/sales/ingest (owner decisions O-07 / O-08). Headers: Authorization: Bearer <Firebase ID token> (client accounts only), x-verification-receipt: <timestampMs>.<hex HMAC-SHA256(networkSecret, timestampMs + '.' + canonical)> with canonical = JSON.stringify({saleId, uid, cancellationId, cancelledMs, reason}) in exactly that key order (saleId = saleUuid, uid from the token). Same ±5 min skew and current/previous key candidates as ingest. Identity, commission and settlement fields are server-owned and rejected (client_identity_field_forbidden / client_financial_field_forbidden / client_field_forbidden). Client rule: cancellationId = 'cxl_' + first 32 hex chars of sha256('sale_cancel:' + saleUuid); cancelledMs is stored on first detection and resent unchanged on every retry; it may not be more than 24h in the future (cancelled_at_in_future). Responses: 200 CANCELLED (reversedAmountRiyal, reversedCommissionRiyal, policyVersion 2), 200 ALREADY_CANCELLED_ACKED (idempotent by sale; returns the stored cancellationId), 404 sale_not_found, 409 sale_already_settled (recorded in sale_cancellation_registry for admin review), 409 sale_not_cancellable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cancellationId",
+    "cancelledMs",
+    "reason"
+  ],
+  "properties": {
+    "saleUuid": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
+    "saleId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
+    "cancellationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{8,128}$"
+    },
+    "cancelledMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "reason": {
+      "enum": [
+        "device_reversal",
+        "customer_return",
+        "delivery_failed",
+        "operator_error"
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "saleUuid"
+      ]
+    },
+    {
+      "required": [
+        "saleId"
+      ]
+    }
+  ]
+}

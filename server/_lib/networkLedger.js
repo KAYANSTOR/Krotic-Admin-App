@@ -8,7 +8,7 @@
 // ============================================================
 
 import { FieldValue } from 'firebase-admin/firestore';
-import { allocateFifo, saleOutstanding } from './settlementLedger.js';
+import { allocateFifo, isCountableSale, saleOutstanding } from './settlementLedger.js';
 
 export const PENDING_SETTLEMENT = 'PENDING_SETTLEMENT';
 export const SETTLED = 'SETTLED';
@@ -95,7 +95,7 @@ export async function settleNetworkPayment(transaction, {
   // The same monthly cap applies after merging both paths, so one transaction
   // cannot exceed Firestore's write limit if many tiny sales are settled.
   const unsettled = sales.slice(0, 400)
-    .filter((sale) => (!sale.status || sale.status === 'COMPLETED') && saleOutstanding(sale) > 0);
+    .filter((sale) => isCountableSale(sale) && saleOutstanding(sale) > 0);
   const monthlyOutstanding = unsettled.reduce((sum, sale) => sum + saleOutstanding(sale), 0);
 
   // لا نقبل رصيداً مقدماً لشهر آخر، ولا نسمح للدفعة الشهرية بتسوية مبيعات

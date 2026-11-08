@@ -1,5 +1,14 @@
 import { monthKeyFromDate } from '../billingHelpers.js';
-import { saleCommission, saleOutstanding, isServerVerifiedSale } from '../commission.js';
+import {
+  saleCommission,
+  saleFaceValue,
+  saleOutstanding,
+  isServerVerifiedSale,
+  isCompletedSale,
+  isCancelledSale,
+  cancelledSaleAmount,
+  cancelledSaleCommission,
+} from '../commission.js';
 import { isValidMonthKey } from './profileHelpers.js';
 
 export function paymentMonthKey(payment) {
@@ -23,6 +32,12 @@ export function createEmptyMonthBucket(month) {
     totalPaid: 0,
     verifiedOutstanding: 0,
     outstanding: 0,
+    // المبيعات الملغاة (O-07): تُعرض بشفافية ولا تدخل في العمولة أو المستحق.
+    cancelledCount: 0,
+    cancelledSalesTotal: 0,
+    cancelledCommission: 0,
+    // حالات غير مكتملة أخرى (مسترجع، بانتظار SMS...) تُعرض ولا تُحتسب.
+    excludedCount: 0,
   };
 }
 
@@ -43,7 +58,20 @@ export function buildMonthlyBreakdown(allSales = [], allPayments = [], monthOpti
 
     const bucket = ensure(month);
     bucket.sales.push(sale);
-    const faceValue = Number(sale?.faceValue) || 0;
+
+    // المُسند المالي المشترك: لا يدخل في المجاميع المالية إلا البيع المكتمل.
+    if (!isCompletedSale(sale)) {
+      if (isCancelledSale(sale)) {
+        bucket.cancelledCount += 1;
+        bucket.cancelledSalesTotal += cancelledSaleAmount(sale);
+        bucket.cancelledCommission += cancelledSaleCommission(sale);
+      } else {
+        bucket.excludedCount += 1;
+      }
+      continue;
+    }
+
+    const faceValue = saleFaceValue(sale);
     bucket.totalSales += faceValue;
     const commission = saleCommission(sale) ?? 0;
 

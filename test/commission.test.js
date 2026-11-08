@@ -55,6 +55,9 @@ test('shared financial summary excludes rolled-back and pending sales', () => {
     commissionDue: 30,
     outstandingCommission: 26,
     recordedPayments: 4,
+    cancelledTransactions: 0,
+    cancelledSalesValue: 0,
+    cancelledCommission: 0,
   });
 });
 

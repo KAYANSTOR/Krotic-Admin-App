@@ -20,7 +20,9 @@ import UserProfileDeviceSection from '../components/userProfile/UserProfileDevic
 import UserProfileFinancialSummary from '../components/userProfile/UserProfileFinancialSummary';
 
 import { formatNumber, isExpired } from '../lib/format';
-import { saleCommission, saleFaceValue, saleOutstanding, isServerVerifiedSale } from '../lib/commission';
+import {
+  saleCommission, saleFaceValue, saleOutstanding, isServerVerifiedSale, isCompletedSale, summarizeCancelledSales,
+} from '../lib/commission';
 import { getCurrentMonthKey, monthKeyFromDate } from '../lib/billingHelpers';
 import { useLocalDb } from '../lib/localDb/LocalDbContext';
 import { purgeDeletedAccountLocally } from '../lib/localDb/localData';
@@ -105,8 +107,12 @@ export default function UserProfilePage() {
     [allPayments, historyMonth],
   );
 
-  const verifiedSales = useMemo(() => sales.filter(isServerVerifiedSale), [sales]);
-  const legacySales = useMemo(() => sales.filter((sale) => !isServerVerifiedSale(sale)), [sales]);
+  // O-07: only completed (or legacy status-less) sales are financially counted;
+  // cancelled sales are shown separately and never enter commission or totals.
+  const completedSales = useMemo(() => sales.filter(isCompletedSale), [sales]);
+  const cancelledSummary = useMemo(() => summarizeCancelledSales(sales), [sales]);
+  const verifiedSales = useMemo(() => completedSales.filter(isServerVerifiedSale), [completedSales]);
+  const legacySales = useMemo(() => completedSales.filter((sale) => !isServerVerifiedSale(sale)), [completedSales]);
   const verifiedCommissionDue = useMemo(
     () => verifiedSales.reduce((sum, sale) => sum + (saleCommission(sale) ?? 0), 0),
     [verifiedSales],
@@ -124,8 +130,8 @@ export default function UserProfilePage() {
     [payments],
   );
   const totalSales = useMemo(
-    () => sales.reduce((sum, sale) => sum + saleFaceValue(sale), 0),
-    [sales],
+    () => completedSales.reduce((sum, sale) => sum + saleFaceValue(sale), 0),
+    [completedSales],
   );
 
   const monthlyBreakdown = useMemo(
@@ -404,6 +410,8 @@ export default function UserProfilePage() {
         verifiedCommissionDue={verifiedCommissionDue}
         legacyEstimatedCommission={legacyEstimatedCommission}
         verifiedOutstanding={verifiedOutstanding}
+        cancelledTransactions={cancelledSummary.cancelledTransactions}
+        cancelledSalesValue={cancelledSummary.cancelledSalesValue}
         totalPaid={totalPaid}
       />
 

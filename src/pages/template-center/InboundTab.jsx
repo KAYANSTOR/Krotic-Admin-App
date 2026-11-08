@@ -188,7 +188,7 @@ export default function InboundTab() {
             value={simulationBody}
             onChange={(e) => setSimulationBody(e.target.value)}
             maxLength={4000}
-            placeholder="مثال: استلمت مبلغ 200 YER من 733332303 رصيدك هو 245"
+            placeholder="مثال: استلمت مبلغ 200 YER من 770000002 رصيدك هو 1000"
           />
         </SettingField>
         <SettingField label="اسم أو رقم المرسل">

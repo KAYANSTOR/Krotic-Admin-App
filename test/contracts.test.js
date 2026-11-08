@@ -83,6 +83,7 @@ const SCHEMA_FILES = [
   'entitlement-activate-request.schema.json',
   'entitlement-lease.schema.json',
   'sales-ingest-request.schema.json',
+  'sales-cancel-request.schema.json',
   'device-heartbeat-request.schema.json',
 ];
 
@@ -111,6 +112,7 @@ const FIXTURE_SCHEMA_MAP = {
   'inventory-snapshot.sample.json': 'inventory-snapshot.schema.json',
   'entitlement-activate-request.sample.json': 'entitlement-activate-request.schema.json',
   'sales-ingest-request.sample.json': 'sales-ingest-request.schema.json',
+  'sales-cancel-request.sample.json': 'sales-cancel-request.schema.json',
   'device-heartbeat-request.sample.json': 'device-heartbeat-request.schema.json',
 };
 

@@ -69,6 +69,10 @@
       "destination": "/api/router?__router=sales-ingest"
     },
     {
+      "source": "/api/sales/cancel",
+      "destination": "/api/router?__router=sales-cancel"
+    },
+    {
       "source": "/api/send-fcm",
       "destination": "/api/router?__router=send-fcm"
     },

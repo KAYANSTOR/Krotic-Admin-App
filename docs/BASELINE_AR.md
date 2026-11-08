@@ -34,6 +34,7 @@
 | `POST /api/entitlements/activate` | التطبيق | إصدار/تجديد عقد الجهاز الموقّع | `entitlement-activate-request`, `entitlement-lease` |
 | `POST /api/entitlements/device-rebind` | الإدارة | إعادة ربط الحساب بتثبيت جديد | — |
 | `POST /api/sales/ingest` | التطبيق | رفع بيع مكتمل | `sales-ingest-request` |
+| `POST /api/sales/cancel` | التطبيق (جهاز مالك الشبكة) | إلغاء بيع غير مدفوع وعكس قيمته وعمولته (idempotent) | `sales-cancel-request` |
 | `POST /api/device-heartbeat` | التطبيق | نبضة تشخيص | `device-heartbeat-request` |
 | `GET /api/device-heartbeats` | الإدارة | قائمة النبضات | — |
 | `POST /api/inventory/snapshot` | التطبيق | ملخص أعداد المخزون | `inventory-snapshot` |
@@ -58,7 +59,7 @@
 
 ## 5. المبيعات والمال
 
-1. **مسار البيع الوحيد** `POST /api/sales/ingest`. قواعد Firestore تمنع أي كتابة مباشرة على `networks/*/sales` (حتى للمشرف). كل مبيعات الإنتاج (45) جاءت عبر الخادم.
+1. **مسار البيع الوحيد** `POST /api/sales/ingest` (والإلغاء عبر `POST /api/sales/cancel`، البند 9). قواعد Firestore تمنع أي كتابة مباشرة على `networks/*/sales` (حتى للمشرف). كل مبيعات الإنتاج (45) جاءت عبر الخادم.
 2. **التوثيق**: `Authorization: Bearer <ID token>` + `x-verification-receipt: <timestamp>.<HMAC-SHA256 بسر الشبكة>` على payload الطلب.
 3. **المعرّف**: `saleUuid` (والاسم القديم `saleId`) بالأبجدية `[A-Za-z0-9._-]` من 1 إلى 128 حرفًا. المعرّفات القديمة بلا نقطة تبقى اسم المستند. غيرها يُخزَّن باسم `sha256("sale_uuid:"+id)`.
 4. **المبلغ** بالريال اليمني (`YER`) بوحدات minor، ويجب أن يكون ريالًا صحيحًا.
@@ -66,6 +67,15 @@
 6. **عدم التكرار**: نفس المعرّف ونفس `payloadHash` يعطي `200 ALREADY_EXISTS_ACKED`، وحمولة مختلفة تعطي `409`.
 7. **البيع يُقبل** إذا كان وقت إنشائه داخل فترة الوصول (`saleAllowedByAccess`)، حتى لو وصل بعد انتهاء الاشتراك (مبيعات العمل دون اتصال).
 8. **الدفعات والتسويات** من الإدارة فقط (`/api/settlement`, `/api/record-payment`) بمفتاح idempotency.
+9. **مسار الإلغاء الوحيد** `POST /api/sales/cancel` من جهاز مالك الشبكة، بنفس توثيق `sales/ingest` (ID token لحساب عميل، والمدير يُرفض `403 not_client_account`، وHMAC بسر الشبكة الحالي أو السابق خلال نافذة التدوير، وانحراف ±5 دقائق). لا يُشترط اشتراك ساري لأن الإلغاء مزامنة ويخفض العمولة فقط، لكن ملكية الشبكة شرط. لا مسار كتابة مباشر في Firestore (`networks/*/sales` تبقى `allow write: if false`)، واللوحة تعرض النتيجة فقط.
+10. **جسم الإلغاء**: `saleUuid` (أو `saleId` القديم، ويجب تطابقهما)، `cancellationId` بالنمط `^[A-Za-z0-9._-]{8,128}$`، `cancelledMs` عدد صحيح موجب لا يتجاوز المستقبل بأكثر من 24 ساعة (`cancelled_at_in_future`)، و`reason` من `device_reversal | customer_return | delivery_failed | operator_error`. أي حقل هوية أو مال أو تسوية يُرفض بنفس رموز `sales/ingest`. قاعدة التطبيق: `cancellationId = "cxl_" + أول 32 خانة hex من sha256("sale_cancel:" + saleUuid)`، و`cancelledMs` يُحفظ عند أول اكتشاف ويُعاد كما هو في كل محاولة.
+11. **التوقيع**: `x-verification-receipt: <timestampMs>.<HMAC-SHA256(سر الشبكة، timestampMs + "." + canonical)>` حيث canonical بالترتيب الحرفي `{"saleId","uid","cancellationId","cancelledMs","reason"}` (`uid` من التوكن). توقيع `sales/ingest` لا يصلح للإلغاء.
+12. **البيع القابل للإلغاء**: حالته `COMPLETED` (أو بلا حالة في السجلات القديمة)، و`paidRiyal == 0` و`settlement_status == PENDING_SETTLEMENT`، وله `amountRiyal` و`commissionRiyal` خادميان. يُعلَّم في مستنده الأصلي (لا يُحذف) بدمج حقول الإلغاء فقط: `status` و`settlement_status` = `CANCELLED`، `cancellationId`، `cancelReason`، `cancelledAtMs`، `cancelledAt`، `cancelReceivedAtMs`، `cancelVerificationReceipt`، `cancelledAmountRiyal`، `cancelledCommissionRiyal`، `updatedAtMs`. حقول الرفع و`payloadHash` و`verificationReceipt` و`createdAt` لا تتغير.
+13. **عكس الإجماليات** في نفس المعاملة: `totalSalesAmount -= amountRiyal` و`totalCommissionDue -= commissionRiyal` (بحد أدنى صفر)، ثم `outstandingBalance = max(0, totalCommissionDue - totalPaidAmount)`، مع تدقيق `admin_audit_logs/sale_cancel_<saleDocId>` بالإجراء `SALE_CANCELLED_BY_DEVICE`. البيع يحتفظ بـ `createdAt` فيتأثر شهره فقط (Asia/Aden)، ولا يُعاد فتح أي شهر مغلق.
+14. **البيع المدفوع** (`paidRiyal > 0` أو `settlement_status` = `PARTIAL`/`SETTLED`) لا يُلغى آليًا: `409 sale_already_settled` ويُسجَّل الطلب في `sale_cancellation_registry/{uid}_{saleDocId}` بالسبب `sale_already_settled` لمراجعة الإدارة (الاسترداد أو الرصيد إجراء مالي يدوي). أي حالة أخرى غير معروفة: `409 sale_not_cancellable`. البيع غير الموجود: `404 sale_not_found` بلا أي كتابة.
+15. **عدم التكرار في الإلغاء** على مستوى البيع: بيع ملغى مسبقًا يعطي `200 ALREADY_CANCELLED_ACKED` مع `cancellationId` المخزَّن، بلا كتابة.
+16. **العمولة والتسوية** تحسبان المبيعات `COMPLETED` (أو القديمة بلا حالة) فقط. المبيعات `CANCELLED` مستبعدة في كل مكان: التسوية الشهرية، إجماليات الشبكة (تُعكس عند الإلغاء)، وملخصات اللوحة والتفصيل الشهري وملف العميل وصفحات المبيعات.
+17. **إعادة رفع بيع ملغى** بنفس الحمولة لا تعيد تفعيله: `sales/ingest` يعطي `200 ALREADY_EXISTS_ACKED` مع `saleStatus: "CANCELLED"` بلا أي كتابة.
 
 ## 6. واتساب
 
@@ -91,6 +101,8 @@
 | ق8 | لا OTP ولا توثيق هاتف عند التسجيل | OTP عبر Twilio Verify |
 | ق9 | العقود في `contracts/schemas` مرجع للتطبيق واللوحة | نسخ متفرقة في `docs/contracts` |
 | ق10 | اختبارات قواعد Firestore منفصلة في `security-tests/` | ضمن `npm test` |
+| ق11 | (O-08) جهاز مالك الشبكة هو المصدر الوحيد لإلغاء المبيعات عبر `POST /api/sales/cancel` بتوثيق `sales/ingest` نفسه؛ اللوحة تعرض النتيجة فقط | كتابة مباشرة في Firestore / إلغاء من اللوحة |
+| ق12 | (O-07) البيع غير المدفوع يُلغى في مستنده الأصلي وتُعكس قيمته وعمولته من إجماليات الشبكة في نفس المعاملة؛ البيع المدفوع `409 sale_already_settled` ويُسجَّل لمراجعة الإدارة؛ العمولة والتسوية تحسبان `COMPLETED` فقط | حذف البيع / تعديل الأشهر المغلقة أو المدفوعة آليًا |
 
 ## 8. السيناريوهات المعتمدة
 
@@ -107,6 +119,14 @@
 | رفع نفس البيع مرتين | `200 ALREADY_EXISTS_ACKED` |
 | نفس المعرّف بحمولة مختلفة | `409` |
 | معرّف منقّط مثل `7850.73` | `201`، المستند باسم hash |
+| إلغاء بيع غير مدفوع من جهاز المالك | `200 CANCELLED` + `reversedAmountRiyal`/`reversedCommissionRiyal`، وتُعكس الإجماليات |
+| إعادة إرسال نفس الإلغاء (أو بعد نجاحه) | `200 ALREADY_CANCELLED_ACKED` بلا كتابة |
+| إلغاء بيع عليه دفعة (`PARTIAL`/`SETTLED` أو `paidRiyal > 0`) | `409 sale_already_settled` + سجل في `sale_cancellation_registry` |
+| إلغاء بيع غير موجود | `404 sale_not_found` بلا كتابة |
+| إلغاء بيع بحالة غير معروفة | `409 sale_not_cancellable` |
+| إلغاء من حساب مدير أو من غير مالك الشبكة | `403 not_client_account` / `403 network_owner_mismatch` |
+| إعادة رفع بيع ملغى بنفس الحمولة | `200 ALREADY_EXISTS_ACKED` + `saleStatus: "CANCELLED"`، ولا يُعاد تفعيله |
+| خادم قديم بلا مسار الإلغاء | `404 api_route_not_found`؛ يبقى الإلغاء معلّقًا في التطبيق ويُعاد لاحقًا |
 
 ## 9. الإجراءات
 
@@ -119,6 +139,6 @@
 
 ## 10. فهرس العقود
 
-`contracts/schemas`: `entitlement-activate-request`, `entitlement-lease`, `sales-ingest-request`, `device-heartbeat-request`, `inventory-snapshot`, `template-release`, `template-ack`, `template-center-ack-request`, `inbound-template`, `outbound-template`, `wallet`, `account-features`, `account-features-catalog`, `android-application-state`, `default-template-catalog`.
+`contracts/schemas`: `entitlement-activate-request`, `entitlement-lease`, `sales-ingest-request`, `sales-cancel-request`, `device-heartbeat-request`, `inventory-snapshot`, `template-release`, `template-ack`, `template-center-ack-request`, `inbound-template`, `outbound-template`, `wallet`, `account-features`, `account-features-catalog`, `android-application-state`, `default-template-catalog`.
 
 وثائق مرافقة: `docs/ENTITLEMENT_LEASE_DEPLOYMENT_AR.md`, `docs/TEMPLATE_CENTER_CONTRACT_AR.md`, `docs/ACCOUNT_FEATURES_ACK_CONTRACT_AR.md`, `docs/ADMIN_CONTROL_CENTER_CONTRACTS_AR.md`, `docs/contracts/admin-default-catalog-import-contract-2026-10-21.md`.
