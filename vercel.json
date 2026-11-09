@@ -85,6 +85,30 @@
       "destination": "/api/router?__router=settlement"
     },
     {
+      "source": "/api/whatsapp/session/start",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=start"
+    },
+    {
+      "source": "/api/whatsapp/session/status",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=status"
+    },
+    {
+      "source": "/api/whatsapp/session/reconnect",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=reconnect"
+    },
+    {
+      "source": "/api/whatsapp/session/disconnect",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=disconnect"
+    },
+    {
+      "source": "/api/whatsapp/messages/send",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=send"
+    },
+    {
+      "source": "/api/whatsapp/inbound",
+      "destination": "/api/router?__router=whatsapp-inbound"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
