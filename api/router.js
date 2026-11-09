@@ -10,6 +10,8 @@ import salesIngestHandler from '../server/apiHandlers/sales-ingest.js';
 import sendFcmHandler from '../server/apiHandlers/send-fcm.js';
 import settingsHandler from '../server/apiHandlers/settings.js';
 import settlementHandler from '../server/apiHandlers/settlement.js';
+import whatsappGatewayHandler from '../server/apiHandlers/whatsapp-gateway.js';
+import whatsappInboundHandler from '../server/apiHandlers/whatsapp-inbound.js';
 
 // Each delegated handler retains its original authentication, authorization,
 // validation, and idempotency rules. This module only consolidates Vercel
@@ -27,6 +29,8 @@ export const API_ROUTE_HANDLERS = Object.freeze({
   'send-fcm': sendFcmHandler,
   settings: settingsHandler,
   settlement: settlementHandler,
+  'whatsapp-gateway': whatsappGatewayHandler,
+  'whatsapp-inbound': whatsappInboundHandler,
 });
 
 export default async function handler(req, res) {
