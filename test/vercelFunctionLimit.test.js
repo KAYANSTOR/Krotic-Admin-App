@@ -53,6 +53,12 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/entitlements/device-rebind', '/api/router?__router=settings&__apiRoute=entitlement-device-rebind'],
     ['/api/record-payment', '/api/router?__router=settlement&__apiRoute=record-payment'],
     ['/api/account-notifications', '/api/router?__router=manage-user-auth&__apiRoute=account-notifications'],
+    ['/api/whatsapp/session/start', '/api/router?__router=whatsapp-gateway&__apiRoute=start'],
+    ['/api/whatsapp/session/status', '/api/router?__router=whatsapp-gateway&__apiRoute=status'],
+    ['/api/whatsapp/session/reconnect', '/api/router?__router=whatsapp-gateway&__apiRoute=reconnect'],
+    ['/api/whatsapp/session/disconnect', '/api/router?__router=whatsapp-gateway&__apiRoute=disconnect'],
+    ['/api/whatsapp/messages/send', '/api/router?__router=whatsapp-gateway&__apiRoute=send'],
+    ['/api/whatsapp/inbound', '/api/router?__router=whatsapp-inbound'],
   ]);
   for (const [source, destination] of expected) {
     assert.equal(destinations.get(source), destination, `${source} must retain its public contract`);
@@ -73,6 +79,8 @@ test('router exposes only the approved original server handlers', () => {
     'send-fcm',
     'settings',
     'settlement',
+    'whatsapp-gateway',
+    'whatsapp-inbound',
   ]);
   for (const [route, handler] of Object.entries(API_ROUTE_HANDLERS)) {
     assert.equal(typeof handler, 'function', `${route} must be callable`);

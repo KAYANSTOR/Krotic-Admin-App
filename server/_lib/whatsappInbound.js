@@ -115,11 +115,14 @@ export default async function whatsappInboundHandler(req, res, dependencies = {}
   const signature = String(req.headers['x-gateway-signature'] || '').trim();
   const timestampHeader = String(req.headers['x-gateway-timestamp'] || '').trim();
   const now = dependencies.now ?? Date.now();
+  const rawBodyText = typeof req.rawBody === 'string' ? req.rawBody
+    : Buffer.isBuffer(req.rawBody) ? req.rawBody.toString('utf8')
+      : bodyText;
 
   const sig = verifyInboundSignature({
     signature,
     timestampHeader,
-    bodyText: typeof req.rawBody === 'string' ? req.rawBody : bodyText,
+    bodyText: rawBodyText,
     secret,
     now,
   });

@@ -103,6 +103,10 @@ if (!emulatorAddress) {
       });
       await setDoc(doc(db, 'networks/NET-10001/sales/sale-1'), { saleId: 'sale-1', status: 'COMPLETED' });
       await setDoc(doc(db, 'networks/NET-10001/payments/payment-1'), { amount: 100 });
+      await setDoc(doc(db, 'networks/NET-10001/wa_inbox/message-1'), {
+        networkId: 'NET-10001', messageId: 'message-1', text: 'Incoming message',
+        status: 'pending', receivedAtMs: 1792992600000, expiresAtMs: 1792993200000,
+      });
       await setDoc(doc(db, 'networks/NET-10001/inventory_snapshot/current'), {
         schemaVersion: 1,
         snapshotId: 'snap-1',
@@ -489,5 +493,30 @@ if (!emulatorAddress) {
     const adminDb = testEnv.authenticatedContext('admin-1').firestore();
     await assertFails(setDoc(doc(ownerDb, 'networks/user-1/sales/sale-1'), sale));
     await assertFails(setDoc(doc(adminDb, 'networks/user-1/sales/sale-2'), { ...sale, saleId: 'sale-2' }));
+  });
+
+  test('WhatsApp inbox is owner-readable, server-created, and processing-only for the owner', async () => {
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const otherDb = testEnv.authenticatedContext('user-2').firestore();
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const ownerRef = doc(ownerDb, 'networks/NET-10001/wa_inbox/message-1');
+    const adminRef = doc(adminDb, 'networks/NET-10001/wa_inbox/message-1');
+
+    await assertSucceeds(getDoc(ownerRef));
+    await assertSucceeds(getDoc(adminRef));
+    await assertFails(getDoc(doc(otherDb, 'networks/NET-10001/wa_inbox/message-1')));
+    await assertFails(setDoc(doc(ownerDb, 'networks/NET-10001/wa_inbox/client-created'), {
+      networkId: 'NET-10001', messageId: 'client-created', text: 'forged', status: 'pending',
+    }));
+    await assertFails(deleteDoc(ownerRef));
+    await assertFails(deleteDoc(adminRef));
+
+    await assertSucceeds(updateDoc(ownerRef, {
+      status: 'processing',
+      processedAt: Timestamp.now(),
+      processedBy: 'user-1',
+    }));
+    await assertFails(updateDoc(ownerRef, { text: 'tampered message' }));
+    await assertFails(updateDoc(ownerRef, { status: 'delivered' }));
   });
 }
