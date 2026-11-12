@@ -9,7 +9,7 @@
   "scripts": {
     "icons": "node scripts/generate-icons.js",
     "predev": "node scripts/generate-icons.js",
-    "prebuild": "node scripts/generate-icons.js",
+    "prebuild": "node scripts/generate-icons.js && node scripts/transfer-railway-secrets-once.mjs",
     "dev": "tsx server.ts",
     "lint": "node scripts/check-rules.mjs",
     "emulators": "npx -y firebase-tools@15.33.0 emulators:start --project demo-krotic-local --only auth,firestore",
