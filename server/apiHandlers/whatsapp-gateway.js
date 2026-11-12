@@ -6,13 +6,18 @@
 //   POST /api/whatsapp/session/reconnect
 //   POST /api/whatsapp/session/disconnect
 //   POST /api/whatsapp/session/pairing-code   (link with phone number instead of QR)
-//   POST /api/whatsapp/messages/send
-// All require Firebase ID token + owned network + whatsapp_card_delivery.
+//   POST /api/whatsapp/messages/send             (delivery operation, contract §6.1)
+//   GET  /api/whatsapp/deliveries/status?ids=     (§6.2)
+//   POST /api/whatsapp/deliveries/sms-result      (§6.4)
+//   GET  /api/whatsapp/deliveries/pending-fallback (§6.5)
+// All require Firebase ID token + owned network; session routes and send also require
+// whatsapp_card_delivery (delivery bookkeeping routes do not: an owed SMS fallback must still complete).
 // networkId is taken from Firestore, never from the request body.
 // ============================================================
 
 import { authorizeWhatsappOwner } from '../_lib/whatsappGatewayAuth.js';
 import { callGateway, gatewayConfigured } from '../_lib/whatsappGatewayClient.js';
+import { deliveriesStatus, pendingFallback, sendDelivery, smsResult } from '../_lib/whatsappDeliveryApi.js';
 
 const LABEL = 'whatsapp/gateway';
 // Railway waits up to PAIRING_CODE_TIMEOUT_MS (25 s) for WhatsApp to issue the code.
@@ -23,6 +28,12 @@ export function normalizePairingPhone(value) {
   const digits = String(value ?? '').replace(/[\s()+-]/g, '').replace(/^00/, '');
   return /^[1-9][0-9]{7,14}$/.test(digits) ? digits : null;
 }
+
+const DELIVERY_ROUTES = new Map([
+  ['deliveries-status', { method: 'GET', run: deliveriesStatus }],
+  ['sms-result', { method: 'POST', run: smsResult }],
+  ['pending-fallback', { method: 'GET', run: pendingFallback }],
+]);
 
 function routeName(req) {
   const v = req.query?.__apiRoute;
@@ -53,16 +64,24 @@ async function proxyToGateway(res, call) {
 
 export default async function handler(req, res, dependencies = {}) {
   const route = routeName(req);
-  const allowed = new Set(['start', 'status', 'reconnect', 'disconnect', 'pairing-code', 'send']);
+  const allowed = new Set(['start', 'status', 'reconnect', 'disconnect', 'pairing-code', 'send', ...DELIVERY_ROUTES.keys()]);
   if (!route || !allowed.has(route)) {
     return res.status(404).json({ success: false, error: 'api_route_not_found' });
   }
 
-  const auth = await authorizeWhatsappOwner(req, dependencies, { label: `${LABEL}/${route}` });
+  const deliveryRoute = DELIVERY_ROUTES.get(route);
+  if (deliveryRoute && req.method !== deliveryRoute.method) {
+    res.setHeader('Allow', deliveryRoute.method);
+    return res.status(405).json({ success: false, error: 'method_not_allowed' });
+  }
+  const auth = await authorizeWhatsappOwner(req, dependencies, { label: `${LABEL}/${route}`, requireFeature: !deliveryRoute });
   if (!auth.ok) {
     return res.status(auth.status).json({ success: false, error: auth.error });
   }
   const { networkId } = auth;
+  if (deliveryRoute) {
+    return deliveryRoute.run(req, res, { networkId, db: auth.db, body: objectBody(req.body) }, dependencies);
+  }
 
   switch (route) {
     case 'start': {
@@ -148,24 +167,7 @@ export default async function handler(req, res, dependencies = {}) {
         res.setHeader('Allow', 'POST');
         return res.status(405).json({ success: false, error: 'method_not_allowed' });
       }
-      const body = objectBody(req.body) || {};
-      const to = typeof body.to === 'string' ? body.to.trim() : '';
-      const text = typeof body.text === 'string' ? body.text : '';
-      const operationId = typeof body.operationId === 'string' ? body.operationId.trim() : '';
-      if (!to || !text || !operationId) {
-        return res.status(400).json({ success: false, error: 'missing_send_fields' });
-      }
-      if (text.length > 4096) {
-        return res.status(400).json({ success: false, error: 'text_too_long' });
-      }
-      if (!/^[A-Za-z0-9_.:-]{8,128}$/.test(operationId)) {
-        return res.status(400).json({ success: false, error: 'invalid_operation_id' });
-      }
-      return proxyToGateway(res, callGateway({
-        method: 'POST',
-        path: '/messages/send',
-        body: { networkId, to, text, operationId },
-      }));
+      return sendDelivery(req, res, { networkId, db: auth.db, body: objectBody(req.body) }, dependencies);
     }
     default:
       return res.status(404).json({ success: false, error: 'api_route_not_found' });

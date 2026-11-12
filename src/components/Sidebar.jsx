@@ -25,6 +25,7 @@ const navGroups = [
       { path: '/users', label: 'إدارة المستخدمين', icon: Users },
       { path: '/sales', label: 'المبيعات والعمولات', icon: DollarSign },
       { path: '/notifications', label: 'الإشعارات', icon: Bell },
+      { path: '/whatsapp-deliveries', label: 'تقرير تسليم WhatsApp', icon: Send },
     ],
   },
   {

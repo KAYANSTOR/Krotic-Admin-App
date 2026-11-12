@@ -225,6 +225,14 @@ service cloud.firestore {
           && request.resource.data.status in ['pending', 'processing', 'processed', 'expired', 'skipped'];
       }
 
+      // WhatsApp delivery operations (contract whatsapp-delivery-v1 §9): receipts, 10 s deadline,
+      // SMS-fallback outcome. Written only by the Admin SDK (send / delivery-events / sms-result);
+      // the owner reads its own reports; no message text or card secret is ever stored.
+      match /wa_deliveries/{deliveryOperationId} {
+        allow read: if isAdmin() || isNetworkOwner(networkId);
+        allow write: if false;
+      }
+
       match /{subcollection}/{documentId} {
         allow read: if isAdmin();
         allow write: if false;

@@ -31,6 +31,7 @@ const REQUIRED = [
   { pattern: /match\s+\/\{path=\*\*\}\/payments\/\{paymentId\}\s*\{\s*allow read:\s*if isAdmin\(\);/, why: 'قراءة collectionGroup للدفعات يجب أن تكون للمدير فقط' },
   { pattern: /match\s+\/sync_tombstones\/\{tombstoneId\}\s*\{\s*allow read:\s*if isAdmin\(\);\s*allow write:\s*if false;/, why: 'شواهد الحذف يجب أن تكون للقراءة الإدارية والكتابة الخادمية فقط' },
   { pattern: /match\s+\/settlements\/\{settlementId\}/, why: 'كتلة التسويات يجب أن توجد' },
+  { pattern: /match\s+\/wa_deliveries\/\{deliveryOperationId\}\s*\{\s*allow read:\s*if isAdmin\(\) \|\| isNetworkOwner\(networkId\);\s*allow write:\s*if false;/, why: 'سجل تسليم WhatsApp خادمي الكتابة؛ القراءة للمدير ومالك الشبكة فقط' },
   { pattern: /function\s+isNetworkOwner\s*\(/, why: 'ملكية الشبكة عبر owner_uid يجب أن توجد' },
   { pattern: /match\s+\/template_center_drafts\/\{draftId\}\s*\{\s*allow read, write:\s*if false;/, why: 'مسودات القوالب يجب أن تكون خادمية فقط' },
   { pattern: /match\s+\/template_center_releases\/\{releaseId\}\s*\{\s*allow read, write:\s*if false;/, why: 'إصدارات القوالب يجب أن تكون خادمية فقط' },

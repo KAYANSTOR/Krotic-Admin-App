@@ -95,8 +95,17 @@ class CollectionGroupRef {
   }
 }
 
-export function createFakeFirestore(seed = {}) {
+/**
+ * @param {object} seed path -> data
+ * @param {{ strictTransactions?: boolean }} options strictTransactions: Firestore-like optimistic
+ *   transactions — writes are buffered until the callback resolves; if any document read inside the
+ *   transaction changed meanwhile, the callback is retried (up to 5 times) with fresh reads. Lets tests
+ *   exercise real interleavings (a receipt and a fallback decision racing on one record).
+ */
+export function createFakeFirestore(seed = {}, { strictTransactions = false } = {}) {
   const store = new Map(Object.entries(seed));
+  const versions = new Map();
+  const bump = (path) => versions.set(path, (versions.get(path) || 0) + 1);
   const db = {
     _store: store,
     collection(name) {
@@ -115,6 +124,37 @@ export function createFakeFirestore(seed = {}) {
       };
     },
     async runTransaction(callback) {
+      if (strictTransactions) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const reads = new Map();
+          const writes = [];
+          const tx = {
+            get: async (ref) => {
+              reads.set(ref.path, versions.get(ref.path) || 0);
+              return new DocSnapshot(ref.path, store.get(ref.path));
+            },
+            set: (ref, data, options) => writes.push(() => {
+              store.set(ref.path, options?.merge && store.get(ref.path) ? { ...store.get(ref.path), ...data } : { ...data });
+              bump(ref.path);
+            }),
+            create: (ref, data) => writes.push(() => {
+              if (store.has(ref.path)) { const e = new Error('exists'); e.code = 6; throw e; }
+              store.set(ref.path, { ...data });
+              bump(ref.path);
+            }),
+            delete: (ref) => writes.push(() => { store.delete(ref.path); bump(ref.path); }),
+          };
+          const result = await callback(tx);
+          // Commit is synchronous (atomic in this single-threaded double): validate, then apply.
+          const conflicted = [...reads].some(([path, version]) => (versions.get(path) || 0) !== version);
+          if (conflicted) { db.transactionRetries = (db.transactionRetries || 0) + 1; continue; }
+          for (const write of writes) write();
+          return result;
+        }
+        const error = new Error('transaction contention');
+        error.code = 10;
+        throw error;
+      }
       const tx = {
         get: (ref) => ref.get(),
         set: (ref, data, options) => { store.set(ref.path, options?.merge && store.get(ref.path) ? { ...store.get(ref.path), ...data } : { ...data }); },

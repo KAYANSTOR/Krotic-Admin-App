@@ -196,14 +196,20 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
   `4xx` (غير 408/429) = رفض نهائي يُسجل.
 - خادم كروتك يطبّق الحدث فقط إذا `delivery.seq > stored.railwaySeq` (منع الترتيب المعكوس والتكرار).
 - `404` يُعاد أيضاً (المسار لم يُنشر بعد على Vercel)، فلا تضيع الأحداث إن سبق نشر Railway.
+- التنفيذ (المرحلة 3): مسار Vercel `POST /api/whatsapp/delivery-events` (rewrite إلى
+  `whatsapp-delivery-events&__apiRoute=events`). توقيع خاطئ/منتهٍ (±5 دقائق) ⇒ `401`؛
+  `type` غير معروف ⇒ `200 { ignored: true }` (توافق أمامي، لا إعادة محاولة)؛ جسم بلا
+  `delivery.deliveryOperationId`/`networkId` صالحين ⇒ `400`. الرد `200 { state, railwaySeq }`.
+  المتغير على Vercel هو `WHATSAPP_INBOUND_SECRET` القائم نفسه (يساوي `KROTAK_INBOUND_SECRET` على Railway).
 
 ---
 
 ## 6. واجهات التطبيق على خادم كروتك (`Bearer <Firebase ID token>`)
 
-كل المسارات: توثيق المالك + `networkId` من Firestore (ليس من الجسم) + ميزة
-`whatsapp_card_delivery` (عبر `authorizeWhatsappOwner`)، عدا `sms-result` الذي لا يشترط الميزة
-(نتيجة SMS محلية يجب أن تُسجل حتى لو أُلغي الاشتراك لاحقاً).
+كل المسارات: توثيق المالك + `networkId` من Firestore (ليس من الجسم). `messages/send` يشترط ميزة
+`whatsapp_card_delivery` (عبر `authorizeWhatsappOwner`)؛ أما `deliveries/status` و`sms-result`
+و`pending-fallback` فتشترط المالك فقط دون الميزة: عملية بدأت قبل إلغاء الاشتراك يجب أن تُحسم
+ويُسجل SMS البديل لها ويُستعاد أمرها، وإلا ضاع كرت مصروف.
 الأخطاء بالشكل القائم `{ "success": false, "error": "<code>" }`.
 
 ### 6.1 `POST /api/whatsapp/messages/send` (موسّع)
@@ -223,8 +229,16 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 }
 ```
 - ينشئ (أو يعيد) `networks/{networkId}/wa_deliveries/{deliveryOperationId}` بحالة `queued` ثم يستدعي Railway.
+- `deliveryOperationId`: `[A-Za-z0-9._:-]{1,128}` ولا يكون بصيغة `__x__` (محجوزة في Firestore).
+- `saleRef`/`cardRef`/`orderRef`/`customerRef` اختيارية (≤128)، `templateKey` اختياري (≤64).
+  رسائل بلا كرت (بث، اختبار): `deliveryOperationId = "msg:<sha>"` و`cardRef` غائب/`null`
+  و`templateKey` في حقله (لا يُدمج في `saleRef`). `smsFallback` افتراضياً `true`.
+- إن كانت العملية **محسومة مسبقاً** (delivered، أي حالة SMS، failed، delivery_timeout) يعيد
+  `200 { duplicate: true, delivery }` **دون** استدعاء Railway (لا تخرج رسالة WhatsApp ثانية أبداً).
 - `deliveryOperationId` موجود مسبقاً بـ `saleRef`/`cardRef`/`to` مختلفة ⇒ `409 delivery_operation_conflict`
-  (يمنع إعادة استخدام المعرّف لكرت آخر).
+  (يمنع إعادة استخدام المعرّف لكرت آخر). `null` مقابل قيمة يُعد اختلافاً؛ `to` يُقارن بعد التطبيع
+  (أرقام فقط، حذف `00`، 8–15 رقماً).
+- كل ردود الخطأ تحمل `deliveryOperationId`.
 - 200:
 ```json
 {
@@ -243,7 +257,8 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 
 ### 6.2 `GET /api/whatsapp/deliveries/status?ids=a,b,c` (≤50)
 `{ "success": true, "deliveries": [DeliveryView | { "deliveryOperationId": "x", "state": "unknown" }] }`
-- يجري **مطابقة احتياطية** (§6.3) لأي عملية `waiting_whatsapp_receipt` تجاوزت `receiptDeadlineAt + 15000`.
+- يجري **مطابقة احتياطية** (§6.3) لأي عملية `waiting_whatsapp_receipt` تجاوزت `receiptDeadlineAt + 15000`،
+  ولأي عملية `queued` لم يُقبل إرسالها خلال `QUEUED_STALE_MS = 120000` من `createdAt`.
 
 ### 6.3 الحسم الاحتياطي عند صمت Railway
 إذا بقيت العملية في Firestore `waiting_whatsapp_receipt` بعد `receiptDeadlineAt + 15s`
@@ -251,6 +266,9 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 1. خادم كروتك يستعلم `GET /messages/deliveries`؛ إن أجاب يطبّق حالته (seq).
 2. إن لم يُجب أو أعاد `unknown`: معاملة Firestore ذرية
    `waiting_whatsapp_receipt -> sms_fallback_requested` بسبب `gateway_silent_after_deadline`.
+   عملية `queued` قديمة (>120s) لا يعرفها Railway ⇒ نفس الحسم (`gateway_silent_after_deadline`، `decidedBy: server`).
+   إن كانت `smsFallback:false` (قديمة/legacy) ⇒ `delivery_timeout` إن قُبلت، وإلا `failed`، دون أمر SMS.
+   كل حسم يتم داخل `runTransaction` يعيد قراءة الحالة؛ إن سبقه حدث Railway أو بلاغ SMS لا يُكتب شيء.
 3. إيصال لاحق من Railway ⇒ late delivery فقط (§3). احتمال وصول الرسالتين بنفس الكرت مقبول
    ومُسجَّل بوضوح؛ صرف كرت ثانٍ مستحيل لأن fallback يحمل `cardRef` نفسه.
 
@@ -270,19 +288,27 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 }
 ```
 - `outcome ∈ {sent, failed, abandoned}`؛ `attempt` عدد صحيح ≥1 يزيد مع كل محاولة SMS.
-- **idempotent** بالمفتاح `(deliveryOperationId, attempt)`: إعادة نفس البلاغ ⇒ 200 `duplicate:true`.
+  `abandoned` (التطبيق تخلى عن الإرسال نهائياً) ⇒ `failed` (`finalOutcome: none`) دون زيادة عداد SMS.
+- **idempotent** بالمفتاح `(deliveryOperationId, attempt)`: إعادة نفس البلاغ ⇒ 200 `duplicate:true`؛
+  نفس `attempt` بنتيجة مختلفة ⇒ `409 sms_attempt_conflict`.
 - يقبل بلاغاً **متأخراً بعد عودة الإنترنت** (`at` هو وقت الإرسال المحلي الفعلي).
-- `cardRef` يجب أن يساوي المخزّن، وإلا `409 card_mismatch` (fallback بكرت مختلف مرفوض).
+- `cardRef` يجب أن يساوي المخزّن، وإلا `409 card_mismatch` (fallback بكرت مختلف مرفوض). بلاغ بلا
+  `cardRef` مقبول فقط إن كان المخزّن `null` (رسالة بلا كرت).
 - إن لم توجد العملية (التطبيق لم يصل للخادم أصلاً وأرسل SMS محلياً): تُنشأ بحالة
-  `sms_fallback_requested` بسبب `reason` (مثل `whatsapp_unreachable`) ثم يُطبق البلاغ.
+  `sms_fallback_requested` بسبب `reason` (مثل `whatsapp_unreachable`) ثم يُطبق البلاغ. إن لم توجد
+  العملية ولم يحمل البلاغ `cardRef` ولا `saleRef` ولا `to` ⇒ `404 delivery_not_found`.
 - إن كانت `waiting_whatsapp_receipt` (التطبيق حسم محلياً دون اتصال بعد مهلة محلية لا تقل عن 60s):
   معاملة واحدة `-> sms_fallback_requested (fallbackDecidedBy=app)` ثم `-> sms_fallback_sent|failed`.
 - إن كانت `delivered`: لا تتغير الحالة؛ يُسجَّل `smsAfterDelivered = { at, attempt }` (لا يُخفى).
-- 200: `{ "success": true, "duplicate": false, "delivery": DeliveryView }`.
+- بلاغ على حالة نهائية (`sms_fallback_sent`/`failed`/`delivery_timeout`) يُحفظ كمعلومة دون تغيير الحالة.
+- 200: `{ "success": true, "duplicate": false, "applied": true, "delivery": DeliveryView }`؛
+  `applied:false` = سُجل البلاغ دون تغيير الحالة (delivered أو حالة نهائية).
 
 ### 6.5 `GET /api/whatsapp/deliveries/pending-fallback?limit=50`
 يعيد كل عمليات الشبكة في `sms_fallback_requested` أو `sms_fallback_failed` (الأقدم أولاً).
 يستدعيه التطبيق عند الإقلاع/الاستئناف وعند عودة الإنترنت لاستعادة أوامر لم تُنفذ.
+قبل الإجابة يُجري مطابقة §6.3 لعمليات الشبكة المفتوحة المتأخرة (حتى 200) فتظهر أوامرها في نفس الرد.
+`limit` بين 1 و50. الرد `{ success, limit, deliveries: DeliveryView[] }`.
 
 ### DeliveryView (Firestore + الواجهات)
 ```json
@@ -356,7 +382,15 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 - الكتابة: Admin SDK فقط (خادم كروتك). القراءة: المدير، ومالك الشبكة.
 - لا نص رسائل ولا رقم كرت سري.
 - لوحة الإدارة: تقرير التسليم (§4.4) يقرأ هذه المستندات (collection group `wa_deliveries`)
-  عبر واجهة إدارة موثقة `GET /api/admin/whatsapp-deliveries`.
+  عبر واجهة إدارة موثقة `GET /api/admin/whatsapp-deliveries` (Firebase ID token لمستند `Admins/{uid}`).
+  الفلاتر: `networkId` (اختياري؛ بدونه collection group)، `state` (إحدى حالات §2)،
+  `from`/`to` (`YYYY-MM-DD` بتوقيت UTC أو ms من 13 رقماً، على `createdAtMs`)، `limit` 1–500 (افتراضي 200).
+  الرد `{ success, deliveries, summary: { total, byState, byOutcome, lateDelivery, smsAfterDelivered }, filters, truncated }`.
+  فهرس غير منشور ⇒ `503 delivery_index_missing`.
+- الفهارس في `firestore.indexes.json` (Krotic-Admin-App): `wa_deliveries (state ASC, createdAtMs DESC)` لنطاقي
+  COLLECTION وCOLLECTION_GROUP، و`fieldOverrides` لـ `createdAtMs` (ASC/DESC) لكلا النطاقين.
+  تحتاج نشراً: `firebase deploy --only firestore:indexes,firestore:rules`.
+- `pending-fallback` يستخدم `where('state','in',[...])` بلا ترتيب على الخادم (فهرس الحقل الواحد التلقائي يكفي).
 
 ---
 
