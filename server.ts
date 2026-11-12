@@ -1,96 +1,103 @@
 import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
-// API Route Handlers
-import networksHandler from './server/apiHandlers/networks.js';
-import adminsHandler from './server/apiHandlers/admins.js';
-import manageUserAuthHandler from './server/apiHandlers/manage-user-auth.js';
-import settingsHandler from './server/apiHandlers/settings.js';
-import settlementHandler from './server/apiHandlers/settlement.js';
-import recordPaymentHandler from './server/record-payment.js';
-import registerNetworkHandler from './server/apiHandlers/register-network.js';
-import salesIngestHandler from './server/apiHandlers/sales-ingest.js';
-import salesCancelHandler from './server/apiHandlers/sales-cancel.js';
-import deviceHeartbeatHandler from './server/apiHandlers/device-heartbeat.js';
-import sendFcmHandler from './server/apiHandlers/send-fcm.js';
+import apiRouter from './api/router.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
-import migrateHandler from './server/_lib/migrationApi.js';
-import networkSecretHandler from './server/_lib/networkSecretApi.js';
-import adminSessionHandler from './server/apiHandlers/admin-session.js';
-import templateCenterHandler from './server/_lib/templateCenterApi.js';
-import activateEntitlementHandler from './server/_lib/entitlementActivation.js';
-import rebindEntitlementDeviceHandler from './server/_lib/entitlementDeviceRebind.js';
-import inventorySnapshotHandler from './server/apiHandlers/inventory-snapshot.js';
-import metaExchangeHandler from './server/_lib/whatsapp/metaExchangeHandler.js';
-import {
-  whatsappQrGenerateHandler,
-  whatsappQrStatusHandler,
-  whatsappSessionStartHandler,
-  whatsappSessionStatusHandler,
-  whatsappSessionUnlinkHandler,
-} from './server/_lib/whatsapp/gatewaySessionApi.js';
-import unifiedMessageHandler from './server/_lib/whatsapp/unifiedMessageHandler.js';
-import metaWebhookHandler from './api/whatsapp/meta/webhook.js';
-import gatewayStatusCallbackHandler from './server/_lib/whatsapp/gatewayStatusCallbackHandler.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * Reuse the exact API rewrite contract used by Vercel.
+ *
+ * Keeping the route map sourced from vercel.json prevents the Railway adapter
+ * from silently drifting away from the production API paths and route selectors.
+ * The delegated handlers remain responsible for their existing auth,
+ * authorization, validation, idempotency, and response contracts.
+ */
+function loadApiRewriteMap() {
+  const configPath = new URL('./vercel.json', import.meta.url);
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const routes = new Map();
+
+  for (const rewrite of config.rewrites || []) {
+    if (
+      typeof rewrite.source !== 'string'
+      || !rewrite.source.startsWith('/api/')
+      || typeof rewrite.destination !== 'string'
+      || !rewrite.destination.startsWith('/api/router?')
+    ) {
+      continue;
+    }
+
+    const destination = new URL(rewrite.destination, 'http://localhost');
+    const router = destination.searchParams.get('__router');
+    if (!router) continue;
+
+    routes.set(rewrite.source, {
+      router,
+      apiRoute: destination.searchParams.get('__apiRoute'),
+    });
+  }
+
+  return routes;
+}
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
   const isProduction = process.env.NODE_ENV === 'production';
+  const apiRewriteMap = loadApiRewriteMap();
 
-  // Parse JSON and urlencoded request bodies
-  app.use(
-    express.json({
-      limit: '10mb',
-      verify: (req: any, _res, buf) => {
-        req.rawBody = buf;
-      },
-    })
-  );
-  app.use(express.urlencoded({ extended: true }));
+  // Preserve the exact request bytes for signed webhook verification.
+  app.use(express.json({
+    limit: '10mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Mount API endpoints
-  app.all('/api/networks', (req, res) => networksHandler(req, res));
-  app.all('/api/admins', (req, res) => adminsHandler(req, res));
-  app.all('/api/admin-session', (req, res) => adminSessionHandler(req, res));
-  app.all('/api/manage-user-auth', (req, res) => manageUserAuthHandler(req, res));
-  app.all('/api/settings', (req, res) => settingsHandler(req, res));
-  app.all('/api/settlement', (req, res) => settlementHandler(req, res));
-  app.all('/api/record-payment', (req, res) => recordPaymentHandler(req, res));
-  app.all('/api/register-network', (req, res) => registerNetworkHandler(req, res));
-  app.all('/api/sales/ingest', (req, res) => salesIngestHandler(req, res));
-  app.all('/api/sales/cancel', (req, res) => salesCancelHandler(req, res));
-  app.all('/api/device-heartbeat', (req, res) => deviceHeartbeatHandler(req, res));
-  app.all('/api/device-heartbeats', (req, res) => deviceHeartbeatHandler({ ...req, query: { ...(req.query || {}), __apiRoute: 'list' } }, res));
-  app.all('/api/send-fcm', (req, res) => sendFcmHandler(req, res));
-  app.all('/api/dispatch-notifications', (req, res) => dispatchNotificationsHandler(req, res));
-  app.all('/api/migrate', (req, res) => migrateHandler(req, res));
-  app.all('/api/inventory/snapshot', (req, res) => inventorySnapshotHandler(req, res));
-  app.all('/api/network-secret', (req, res) => networkSecretHandler(req, res));
-  app.all('/api/template-center', (req, res) => templateCenterHandler(req, res));
-  app.all('/api/whatsapp/meta/exchange-token', (req, res) => metaExchangeHandler(req, res));
-  app.all('/api/whatsapp/meta/webhook', (req, res) => metaWebhookHandler(req, res));
-  app.all('/api/whatsapp/gateway/status', (req, res) => gatewayStatusCallbackHandler(req, res));
-  app.all('/api/whatsapp/session', (req, res) => whatsappSessionStatusHandler(req, res));
-  app.all('/api/whatsapp/session/start', (req, res) => whatsappSessionStartHandler(req, res));
-  app.all('/api/whatsapp/session/unlink', (req, res) => whatsappSessionUnlinkHandler(req, res));
-  app.all('/api/whatsapp/qr/generate', (req, res) => whatsappQrGenerateHandler(req, res));
-  app.all('/api/whatsapp/qr/status', (req, res) => whatsappQrStatusHandler(req, res));
-  app.all('/api/whatsapp/deliver', (req, res) => unifiedMessageHandler(req, res));
-  app.all('/api/messages/send', (req, res) => unifiedMessageHandler(req, res));
-  app.all('/api/entitlements/activate', (req, res) => activateEntitlementHandler(req, res));
-  app.all('/api/entitlements/device-rebind', (req, res) => rebindEntitlementDeviceHandler(req, res));
-
-  // Health check endpoint
+  // Health is intentionally shallow: it reports process availability only.
+  // Dependency/readiness checks must be separate and must not leak secrets.
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
+  // Vercel Cron remains the only scheduler until an explicit cutover.
+  app.all('/api/dispatch-notifications', (req, res) => (
+    dispatchNotificationsHandler(req, res)
+  ));
+
+  // Express adapter for all API paths routed through api/router.js on Vercel.
+  app.use((req, res, next) => {
+    const requestPath = req.path;
+    if (!requestPath.startsWith('/api/')) return next();
+
+    const route = apiRewriteMap.get(requestPath);
+    if (!route) {
+      return res.status(404).json({ success: false, error: 'api_route_not_found' });
+    }
+
+    // Express 5 exposes req.query through a getter. Give the router a request
+    // view with Vercel's rewrite query parameters without mutating the original.
+    const routedReq = Object.create(req);
+    Object.defineProperty(routedReq, 'query', {
+      configurable: true,
+      enumerable: true,
+      value: {
+        ...(req.query || {}),
+        __router: route.router,
+        ...(route.apiRoute ? { __apiRoute: route.apiRoute } : {}),
+      },
+    });
+
+    return apiRouter(routedReq, res);
+  });
+
   if (!isProduction) {
-    // Development mode: mount Vite dev server as middleware
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
@@ -102,7 +109,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Production mode: serve built assets from dist/
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('/{*splat}', (_req, res) => {
