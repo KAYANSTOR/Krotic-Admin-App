@@ -5,12 +5,13 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 import { ensureFirebaseAdmin } from './firebaseAdmin.js';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
 const NETWORK_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_.:@-]{1,200}$/;
-const DEFAULT_TTL_MS = 10 * 60 * 1000;
+const FCM_TTL_MS = 28 * 24 * 60 * 60 * 1000;
 
 function inboundSecret(env = process.env) {
   return String(env.WHATSAPP_INBOUND_SECRET || '').trim();
@@ -71,9 +72,8 @@ function parseInboundBody(raw) {
   };
 }
 
-async function writeWaInbox(db, msg, { now = Date.now(), ttlMs = DEFAULT_TTL_MS } = {}) {
+async function writeWaInbox(db, msg, { now = Date.now() } = {}) {
   const ref = db.collection('networks').doc(msg.networkId).collection('wa_inbox').doc(msg.messageId);
-  const expiresAtMs = now + ttlMs;
   const doc = {
     networkId: msg.networkId,
     messageId: msg.messageId,
@@ -83,9 +83,11 @@ async function writeWaInbox(db, msg, { now = Date.now(), ttlMs = DEFAULT_TTL_MS 
     pushName: msg.pushName,
     timestamp: msg.timestamp,
     status: 'pending',
+    attempts: 0,
     receivedAt: FieldValue.serverTimestamp(),
     receivedAtMs: now,
-    expiresAtMs,
+    updatedAtMs: now,
+    pushStatus: 'pending',
   };
   try {
     await ref.create(doc);
@@ -96,6 +98,52 @@ async function writeWaInbox(db, msg, { now = Date.now(), ttlMs = DEFAULT_TTL_MS 
     }
     throw error;
   }
+}
+
+
+/** Sends a data-only FCM wakeup; text and customer details remain in Firestore. */
+export async function wakeNetworkOwner({
+  db, networkId, messageId, now = Date.now(),
+  getMessaging: getMessagingDependency = getMessaging,
+}) {
+  const inboxRef = db.collection('networks').doc(networkId).collection('wa_inbox').doc(messageId);
+  const inboxSnap = await inboxRef.get();
+  if (!inboxSnap.exists) return { status: 'missing_inbox' };
+  if (inboxSnap.data()?.status === 'processed') return { status: 'already_processed' };
+
+  const networkSnap = await db.collection('networks').doc(networkId).get();
+  const ownerUid = String(networkSnap.data()?.owner_uid || networkSnap.data()?.ownerUid || '').trim();
+  if (!ownerUid) {
+    await inboxRef.set({ pushStatus: 'owner_missing', updatedAtMs: now }, { merge: true });
+    return { status: 'owner_missing' };
+  }
+  const devices = await db.collection('users').doc(ownerUid).collection('devices').get();
+  const tokens = [...new Set((devices.docs || [])
+    .filter(device => device.data()?.enabled !== false)
+    .map(device => String(device.data()?.token || '').trim())
+    .filter(Boolean))];
+  if (!tokens.length) {
+    await inboxRef.set({ pushStatus: 'no_devices', pushAttemptedAtMs: now, updatedAtMs: now }, { merge: true });
+    return { status: 'no_devices' };
+  }
+
+  const messaging = getMessagingDependency();
+  let sent = 0;
+  let failed = 0;
+  for (let offset = 0; offset < tokens.length; offset += 500) {
+    const response = await messaging.sendEachForMulticast({
+      tokens: tokens.slice(offset, offset + 500),
+      data: { type: 'whatsapp_inbound', schemaVersion: '1', networkId, messageId },
+      android: { priority: 'high', ttl: FCM_TTL_MS },
+    });
+    sent += Number(response?.successCount || 0);
+    failed += Number(response?.failureCount || 0);
+  }
+  if (sent === 0 && failed > 0) throw new Error('inbound_fcm_delivery_failed');
+  await inboxRef.set({
+    pushStatus: 'sent', pushSentAtMs: now, pushFailureCount: failed, updatedAtMs: now,
+  }, { merge: true });
+  return { status: 'sent', sent, failed };
 }
 
 export default async function whatsappInboundHandler(req, res, dependencies = {}) {
@@ -151,7 +199,14 @@ export default async function whatsappInboundHandler(req, res, dependencies = {}
   const db = (dependencies.getFirestore || getFirestore)();
   try {
     const result = await writeWaInbox(db, parsed.value, { now });
-    return res.status(200).json({ success: true, status: result.status, messageId: parsed.value.messageId });
+    const push = await wakeNetworkOwner({
+      db, networkId: parsed.value.networkId, messageId: parsed.value.messageId, now,
+      getMessaging: dependencies.getMessaging || getMessaging,
+    });
+    return res.status(200).json({
+      success: true, status: result.status, pushStatus: push.status,
+      messageId: parsed.value.messageId,
+    });
   } catch (error) {
     console.error('whatsapp/inbound write failed', {
       networkId: parsed.value.networkId,
@@ -162,4 +217,4 @@ export default async function whatsappInboundHandler(req, res, dependencies = {}
   }
 }
 
-export { parseInboundBody, inboundSecret, MAX_SKEW_MS, DEFAULT_TTL_MS };
+export { parseInboundBody, inboundSecret, MAX_SKEW_MS, FCM_TTL_MS };

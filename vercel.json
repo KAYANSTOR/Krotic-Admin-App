@@ -105,6 +105,14 @@
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=pairing-code"
     },
     {
+      "source": "/api/whatsapp/inbox/claim",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=inbox-claim"
+    },
+    {
+      "source": "/api/whatsapp/inbox/complete",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=inbox-complete"
+    },
+    {
       "source": "/api/whatsapp/messages/send",
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=send"
     },
