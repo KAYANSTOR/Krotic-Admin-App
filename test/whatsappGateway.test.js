@@ -173,3 +173,57 @@ test('control plane uses the Firestore-owned network and server-only Gateway tok
     else process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN = previousToken;
   }
 });
+
+test('pairing-code: validates the phone, uses the owned network, strips linkToken', async () => {
+  const previousUrl = process.env.WHATSAPP_GATEWAY_URL;
+  const previousToken = process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN;
+  const previousFetch = globalThis.fetch;
+  process.env.WHATSAPP_GATEWAY_URL = 'https://gateway.example.test';
+  process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN = 'gateway-service-test-token-0123456789-abcdef';
+  const db = createFakeFirestore({
+    'users/user-1': { uid: 'user-1', networkId: 'NET-OWNED', account_features: { whatsapp_card_delivery: true } },
+    'networks/NET-OWNED': { networkId: 'NET-OWNED', owner_uid: 'user-1' },
+  });
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response(JSON.stringify({
+      status: 'awaiting_pairing_code', pairingCode: 'ABCD-EFGH', linkToken: 'secret-link-token', linkUrl: 'https://g/link/x',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const deps = {
+    ensureFirebaseAdmin: () => ({ ok: true }),
+    getAuth: () => ({ verifyIdToken: async () => ({ uid: 'user-1' }) }),
+    getFirestore: () => db,
+    isAdminUid: async () => false,
+  };
+  const call = async (body, method = 'POST') => {
+    const res = createRes();
+    await whatsappGatewayHandler({
+      method, query: { __apiRoute: 'pairing-code' }, headers: { authorization: 'Bearer t' }, body,
+    }, res, deps);
+    return res;
+  };
+  try {
+    const bad = await call({ phoneNumber: '0777' });
+    assert.equal(bad.statusCode, 400);
+    assert.equal(bad.body.error, 'invalid_phone_number');
+    assert.equal(calls.length, 0);
+
+    assert.equal((await call({}, 'GET')).statusCode, 405);
+
+    const ok = await call({ phoneNumber: '+967 777-123-456', networkId: 'ATTACKER' });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.body.pairingCode, 'ABCD-EFGH');
+    assert.equal(ok.body.status, 'awaiting_pairing_code');
+    assert.equal('linkToken' in ok.body, false);
+    assert.equal(calls[0].url, 'https://gateway.example.test/sessions/pairing-code');
+    assert.deepEqual(JSON.parse(calls[0].options.body), { networkId: 'NET-OWNED', phoneNumber: '967777123456' });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousUrl === undefined) delete process.env.WHATSAPP_GATEWAY_URL;
+    else process.env.WHATSAPP_GATEWAY_URL = previousUrl;
+    if (previousToken === undefined) delete process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN;
+    else process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN = previousToken;
+  }
+});

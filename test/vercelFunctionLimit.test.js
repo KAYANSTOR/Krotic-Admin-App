@@ -59,6 +59,12 @@ test('all previous public API URLs are retained through the shared router', asyn
     ['/api/whatsapp/session/disconnect', '/api/router?__router=whatsapp-gateway&__apiRoute=disconnect'],
     ['/api/whatsapp/messages/send', '/api/router?__router=whatsapp-gateway&__apiRoute=send'],
     ['/api/whatsapp/inbound', '/api/router?__router=whatsapp-inbound'],
+    ['/api/whatsapp/session/pairing-code', '/api/router?__router=whatsapp-gateway&__apiRoute=pairing-code'],
+    ['/api/whatsapp/deliveries/status', '/api/router?__router=whatsapp-gateway&__apiRoute=deliveries-status'],
+    ['/api/whatsapp/deliveries/sms-result', '/api/router?__router=whatsapp-gateway&__apiRoute=sms-result'],
+    ['/api/whatsapp/deliveries/pending-fallback', '/api/router?__router=whatsapp-gateway&__apiRoute=pending-fallback'],
+    ['/api/whatsapp/delivery-events', '/api/router?__router=whatsapp-delivery-events&__apiRoute=events'],
+    ['/api/admin/whatsapp-deliveries', '/api/router?__router=whatsapp-delivery-events&__apiRoute=admin'],
   ]);
   for (const [source, destination] of expected) {
     assert.equal(destinations.get(source), destination, `${source} must retain its public contract`);
@@ -79,6 +85,7 @@ test('router exposes only the approved original server handlers', () => {
     'send-fcm',
     'settings',
     'settlement',
+    'whatsapp-delivery-events',
     'whatsapp-gateway',
     'whatsapp-inbound',
   ]);

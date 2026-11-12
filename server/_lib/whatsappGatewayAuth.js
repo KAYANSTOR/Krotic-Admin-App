@@ -12,9 +12,10 @@ const FEATURE_KEY = 'whatsapp_card_delivery';
 
 /**
  * Verifies Firebase ID token (client account only), resolves owned networkId
- * from Firestore (never from the request body), and requires whatsapp_card_delivery.
+ * from Firestore (never from the request body), and requires whatsapp_card_delivery
+ * unless `requireFeature: false` (delivery status / SMS-fallback bookkeeping that is already owed).
  */
-export async function authorizeWhatsappOwner(req, dependencies = {}, { label = 'whatsapp' } = {}) {
+export async function authorizeWhatsappOwner(req, dependencies = {}, { label = 'whatsapp', requireFeature = true } = {}) {
   const ensure = dependencies.ensureFirebaseAdmin || ensureFirebaseAdmin;
   const init = ensure();
   if (!init.ok) return { ok: false, status: 503, error: init.error || 'server_not_configured' };
@@ -34,7 +35,7 @@ export async function authorizeWhatsappOwner(req, dependencies = {}, { label = '
   if (!owned.ok) return { ok: false, status: owned.status, error: owned.error };
 
   const features = normalizeAccountFeatures(owned.user?.account_features, ACCOUNT_FEATURE_CATALOG);
-  if (features[FEATURE_KEY] !== true) {
+  if (requireFeature && features[FEATURE_KEY] !== true) {
     return { ok: false, status: 403, error: 'whatsapp_card_delivery_required', networkId: owned.networkId };
   }
 

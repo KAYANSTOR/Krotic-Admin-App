@@ -107,6 +107,10 @@ if (!emulatorAddress) {
         networkId: 'NET-10001', messageId: 'message-1', text: 'Incoming message',
         status: 'pending', receivedAtMs: 1792992600000, expiresAtMs: 1792993200000,
       });
+      await setDoc(doc(db, 'networks/NET-10001/wa_deliveries/dlv-sale-1-card-1'), {
+        deliveryOperationId: 'dlv-sale-1-card-1', networkId: 'NET-10001', saleRef: 'sale-1', cardRef: 'card-1',
+        state: 'delivered', whatsappStatus: 'delivered', finalOutcome: 'whatsapp', createdAtMs: 1792992600000,
+      });
       await setDoc(doc(db, 'networks/NET-10001/inventory_snapshot/current'), {
         schemaVersion: 1,
         snapshotId: 'snap-1',
@@ -518,5 +522,24 @@ if (!emulatorAddress) {
     }));
     await assertFails(updateDoc(ownerRef, { text: 'tampered message' }));
     await assertFails(updateDoc(ownerRef, { status: 'delivered' }));
+  });
+
+  test('WhatsApp delivery operations are owner/admin-readable and server-written only', async () => {
+    const ownerDb = testEnv.authenticatedContext('user-1').firestore();
+    const otherDb = testEnv.authenticatedContext('user-2').firestore();
+    const adminDb = testEnv.authenticatedContext('admin-1').firestore();
+    const path = 'networks/NET-10001/wa_deliveries/dlv-sale-1-card-1';
+
+    await assertSucceeds(getDoc(doc(ownerDb, path)));
+    await assertSucceeds(getDoc(doc(adminDb, path)));
+    await assertFails(getDoc(doc(otherDb, path)));
+    // Neither the owner nor an admin client may forge or alter a delivery outcome (Admin SDK only).
+    await assertFails(updateDoc(doc(ownerDb, path), { state: 'sms_fallback_sent' }));
+    await assertFails(updateDoc(doc(adminDb, path), { finalOutcome: 'sms' }));
+    await assertFails(setDoc(doc(ownerDb, 'networks/NET-10001/wa_deliveries/dlv-forged-0001'), {
+      deliveryOperationId: 'dlv-forged-0001', state: 'delivered',
+    }));
+    await assertFails(deleteDoc(doc(ownerDb, path)));
+    await assertFails(deleteDoc(doc(adminDb, path)));
   });
 }

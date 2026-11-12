@@ -101,8 +101,32 @@
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=disconnect"
     },
     {
+      "source": "/api/whatsapp/session/pairing-code",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=pairing-code"
+    },
+    {
       "source": "/api/whatsapp/messages/send",
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=send"
+    },
+    {
+      "source": "/api/whatsapp/deliveries/status",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=deliveries-status"
+    },
+    {
+      "source": "/api/whatsapp/deliveries/sms-result",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=sms-result"
+    },
+    {
+      "source": "/api/whatsapp/deliveries/pending-fallback",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=pending-fallback"
+    },
+    {
+      "source": "/api/whatsapp/delivery-events",
+      "destination": "/api/router?__router=whatsapp-delivery-events&__apiRoute=events"
+    },
+    {
+      "source": "/api/admin/whatsapp-deliveries",
+      "destination": "/api/router?__router=whatsapp-delivery-events&__apiRoute=admin"
     },
     {
       "source": "/api/whatsapp/inbound",

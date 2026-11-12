@@ -25,6 +25,7 @@ const AuditPage = lazy(() => loadRoute('/audit'));
 const TemplateCenterPage = lazy(() => loadRoute('/template-center'));
 const PaidFeaturesPage = lazy(() => loadRoute('/paid-features'));
 const DevicesPage = lazy(() => loadRoute('/devices'));
+const WhatsappDeliveriesPage = lazy(() => loadRoute('/whatsapp-deliveries'));
 
 function AdminShell() {
   return (
@@ -73,6 +74,7 @@ function AppRoutes() {
           <Route path="/template-center/*" element={<TemplateCenterPage />} />
           <Route path="/paid-features" element={<PaidFeaturesPage />} />
           <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/whatsapp-deliveries" element={<WhatsappDeliveriesPage />} />
           <Route path="/users/:uid" element={<UserProfilePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

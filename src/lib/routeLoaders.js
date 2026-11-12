@@ -15,6 +15,7 @@ const routeLoaders = {
   '/template-center/reconciliation': () => import('../pages/TemplateCenterPage'),
   '/paid-features': () => import('../pages/PaidFeaturesPage'),
   '/devices': () => import('../pages/DevicesPage'),
+  '/whatsapp-deliveries': () => import('../pages/WhatsappDeliveriesPage'),
 };
 
 const loadedRoutes = new Map();

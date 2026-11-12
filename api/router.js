@@ -11,6 +11,7 @@ import sendFcmHandler from '../server/apiHandlers/send-fcm.js';
 import settingsHandler from '../server/apiHandlers/settings.js';
 import settlementHandler from '../server/apiHandlers/settlement.js';
 import whatsappGatewayHandler from '../server/apiHandlers/whatsapp-gateway.js';
+import whatsappDeliveryEventsHandler from '../server/apiHandlers/whatsapp-delivery-events.js';
 import whatsappInboundHandler from '../server/apiHandlers/whatsapp-inbound.js';
 
 // Each delegated handler retains its original authentication, authorization,
@@ -30,6 +31,7 @@ export const API_ROUTE_HANDLERS = Object.freeze({
   settings: settingsHandler,
   settlement: settlementHandler,
   'whatsapp-gateway': whatsappGatewayHandler,
+  'whatsapp-delivery-events': whatsappDeliveryEventsHandler,
   'whatsapp-inbound': whatsappInboundHandler,
 });
 

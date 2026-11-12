@@ -140,6 +140,15 @@
   `deposit_no_stock_template`. صارت الآن **مطلوبة الوجود** ويحميها الاختبار باسم
   `ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION` (كان الاسم القديم
   `OUTBOUND_KEYS_MISSING_FROM_SERVER_CATALOG` يصف حالة لم تعد قائمة).
+- **مرحلة توحيد القوالب (المرحلة 4):** أُضيفت مفاتيح Android الجديدة إلى الكتالوج والبذور:
+  `pos_order_card_line_template` (سطر كرت داخل رسالة الكروت، required: serial, secret)،
+  `pos_order_card_line_serial_only_template` (سطر كرت بلا رمز، required: serial)،
+  `broadcast_customers_template` (رسالة جماعية للعملاء)، `broadcast_pos_template`
+  (رسالة جماعية لنقاط البيع، outboundPos)، `outbound_test_message_template` (رسالة الاختبار، outboundSystem).
+- **مفتاح متقاعد:** `salafni_card_delivery_template` لم يعد له مستهلك في التطبيق (كرت سلفني يُرسل بقالب
+  نوع العملية). أُزيل من الكتالوج والبذور (`RETIRED_OUTBOUND_TEMPLATE_KEYS`)، لكن الإصدارات المنشورة
+  سابقاً التي تحتويه **تبقى صالحة** (لا يفقد التطبيق حزمته النشطة ولا يتغير hash الإقرار)، وتُحذف تلقائياً
+  من أي مسودة أو نشر جديد عبر `normalizeDraftInput`.
 - أُصلح خطأ مطابقة حقيقي في الخادم: `{phone}` في قالب **صادر** كان يُطابَق كنص حر
   بدل الاسم البديل `customer_phone`، فكان يرفض النص الافتراضي الفعلي
   (`pos_instant_charge_confirm_template`). الآن تُطبَّق العناصر النائبة الواردة
