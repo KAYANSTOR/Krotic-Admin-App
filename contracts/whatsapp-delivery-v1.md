@@ -146,7 +146,7 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 ```
 - نفس `deliveryOperationId` مرة ثانية ⇒ نفس `messageId` و`duplicate:true` ونفس العملية؛ لا إرسال ثانٍ.
 - الأخطاء (قبل القبول، لا رسالة خرجت): `409 not_connected`، `429 rate_limited`،
-  `400 invalid_*`. في هذه الحالات تُسجَّل العملية في Railway بحالة نهائية
+  `400 invalid_*`، `503 message_store_unavailable` (تعذر حفظ الرسالة قبل الإرسال، فلا إرسال بلا إمكانية Retry Receipt). في هذه الحالات تُسجَّل العملية في Railway بحالة نهائية
   (`sms_fallback_requested` إن `smsFallback:true` وإلا `failed`) بسبب `whatsapp_send_failed:<code>`
   حتى يكون إعادة الطلب بنفس المعرّف حتمياً (يرجع نفس الخطأ مع `delivery`).
 - خطأ غامض أثناء `relayMessage` (انقطع الاتصال بعد بدء الإرسال): `502 send_failed` مع
@@ -195,6 +195,7 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 - **Outbox دائم** على الـ volume: الحدث لا يُحذف إلا بعد `2xx`؛ إعادة محاولة بتدرج حتى 24 ساعة.
   `4xx` (غير 408/429) = رفض نهائي يُسجل.
 - خادم كروتك يطبّق الحدث فقط إذا `delivery.seq > stored.railwaySeq` (منع الترتيب المعكوس والتكرار).
+- `404` يُعاد أيضاً (المسار لم يُنشر بعد على Vercel)، فلا تضيع الأحداث إن سبق نشر Railway.
 
 ---
 
@@ -314,7 +315,8 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
   "updatedAtMs": 0
 }
 ```
-- `fallback.reason ∈ {delivery_timeout, delivery_timeout_after_restart, whatsapp_send_failed:<code>, gateway_silent_after_deadline, whatsapp_unreachable, app_offline_deadline}`.
+- `fallback.reason ∈ {delivery_timeout, delivery_timeout_after_restart, whatsapp_send_failed:<code>, whatsapp_ack_error, whatsapp_send_interrupted, gateway_silent_after_deadline, whatsapp_unreachable, app_offline_deadline}`.
+  (`whatsapp_ack_error`: WhatsApp رد بخطأ على الرسالة؛ `whatsapp_send_interrupted`: أُعيد تشغيل Railway بعد تخزين الرسالة وقبل اكتمال `relayMessage`.)
 - `fallback.decidedBy ∈ {gateway, server, app}`.
 - `sms.status ∈ {none, pending, sent, failed}`.
 - `finalOutcome ∈ {pending, whatsapp, sms, none}`: `delivered ⇒ whatsapp`، `sms_fallback_sent ⇒ sms`،
@@ -355,3 +357,17 @@ sms_fallback_requested    -> failed                     (تخلّي التطبي
 - لا نص رسائل ولا رقم كرت سري.
 - لوحة الإدارة: تقرير التسليم (§4.4) يقرأ هذه المستندات (collection group `wa_deliveries`)
   عبر واجهة إدارة موثقة `GET /api/admin/whatsapp-deliveries`.
+
+---
+
+## 10. إضافات v1 المتوافقة (المرحلة 2)
+
+- حالة جلسة جديدة: `awaiting_pairing_code` (رمز ربط من 8 خانات بانتظار إدخاله في WhatsApp).
+- Railway: `POST /sessions/pairing-code { networkId, phoneNumber }` ⇒
+  `{ status, pairingCode: "ABCD-EFGH", expiresAt, linkUrl, ... }`؛ أخطاء `400 invalid_phone_number`،
+  `409 already_linked | linking_in_progress`، `502 pairing_code_failed`، `504 pairing_code_timeout`.
+- خادم كروتك (قناة الجلسة القائمة): `POST /api/whatsapp/session/pairing-code { phoneNumber }` (Firebase ID token +
+  `whatsapp_card_delivery`، `networkId` من Firestore) ⇒ نفس الرد بلا `linkToken`.
+- `GET /sessions/status` يعيد `lastConnectedAt` بالمللي ثانية و`accountSuffix` (آخر 4 أرقام) و`linkMode`.
+- كل ردود الخطأ من `/messages/send` تحمل `delivery` (RailwayDeliveryView) إن سُجلت العملية.
+

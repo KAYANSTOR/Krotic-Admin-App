@@ -101,6 +101,10 @@
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=disconnect"
     },
     {
+      "source": "/api/whatsapp/session/pairing-code",
+      "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=pairing-code"
+    },
+    {
       "source": "/api/whatsapp/messages/send",
       "destination": "/api/router?__router=whatsapp-gateway&__apiRoute=send"
     },
