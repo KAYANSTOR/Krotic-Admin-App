@@ -25,7 +25,7 @@ const INBOX_MAX_CLAIM = 20;
 const INBOX_LEASE_MS = 90_000;
 const INBOX_RETRY_BASE_MS = 30_000;
 const INBOX_RETRY_MAX_MS = 5 * 60_000;
-const INBOX_FINAL_RESULTS = new Set(['recorded', 'rejected', 'duplicate', 'needs_phone', 'ignored']);
+const INBOX_FINAL_RESULTS = new Set(['recorded', 'rejected', 'duplicate', 'needs_phone', 'ignored', 'not_salafni', 'not_whatsapp', 'foreign_target']);
 
 function inboxLimit(value) {
   const n = Number(value);
@@ -35,11 +35,16 @@ function inboxLimit(value) {
 async function claimInbox({ db, networkId, uid, now = Date.now(), limit = 10 }) {
   const size = inboxLimit(limit);
   const collection = db.collection('networks').doc(networkId).collection('wa_inbox');
-  const [pending, abandoned] = await Promise.all([
-    collection.where('status', '==', 'pending').orderBy('receivedAtMs', 'asc').limit(size * 4).get(),
-    collection.where('status', '==', 'processing').where('leaseUntilMs', '<=', now)
-      .orderBy('leaseUntilMs', 'asc').limit(size * 2).get(),
+  // Single-field queries only: do not make inbox availability depend on a
+  // manually deployed composite Firestore index.
+  const [pending, processing] = await Promise.all([
+    collection.where('status', '==', 'pending').limit(500).get(),
+    collection.where('status', '==', 'processing').limit(500).get(),
   ]);
+  const abandoned = {
+    docs: (processing.docs || []).filter(item =>
+      Number(item.data()?.leaseUntilMs || 0) <= now),
+  };
   const candidatesById = new Map();
   for (const item of [...(pending.docs || []), ...(abandoned.docs || [])]) candidatesById.set(item.id, item);
   const candidates = [...candidatesById.values()].sort((a, b) =>
