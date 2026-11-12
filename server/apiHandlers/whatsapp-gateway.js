@@ -15,6 +15,7 @@
 // networkId is taken from Firestore, never from the request body.
 // ============================================================
 
+import { randomUUID } from 'node:crypto';
 import { authorizeWhatsappOwner } from '../_lib/whatsappGatewayAuth.js';
 import { callGateway, gatewayConfigured } from '../_lib/whatsappGatewayClient.js';
 import { deliveriesStatus, pendingFallback, sendDelivery, smsResult } from '../_lib/whatsappDeliveryApi.js';

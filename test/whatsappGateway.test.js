@@ -79,6 +79,7 @@ test('inbound handler verifies Buffer rawBody, writes once, and acknowledges dup
   const dependencies = {
     ensureFirebaseAdmin: () => ({ ok: true }),
     getFirestore: () => db,
+    getMessaging: () => ({ sendEachForMulticast: async () => ({ successCount: 0, failureCount: 0 }) }),
     inboundSecret: SECRET,
     now: NOW,
   };
@@ -99,6 +100,8 @@ test('inbound handler verifies Buffer rawBody, writes once, and acknowledges dup
   const path = 'networks/NET-1/wa_inbox/wamid.abc-1';
   assert.equal(db._store.get(path).text, 'hello');
   assert.equal(db._store.get(path).status, 'pending');
+  assert.equal(db._store.get(path).expiresAtMs, undefined);
+  assert.equal(db._store.get(path).receivedAtMs, NOW);
 
   const duplicate = createRes();
   await whatsappInboundHandler(request, duplicate, dependencies);
@@ -226,4 +229,51 @@ test('pairing-code: validates the phone, uses the owned network, strips linkToke
     if (previousToken === undefined) delete process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN;
     else process.env.WHATSAPP_GATEWAY_SERVICE_TOKEN = previousToken;
   }
+});
+
+
+test('inbound sends a data-only FCM wakeup and preserves the inbox message beyond ten minutes', async () => {
+  const db = createFakeFirestore({
+    'networks/NET-1': { owner_uid: 'user-1' },
+    'users/user-1/devices/device-1': { token: 'fcm-device-token', enabled: true },
+  });
+  const payload = {
+    networkId: 'NET-1',
+    messageId: 'wamid.wakeup-1',
+    text: 'سلفني 500',
+    fromJid: '967123456789@s.whatsapp.net',
+    fromPhone: '967123456789',
+    timestamp: NOW,
+  };
+  const signed = signedBody(payload);
+  let sentMessage;
+  const response = createRes();
+  await whatsappInboundHandler({
+    method: 'POST',
+    headers: { 'x-gateway-signature': signed.signature, 'x-gateway-timestamp': signed.timestamp },
+    body: payload,
+    rawBody: Buffer.from(signed.text),
+  }, response, {
+    ensureFirebaseAdmin: () => ({ ok: true }),
+    getFirestore: () => db,
+    getMessaging: () => ({
+      sendEachForMulticast: async (message) => {
+        sentMessage = message;
+        return { successCount: 1, failureCount: 0 };
+      },
+    }),
+    inboundSecret: SECRET,
+    now: NOW,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.pushStatus, 'sent');
+  assert.equal(sentMessage.tokens[0], 'fcm-device-token');
+  assert.deepEqual(sentMessage.data, {
+    type: 'whatsapp_inbound', schemaVersion: '1', networkId: 'NET-1', messageId: 'wamid.wakeup-1',
+  });
+  assert.equal(sentMessage.android.priority, 'high');
+  assert.equal(sentMessage.notification, undefined);
+  const stored = db._store.get('networks/NET-1/wa_inbox/wamid.wakeup-1');
+  assert.equal(stored.expiresAtMs, undefined);
+  assert.equal(stored.status, 'pending');
 });
