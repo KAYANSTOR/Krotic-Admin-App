@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 
 import apiRouter from './api/router.js';
 import dispatchNotificationsHandler from './api/dispatch-notifications.js';
+import { buildApiRewriteMap } from './server/apiRewriteMap.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,29 +21,7 @@ const __dirname = path.dirname(__filename);
 function loadApiRewriteMap() {
   const configPath = new URL('./vercel.json', import.meta.url);
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
-  const routes = new Map();
-
-  for (const rewrite of config.rewrites || []) {
-    if (
-      typeof rewrite.source !== 'string'
-      || !rewrite.source.startsWith('/api/')
-      || typeof rewrite.destination !== 'string'
-      || !rewrite.destination.startsWith('/api/router?')
-    ) {
-      continue;
-    }
-
-    const destination = new URL(rewrite.destination, 'http://localhost');
-    const router = destination.searchParams.get('__router');
-    if (!router) continue;
-
-    routes.set(rewrite.source, {
-      router,
-      apiRoute: destination.searchParams.get('__apiRoute'),
-    });
-  }
-
-  return routes;
+  return buildApiRewriteMap(config);
 }
 
 async function startServer() {
