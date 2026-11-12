@@ -52,9 +52,23 @@ const OUTBOUND_TEMPLATES = Object.freeze({
   card_delivery_cash_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
   card_delivery_credit_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
   card_delivery_gift_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
-  salafni_card_delivery_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['network_name', 'card_value', 'serial', 'secret'] },
   deposit_no_stock_template: { scope: VARIABLE_SCOPE.outboundSystem, required: ['first_customer_name', 'amount'] },
+  pos_order_card_line_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['serial', 'secret'] },
+  pos_order_card_line_serial_only_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: ['serial'] },
+  broadcast_customers_template: { scope: VARIABLE_SCOPE.outboundCustomer, required: [] },
+  broadcast_pos_template: { scope: VARIABLE_SCOPE.outboundPos, required: [] },
+  outbound_test_message_template: { scope: VARIABLE_SCOPE.outboundSystem, required: [] },
 });
+
+/**
+ * Keys the Android app no longer consumes. They are NOT in the catalog (cannot be added or edited), but
+ * releases already published with them stay valid (the app keeps receiving its active pack, and the
+ * acknowledged payload hash is unchanged), and drafts/publishes drop them automatically.
+ * - salafni_card_delivery_template: retired in the templates phase; the Salafni card is sent with the
+ *   template of its operation type (card_delivery_*_template).
+ */
+export const RETIRED_OUTBOUND_TEMPLATE_KEYS = Object.freeze(['salafni_card_delivery_template']);
+const RETIRED_OUTBOUND_KEYS = new Set(RETIRED_OUTBOUND_TEMPLATE_KEYS);
 
 const VARIABLE_ALIASES = Object.freeze({
   serial: ['serial_number', 'CARD_SERIAL', 'CARD_CODE', 'الرقم'],
@@ -254,6 +268,7 @@ function validateOutboundTemplate(template, index, errors, { allowDrafts }) {
     errors.push(`${at}_invalid`);
     return;
   }
+  if (RETIRED_OUTBOUND_KEYS.has(template.key)) return; // tolerated in old releases; stripped from drafts
   const definition = OUTBOUND_TEMPLATES[template.key];
   if (!definition) {
     errors.push(`${at}_key_unknown`);
@@ -499,6 +514,10 @@ export function previewOutboundTemplate(template, values = {}) {
   return { ok: true, preview: rendered };
 }
 
+function stripRetiredOutbound(list) {
+  return Array.isArray(list) ? list.filter((template) => !RETIRED_OUTBOUND_KEYS.has(template?.key)) : list;
+}
+
 export function normalizeDraftInput(input) {
   if (!isRecord(input)) return { ok: false, error: 'draft_invalid' };
   const scope = normalizeScope(input.scope);
@@ -507,7 +526,7 @@ export function normalizeDraftInput(input) {
   const payload = {
     wallets: input.payload.wallets ?? [],
     transferTemplates: input.payload.transferTemplates ?? [],
-    outboundTemplates: input.payload.outboundTemplates ?? [],
+    outboundTemplates: stripRetiredOutbound(input.payload.outboundTemplates ?? []),
   };
   const validation = validateTemplatePayload(payload);
   if (!validation.ok) return { ok: false, error: 'payload_invalid', details: validation.errors };

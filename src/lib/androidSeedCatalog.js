@@ -165,8 +165,17 @@ export const ANDROID_DEFAULT_OUTBOUND_TEMPLATES = Object.freeze([
   { key: 'card_delivery_cash_template', body: 'كرتك من شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}' },
   { key: 'card_delivery_credit_template', body: 'كرت آجل عليكم في حسابكم\nمن شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}' },
   { key: 'card_delivery_gift_template', body: 'كرتك الهدية\nمن شبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}' },
-  { key: 'salafni_card_delivery_template', body: 'كرتك من خدمة سلفني\nشبكة {network_name}\n{الفئة}\n{الرقم}\n{الرمز}' },
   { key: 'deposit_no_stock_template', body: 'عزيزي {اسم_الزبون_الاول}\nتم استلام {المبلغ}﷼\nسوف يتم مشاركة الكرت آلياً فور توفره' },
+  // سطر كرت داخل رسالة الكروت
+  { key: 'pos_order_card_line_template', body: 'رقم الكرت: {serial}\nالرمز: {secret}' },
+  // سطر كرت بلا رمز داخل رسالة الكروت
+  { key: 'pos_order_card_line_serial_only_template', body: 'رقم الكرت: {serial}' },
+  // رسالة جماعية للعملاء
+  { key: 'broadcast_customers_template', body: 'عزيزي {customer_name}\nشبكة {network_name} ترحب بك.' },
+  // رسالة جماعية لنقاط البيع
+  { key: 'broadcast_pos_template', body: 'نقطة البيع {pos_name}\nإشعار من شبكة {network_name}.' },
+  // رسالة الاختبار التجريبية
+  { key: 'outbound_test_message_template', body: 'رسالة تجريبية من كروتك — ليست كرتاً صادراً ولا تُخصم من المخزون' },
 ]);
 
 /** مفاتيح الصادر التي يزرعها Android وكانت غير مسجّلة في كتالوج الخادم ثم أُضيفت.
@@ -176,8 +185,12 @@ export const ANDROID_OUTBOUND_KEYS_REQUIRING_SERVER_REGISTRATION = Object.freeze
   'card_delivery_cash_template',
   'card_delivery_credit_template',
   'card_delivery_gift_template',
-  'salafni_card_delivery_template',
   'deposit_no_stock_template',
+  'pos_order_card_line_template',
+  'pos_order_card_line_serial_only_template',
+  'broadcast_customers_template',
+  'broadcast_pos_template',
+  'outbound_test_message_template',
 ]);
 
 /** كل معرّفات قوالب التحويل الواردة الافتراضية (للكشف عن التكرار والمطابقة). */
