@@ -2,7 +2,7 @@ name: Admin CI
 
 on:
   push:
-    branches: [main, feature/railway-whatsapp-qr-gateway]
+    branches: [main, feature/railway-whatsapp-qr-gateway, feature/railway-admin-migration]
   pull_request:
     branches: [main]
   workflow_dispatch:
