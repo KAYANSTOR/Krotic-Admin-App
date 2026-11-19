@@ -2,6 +2,7 @@ import adminSessionHandler from '../server/apiHandlers/admin-session.js';
 import adminsHandler from '../server/apiHandlers/admins.js';
 import deviceHeartbeatHandler from '../server/apiHandlers/device-heartbeat.js';
 import inventorySnapshotHandler from '../server/apiHandlers/inventory-snapshot.js';
+import integrationHealthHandler from '../server/apiHandlers/integration-health.js';
 import manageUserAuthHandler from '../server/apiHandlers/manage-user-auth.js';
 import networksHandler from '../server/apiHandlers/networks.js';
 import registerNetworkHandler from '../server/apiHandlers/register-network.js';
@@ -35,6 +36,8 @@ export default async function handler(req, res) {
   const routeHandler = typeof route === 'string' && Object.hasOwn(API_ROUTE_HANDLERS, route)
     ? API_ROUTE_HANDLERS[route]
     : null;
+
+  if (route === 'integration-health') return integrationHealthHandler(req, res);
 
   if (!routeHandler) {
     return res.status(404).json({ success: false, error: 'api_route_not_found' });

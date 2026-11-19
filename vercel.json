@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/integration/health",
+      "destination": "/api/router?__router=integration-health"
+    },
+    {
       "source": "/api/entitlements/activate",
       "destination": "/api/router?__router=settings&__apiRoute=entitlement-activate"
     },
